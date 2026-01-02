@@ -559,97 +559,12 @@ export function useSwap(connection, wallet) {
   }, [wallet, getSwapQuoteSOLtoH173K, executeSwap])
   
   /**
-   * Parse insufficient lamports error to get required amount
-   * Handles various error formats from Anchor/Solana
-   * @param {Error|string} error - Error object or message
-   * @returns {Object|null} - { have, need } in lamports or null if not parseable
-   */
-  const parseInsufficientLamportsError = useCallback((error) => {
-    // Collect all possible error text sources
-    let allText = ''
-    
-    // Error message
-    if (error?.message) allText += ' ' + error.message
-    
-    // Error toString
-    if (error?.toString) allText += ' ' + error.toString()
-    
-    // Anchor error logs (array)
-    if (Array.isArray(error?.logs)) {
-      allText += ' ' + error.logs.join(' ')
-    }
-    
-    // SendTransactionError structure
-    if (error?.transactionError) {
-      allText += ' ' + JSON.stringify(error.transactionError)
-    }
-    
-    // Simulation error structure
-    if (error?.simulationResponse?.logs) {
-      allText += ' ' + error.simulationResponse.logs.join(' ')
-    }
-    
-    // Try to stringify the whole error object
-    try {
-      allText += ' ' + JSON.stringify(error)
-    } catch (e) {
-      // Ignore stringify errors
-    }
-    
-    console.log('🔍 Parsing error for insufficient lamports...')
-    console.log('   Combined text length:', allText.length)
-    console.log('   Sample:', allText.substring(0, 300))
-    
-    // Pattern 1: "insufficient lamports X, need Y"
-    const match1 = allText.match(/insufficient lamports\s+(\d+),?\s*need\s+(\d+)/i)
-    if (match1) {
-      console.log('   ✅ Found pattern 1:', match1[1], '->', match1[2])
-      return { have: parseInt(match1[1]), need: parseInt(match1[2]) }
-    }
-    
-    // Pattern 2: "Transfer: insufficient lamports X, need Y"  
-    const match2 = allText.match(/Transfer:\s*insufficient lamports\s+(\d+),?\s*need\s+(\d+)/i)
-    if (match2) {
-      console.log('   ✅ Found pattern 2:', match2[1], '->', match2[2])
-      return { have: parseInt(match2[1]), need: parseInt(match2[2]) }
-    }
-    
-    // Pattern 3: Just numbers after "insufficient lamports" and "need" separately
-    const haveMatch = allText.match(/insufficient lamports\s+(\d+)/i)
-    const needMatch = allText.match(/need\s+(\d+)/i)
-    if (haveMatch && needMatch) {
-      console.log('   ✅ Found pattern 3:', haveMatch[1], '->', needMatch[1])
-      return { have: parseInt(haveMatch[1]), need: parseInt(needMatch[1]) }
-    }
-    
-    // Pattern 4: Check for 0x1 error (often means insufficient funds in Solana)
-    // and try to extract lamport amounts (7-10 digit numbers)
-    if (allText.includes('0x1') || allText.toLowerCase().includes('insufficient')) {
-      const numbers = allText.match(/\b(\d{7,10})\b/g)
-      if (numbers && numbers.length >= 2) {
-        const sorted = [...new Set(numbers.map(n => parseInt(n)))].sort((a, b) => a - b)
-        if (sorted.length >= 2) {
-          console.log('   ✅ Found pattern 4 (extracted numbers):', sorted[0], '->', sorted[sorted.length - 1])
-          return { have: sorted[0], need: sorted[sorted.length - 1] }
-        }
-      }
-    }
-    
-    console.log('   ❌ Could not parse insufficient lamports from error')
-    console.log('   Full error object:', error)
-    return null
-  }, [])
-  
-  /**
-   * Replenish SOL based on deficit
-   * @param {number} deficitLamports - How many lamports are missing
+   * Swap H173K to get more SOL
+   * @param {number} targetSOL - How much SOL to get
    * @returns {Object} - Swap result
    */
-  const replenishSOL = useCallback(async (deficitLamports) => {
-    const deficitSOL = deficitLamports / LAMPORTS_PER_SOL
-    const targetSOL = deficitSOL + SOL_BUFFER
-    
-    console.log(`📊 replenishSOL: deficit=${deficitSOL.toFixed(6)} SOL, target=${targetSOL.toFixed(6)} SOL (with ${SOL_BUFFER} buffer)`)
+  const swapForSOL = useCallback(async (targetSOL) => {
+    console.log(`🔄 swapForSOL: Getting ${targetSOL.toFixed(6)} SOL...`)
     
     // Check current SOL
     const currentLamports = await connection.getBalance(wallet.publicKey)
@@ -658,11 +573,10 @@ export function useSwap(connection, wallet) {
     console.log(`💰 Current SOL balance: ${currentSOL.toFixed(6)} SOL`)
     
     // Need at least some SOL to pay for swap transaction fees
-    // Swap requires: tx fee (~0.000005) + possibly WSOL account rent (~0.002)
     const MIN_SOL_FOR_SWAP_TX = 0.003
     
     if (currentSOL < MIN_SOL_FOR_SWAP_TX) {
-      throw new Error(`Not enough SOL to execute swap transaction. Have ${currentSOL.toFixed(6)} SOL, need at least ${MIN_SOL_FOR_SWAP_TX} SOL. Please deposit more SOL first.`)
+      throw new Error(`NO_SOL:Not enough SOL to execute swap. Have ${currentSOL.toFixed(6)} SOL, need at least ${MIN_SOL_FOR_SWAP_TX} SOL. Please deposit SOL first.`)
     }
     
     // Calculate how much H173K we need to swap
@@ -676,35 +590,26 @@ export function useSwap(connection, wallet) {
     console.log(`🪙 H173K needed: ${h173kNeeded.toFixed(2)}, H173K balance: ${h173kBalance.toFixed(2)}`)
     
     if (h173kNeeded > h173kBalance) {
-      throw new Error(`Insufficient H173K for SOL swap. Need ${h173kNeeded.toFixed(2)} h173k, have ${h173kBalance.toFixed(2)} h173k`)
+      throw new Error(`NO_H173K:Insufficient h173k to get more SOL. Need ${h173kNeeded.toFixed(2)} h173k, have ${h173kBalance.toFixed(2)} h173k. Please add more h173k to your wallet.`)
     }
     
     // Execute swap
     console.log(`🔄 Executing swap: ${h173kNeeded.toFixed(2)} H173K -> ~${targetSOL.toFixed(4)} SOL...`)
     
-    try {
-      const result = await executeSwap(quote, 'H173KtoSOL')
-      console.log(`✅ Swap complete! Got ${result.outputAmount.toFixed(6)} SOL`)
-      
-      return {
-        success: true,
-        h173kUsed: result.inputAmount,
-        solReceived: result.outputAmount,
-        signature: result.signature
-      }
-    } catch (swapError) {
-      console.log('❌ Swap failed:', swapError)
-      // Check if swap itself failed due to insufficient SOL
-      if (swapError?.message?.includes('insufficient') || swapError?.message?.includes('0x1')) {
-        throw new Error(`Swap transaction failed - not enough SOL for transaction fees. Current SOL: ${currentSOL.toFixed(6)}. Please deposit at least 0.01 SOL and try again.`)
-      }
-      throw swapError
+    const result = await executeSwap(quote, 'H173KtoSOL')
+    console.log(`✅ Swap complete! Got ${result.outputAmount.toFixed(6)} SOL`)
+    
+    return {
+      success: true,
+      h173kUsed: result.inputAmount,
+      solReceived: result.outputAmount,
+      signature: result.signature
     }
   }, [connection, wallet, calculateSwapForSOL, executeSwap])
   
   /**
    * Execute an operation with automatic SOL replenishment
-   * If operation fails due to insufficient SOL, automatically swaps H173K for SOL and retries
+   * Simply retries with more SOL if operation fails (max 2 retries)
    * 
    * @param {Function} operation - Async function to execute
    * @param {Function} onSwap - Optional callback when swap occurs (for UI feedback)
@@ -715,68 +620,75 @@ export function useSwap(connection, wallet) {
       throw new Error('Wallet not connected')
     }
     
-    console.log('🚀 withAutoSOL: Starting operation...')
+    const MAX_RETRIES = 2
+    let lastError = null
     
-    try {
-      // First attempt
-      return await operation()
-    } catch (error) {
-      console.log('❌ Operation failed, checking if SOL issue...')
-      console.log('   Full error:', error)
-      console.log('   Error message:', error?.message)
-      console.log('   Error logs:', error?.logs)
-      
-      // Check if it's an insufficient lamports error
-      const parsed = parseInsufficientLamportsError(error)
-      
-      if (!parsed) {
-        // Not a SOL issue, rethrow
-        console.log('❌ Not an insufficient SOL error, rethrowing...')
-        throw error
-      }
-      
-      console.log(`⚠️ Insufficient SOL detected! Have: ${parsed.have} lamports (${(parsed.have / LAMPORTS_PER_SOL).toFixed(6)} SOL), Need: ${parsed.need} lamports (${(parsed.need / LAMPORTS_PER_SOL).toFixed(6)} SOL)`)
-      
-      const deficit = parsed.need - parsed.have
-      console.log(`📊 Deficit: ${deficit} lamports (${(deficit / LAMPORTS_PER_SOL).toFixed(6)} SOL)`)
-      
-      setLoading(true)
-      setError(null)
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      console.log(`🚀 withAutoSOL: Attempt ${attempt + 1}/${MAX_RETRIES + 1}...`)
       
       try {
-        // Notify UI about swap
-        if (onSwap) {
-          onSwap({ status: 'swapping', deficit: deficit / LAMPORTS_PER_SOL })
-        }
-        
-        // Replenish SOL
-        const swapResult = await replenishSOL(deficit)
-        
-        // Notify UI about swap completion
-        if (onSwap) {
-          onSwap({ 
-            status: 'swapped', 
-            h173kUsed: swapResult.h173kUsed, 
-            solReceived: swapResult.solReceived 
-          })
-        }
-        
-        // Wait a moment for balance to update
-        await new Promise(r => setTimeout(r, 1500))
-        
-        // Retry the operation
-        console.log('🔄 Retrying operation after SOL replenishment...')
+        // Try the operation
         return await operation()
+      } catch (error) {
+        lastError = error
+        console.log(`❌ Attempt ${attempt + 1} failed:`, error?.message || error)
         
-      } catch (swapError) {
-        console.log('❌ Swap/retry failed:', swapError)
-        setError(swapError.message)
-        throw swapError
-      } finally {
-        setLoading(false)
+        // If this was the last retry, don't try to swap again
+        if (attempt >= MAX_RETRIES) {
+          console.log('❌ Max retries reached, giving up')
+          break
+        }
+        
+        // Try to get more SOL
+        const solToGet = SOL_BUFFER * (attempt + 1) // Increase each retry: 0.006, 0.012
+        console.log(`💡 Will try to swap for ${solToGet.toFixed(4)} SOL and retry...`)
+        
+        try {
+          // Notify UI about swap
+          if (onSwap) {
+            onSwap({ status: 'swapping', attempt: attempt + 1 })
+          }
+          
+          setLoading(true)
+          const swapResult = await swapForSOL(solToGet)
+          setLoading(false)
+          
+          // Notify UI about swap completion
+          if (onSwap) {
+            onSwap({ 
+              status: 'swapped', 
+              h173kUsed: swapResult.h173kUsed, 
+              solReceived: swapResult.solReceived 
+            })
+          }
+          
+          // Wait a moment for balance to update
+          await new Promise(r => setTimeout(r, 1500))
+          
+          console.log('🔄 Retrying operation...')
+          // Continue to next iteration to retry
+          
+        } catch (swapError) {
+          setLoading(false)
+          console.log('❌ Swap failed:', swapError?.message)
+          
+          // Check if it's because no H173K or no SOL
+          if (swapError?.message?.startsWith('NO_H173K:')) {
+            throw new Error(swapError.message.replace('NO_H173K:', ''))
+          }
+          if (swapError?.message?.startsWith('NO_SOL:')) {
+            throw new Error(swapError.message.replace('NO_SOL:', ''))
+          }
+          
+          // Swap failed for other reason, throw original error
+          throw lastError
+        }
       }
     }
-  }, [wallet, parseInsufficientLamportsError, replenishSOL])
+    
+    // All retries exhausted
+    throw lastError
+  }, [wallet, swapForSOL])
   
   return {
     loading,
@@ -786,8 +698,6 @@ export function useSwap(connection, wallet) {
     getSwapQuoteSOLtoH173K,
     executeSwap,
     calculateSwapForSOL,
-    checkAutoReplenish,
-    autoReplenishSOL,
     withAutoSOL,
     convertSOLtoH173K,
     fetchPoolData,
