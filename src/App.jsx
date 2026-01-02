@@ -177,6 +177,13 @@ function App() {
     const standalone = isStandaloneMode()
     setRequiresInstall(mobile && !standalone)
     setCheckComplete(true)
+    
+    // Lock orientation to portrait (works on Android PWA)
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('portrait').catch(() => {
+        // Silently fail - not supported on all devices/browsers
+      })
+    }
   }, [])
   
   useEffect(() => {
@@ -195,6 +202,11 @@ function App() {
   if (!checkComplete) {
     return (
       <>
+        <div className="landscape-overlay">
+          <div className="rotate-icon">📱</div>
+          <h2>Please Rotate Your Device</h2>
+          <p>This app works best in portrait mode</p>
+        </div>
         <div className="app-background"><div className="light-streak" /></div>
         <div className="app-container">
           <LoadingScreen message="Loading..." />
@@ -207,6 +219,11 @@ function App() {
   if (requiresInstall) {
     return (
       <>
+        <div className="landscape-overlay">
+          <div className="rotate-icon">📱</div>
+          <h2>Please Rotate Your Device</h2>
+          <p>This app works best in portrait mode</p>
+        </div>
         <div className="app-background"><div className="light-streak" /></div>
         <div className="app-container">
           <InstallPromptScreen />
@@ -217,6 +234,11 @@ function App() {
   
   return (
     <>
+      <div className="landscape-overlay">
+        <div className="rotate-icon">📱</div>
+        <h2>Please Rotate Your Device</h2>
+        <p>This app works best in portrait mode</p>
+      </div>
       <div className="app-background"><div className="light-streak" /></div>
       <div className="app-container">
         {!connection ? <LoadingScreen message="Connecting..." /> : <WalletApp connection={connection} onRpcChange={handleRpcChange} />}
@@ -1505,8 +1527,8 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
   
   // Touch handlers for pull to refresh
   const handleTouchStart = useCallback((e) => {
-    const listEl = contractsListRef.current
-    if (listEl && listEl.scrollTop === 0) {
+    // Check if we're at the top of the page
+    if (window.scrollY === 0) {
       touchStartY.current = e.touches[0].clientY
       isPulling.current = true
     }
@@ -1609,7 +1631,12 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
   
   // Contract list
   return (
-    <div className="escrow-view">
+    <div 
+      className="escrow-view"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       <div className="view-header">
         <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
         <h2>MAD Contracts</h2>
@@ -1647,24 +1674,12 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
       {loading ? (
         <div className="loading-spinner-small" />
       ) : contracts.length === 0 ? (
-        <div 
-          className="empty-state"
-          ref={contractsListRef}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
+        <div className="empty-state">
           <p>No MAD contracts yet</p>
           <p className="empty-hint">Create a new contract or accept one with a code</p>
         </div>
       ) : (
-        <div 
-          className="contracts-list"
-          ref={contractsListRef}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
+        <div className="contracts-list" ref={contractsListRef}>
           {contracts.map((contract) => {
             const meta = contractsMetadata[contract.publicKey.toString()] || {}
             const status = getStatusInfo(contract.status, contract, publicKey)

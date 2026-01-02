@@ -2600,3 +2600,50 @@ body {
     height: 36px;
   }
 }
+
+/* === Landscape Orientation Block === */
+.landscape-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--color-black);
+  z-index: 10000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 40px;
+  text-align: center;
+}
+
+.landscape-overlay .rotate-icon {
+  font-size: 48px;
+  animation: rotateHint 2s ease-in-out infinite;
+}
+
+@keyframes rotateHint {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-15deg); }
+  75% { transform: rotate(15deg); }
+}
+
+.landscape-overlay h2 {
+  font-size: 20px;
+  font-weight: var(--font-medium);
+  margin: 0;
+}
+
+.landscape-overlay p {
+  font-size: 14px;
+  color: var(--color-white-70);
+  margin: 0;
+}
+
+@media screen and (orientation: landscape) and (max-height: 500px) {
+  .landscape-overlay {
+    display: flex;
+  }
+}

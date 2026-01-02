@@ -1,12 +1,12 @@
 {
   "name": "H173K Wallet",
-  "short_name": "H173K",
+  "short_name": "h173k Wallet",
   "description": "Dedicated PWA wallet for H173K tokens on Solana",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
