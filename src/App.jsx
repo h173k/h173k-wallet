@@ -1626,7 +1626,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
       
       {/* Action buttons above contracts */}
       <div className="escrow-top-actions">
-        <button className="escrow-action-btn" onClick={handleRefresh} disabled={refreshing}>
+        <button className="escrow-action-btn refresh-action-btn" onClick={handleRefresh} disabled={refreshing}>
           <RefreshIcon size={18} />
           <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
         </button>
