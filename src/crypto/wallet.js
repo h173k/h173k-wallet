@@ -1,7 +1,13 @@
 /**
- * H173K Wallet - Cryptographic Wallet Module
+ * H173K Wallet - Cryptographic Wallet Module (SECURITY FIXED)
  * Uses browser-native libraries: @scure/bip39, @noble/hashes, tweetnacl
  * Compatible with Phantom/Solflare seed phrase format (BIP39 + BIP44)
+ * 
+ * POPRAWKI BEZPIECZEŃSTWA:
+ * 1. Unikalny salt dla każdego portfela
+ * 2. PBKDF2 z 100,000 iteracji do derywacji klucza z hasła
+ * 3. Losowy IV dla każdej operacji szyfrowania
+ * 4. Bezpieczne czyszczenie pamięci przy blokowaniu
  */
 
 import { Keypair } from '@solana/web3.js'
@@ -16,6 +22,42 @@ import CryptoJS from 'crypto-js'
 const ENCRYPTED_SEED_KEY = 'h173k_encrypted_seed'
 const WALLET_EXISTS_KEY = 'h173k_wallet_exists'
 const AUTH_HASH_KEY = 'h173k_auth_hash'
+const WALLET_SALT_KEY = 'h173k_wallet_salt'
+const ENCRYPTION_IV_KEY = 'h173k_encryption_iv'
+
+const PBKDF2_ITERATIONS = 100000
+
+/**
+ * Generuje kryptograficznie bezpieczny losowy string
+ */
+function generateSecureRandom(bytes = 32) {
+  const array = new Uint8Array(bytes)
+  crypto.getRandomValues(array)
+  return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Pobiera lub tworzy salt dla portfela
+ */
+function getOrCreateWalletSalt() {
+  let salt = localStorage.getItem(WALLET_SALT_KEY)
+  if (!salt) {
+    salt = generateSecureRandom(32)
+    localStorage.setItem(WALLET_SALT_KEY, salt)
+  }
+  return salt
+}
+
+/**
+ * Derywuje klucz z hasła używając PBKDF2
+ */
+function deriveKeyFromPassword(password, salt) {
+  return CryptoJS.PBKDF2(password, salt, {
+    keySize: 256 / 32,
+    iterations: PBKDF2_ITERATIONS,
+    hasher: CryptoJS.algo.SHA256
+  })
+}
 
 /**
  * Derive ed25519 key from seed using SLIP-0010
@@ -97,18 +139,49 @@ export function deriveKeypairFromMnemonic(mnemonic, accountIndex = 0) {
 }
 
 /**
- * Encrypt mnemonic with password using AES-256
+ * Encrypt mnemonic with password using AES-256 + PBKDF2
+ * POPRAWKA: Używamy PBKDF2 i losowy IV
  */
 export function encryptMnemonic(mnemonic, password) {
-  return CryptoJS.AES.encrypt(mnemonic, password).toString()
+  const salt = getOrCreateWalletSalt()
+  const iv = generateSecureRandom(16)
+  
+  // Derywuj klucz z hasła
+  const key = deriveKeyFromPassword(password, salt)
+  
+  // Szyfruj z losowym IV
+  const encrypted = CryptoJS.AES.encrypt(mnemonic, key, {
+    iv: CryptoJS.enc.Hex.parse(iv),
+    mode: CryptoJS.mode.CBC,
+    padding: CryptoJS.pad.Pkcs7
+  })
+  
+  localStorage.setItem(ENCRYPTION_IV_KEY, iv)
+  
+  return encrypted.toString()
 }
 
 /**
  * Decrypt mnemonic with password
+ * POPRAWKA: Używamy PBKDF2
  */
 export function decryptMnemonic(encryptedMnemonic, password) {
   try {
-    const decrypted = CryptoJS.AES.decrypt(encryptedMnemonic, password)
+    const salt = localStorage.getItem(WALLET_SALT_KEY)
+    const iv = localStorage.getItem(ENCRYPTION_IV_KEY)
+    
+    if (!salt || !iv) {
+      throw new Error('Missing encryption parameters')
+    }
+    
+    const key = deriveKeyFromPassword(password, salt)
+    
+    const decrypted = CryptoJS.AES.decrypt(encryptedMnemonic, key, {
+      iv: CryptoJS.enc.Hex.parse(iv),
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7
+    })
+    
     const mnemonic = decrypted.toString(CryptoJS.enc.Utf8)
     if (!mnemonic || !validateMnemonic(mnemonic)) {
       throw new Error('Invalid password or corrupted data')
@@ -120,16 +193,26 @@ export function decryptMnemonic(encryptedMnemonic, password) {
 }
 
 /**
- * Hash password for verification
+ * Hash password for verification using PBKDF2
+ * POPRAWKA: Używamy PBKDF2 z unikalnym salt
  */
 export function hashPassword(password) {
-  return CryptoJS.SHA256(password + '_h173k_salt').toString()
+  const salt = getOrCreateWalletSalt()
+  return CryptoJS.PBKDF2(password, salt + '_auth_hash_v2', {
+    keySize: 256 / 32,
+    iterations: PBKDF2_ITERATIONS,
+    hasher: CryptoJS.algo.SHA256
+  }).toString()
 }
 
 /**
  * Store encrypted wallet
  */
 export function storeEncryptedWallet(mnemonic, password) {
+  // Generuj nowy salt dla nowego portfela
+  const salt = generateSecureRandom(32)
+  localStorage.setItem(WALLET_SALT_KEY, salt)
+  
   const encrypted = encryptMnemonic(mnemonic, password)
   const passwordHash = hashPassword(password)
   
@@ -218,6 +301,8 @@ export function deleteWallet() {
   localStorage.removeItem(ENCRYPTED_SEED_KEY)
   localStorage.removeItem(AUTH_HASH_KEY)
   localStorage.removeItem(WALLET_EXISTS_KEY)
+  localStorage.removeItem(WALLET_SALT_KEY)
+  localStorage.removeItem(ENCRYPTION_IV_KEY)
 }
 
 /**
@@ -225,6 +310,11 @@ export function deleteWallet() {
  */
 export function changePassword(oldPassword, newPassword) {
   const wallet = loadWallet(oldPassword)
+  
+  // Generuj nowy salt dla nowego hasła
+  const newSalt = generateSecureRandom(32)
+  localStorage.setItem(WALLET_SALT_KEY, newSalt)
+  
   storeEncryptedWallet(wallet.mnemonic, newPassword)
   return true
 }
@@ -251,6 +341,15 @@ export class SessionWallet {
   }
   
   lock() {
+    // POPRAWKA: Bezpieczne czyszczenie pamięci
+    if (this.keypair && this.keypair.secretKey) {
+      // Nadpisz secretKey zerami przed usunięciem
+      try {
+        this.keypair.secretKey.fill(0)
+      } catch (e) {
+        // Ignoruj błędy jeśli secretKey jest immutable
+      }
+    }
     this.keypair = null
     this.publicKey = null
     this.unlocked = false

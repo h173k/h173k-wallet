@@ -1,18 +1,61 @@
 /**
- * H173K Wallet - Authentication Module
+ * H173K Wallet - Authentication Module (SECURITY FIXED)
  * Supports PIN code and biometric authentication
+ * 
+ * POPRAWKI BEZPIECZEŃSTWA:
+ * 1. Unikalny salt dla każdego użytkownika (zamiast statycznego)
+ * 2. PBKDF2 z 100,000 iteracji (zamiast prostego SHA256)
+ * 3. Unikalny klucz szyfrujący per urządzenie (zamiast hardcoded)
+ * 4. Losowy IV dla każdej operacji szyfrowania
  */
 
 import CryptoJS from 'crypto-js'
 
 const PIN_HASH_KEY = 'h173k_pin_hash'
+const PIN_SALT_KEY = 'h173k_pin_salt'
 const BIOMETRIC_KEY = 'h173k_biometric_credential'
+const BIOMETRIC_DEVICE_KEY = 'h173k_biometric_device_key' // NOWE: unikalny klucz per urządzenie
 const AUTH_METHOD_KEY = 'h173k_auth_method'
 const FAILED_ATTEMPTS_KEY = 'h173k_failed_attempts'
 const LOCKOUT_UNTIL_KEY = 'h173k_lockout_until'
 
 const MAX_FAILED_ATTEMPTS = 5
 const LOCKOUT_DURATION_MS = 5 * 60 * 1000 // 5 minutes
+const PBKDF2_ITERATIONS = 100000 // Wysoka liczba iteracji dla bezpieczeństwa
+
+/**
+ * Generuje kryptograficznie bezpieczny losowy string
+ */
+function generateSecureRandom(bytes = 32) {
+  const array = new Uint8Array(bytes)
+  crypto.getRandomValues(array)
+  return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Pobiera lub tworzy salt dla PIN-u użytkownika
+ */
+function getOrCreatePinSalt() {
+  let salt = localStorage.getItem(PIN_SALT_KEY)
+  if (!salt) {
+    salt = generateSecureRandom(32)
+    localStorage.setItem(PIN_SALT_KEY, salt)
+  }
+  return salt
+}
+
+/**
+ * Pobiera lub tworzy unikalny klucz szyfrujący dla tego urządzenia
+ * POPRAWKA: Zamiast hardcoded klucza, każde urządzenie ma swój unikalny klucz
+ */
+function getOrCreateDeviceKey() {
+  let deviceKey = localStorage.getItem(BIOMETRIC_DEVICE_KEY)
+  if (!deviceKey) {
+    deviceKey = generateSecureRandom(32)
+    localStorage.setItem(BIOMETRIC_DEVICE_KEY, deviceKey)
+  }
+  return deviceKey
+}
 
 /**
  * Check if WebAuthn (biometric) is available
@@ -36,10 +79,16 @@ export async function checkBiometricSupport() {
 }
 
 /**
- * Hash PIN for storage
+ * Hash PIN for storage using PBKDF2 with unique salt
+ * POPRAWKA: Używamy PBKDF2 z unikalnym salt zamiast prostego SHA256
  */
 function hashPIN(pin) {
-  return CryptoJS.SHA256(pin + '_h173k_pin_salt_v1').toString()
+  const salt = getOrCreatePinSalt()
+  return CryptoJS.PBKDF2(pin, salt + '_pin_hash_v2', {
+    keySize: 256 / 32,
+    iterations: PBKDF2_ITERATIONS,
+    hasher: CryptoJS.algo.SHA256
+  }).toString()
 }
 
 /**
@@ -53,6 +102,10 @@ export function setupPIN(pin) {
   if (!/^\d+$/.test(pin)) {
     throw new Error('PIN must contain only digits')
   }
+  
+  // Generuj nowy salt przy tworzeniu PIN-u
+  const salt = generateSecureRandom(32)
+  localStorage.setItem(PIN_SALT_KEY, salt)
   
   const hashedPIN = hashPIN(pin)
   localStorage.setItem(PIN_HASH_KEY, hashedPIN)
@@ -167,6 +220,7 @@ export function isPINSetup() {
 
 /**
  * Set up biometric authentication
+ * POPRAWKA: Używamy unikalnego klucza per urządzenie zamiast hardcoded
  */
 export async function setupBiometric(userPassword) {
   const isSupported = await checkBiometricSupport()
@@ -178,9 +232,6 @@ export async function setupBiometric(userPassword) {
     // Create a challenge
     const challenge = new Uint8Array(32)
     crypto.getRandomValues(challenge)
-    
-    // Encode the password with the credential for later retrieval
-    const encodedPassword = new TextEncoder().encode(userPassword)
     
     // Create credential
     const credential = await navigator.credentials.create({
@@ -212,10 +263,28 @@ export async function setupBiometric(userPassword) {
       throw new Error('Failed to create biometric credential')
     }
     
+    // POPRAWKA: Używamy unikalnego klucza per urządzenie
+    const deviceKey = getOrCreateDeviceKey()
+    
+    // Generujemy losowy IV dla szyfrowania
+    const iv = generateSecureRandom(16)
+    
+    // Derywujemy klucz z deviceKey używając PBKDF2
+    const encryptionKey = CryptoJS.PBKDF2(deviceKey, iv + '_biometric_enc', {
+      keySize: 256 / 32,
+      iterations: 10000, // Mniej iteracji bo deviceKey jest już silny
+      hasher: CryptoJS.algo.SHA256
+    })
+    
     // Store credential ID and encrypted password
     const credentialData = {
       credentialId: Array.from(new Uint8Array(credential.rawId)),
-      encryptedPassword: CryptoJS.AES.encrypt(userPassword, 'h173k_biometric_key').toString()
+      encryptedPassword: CryptoJS.AES.encrypt(userPassword, encryptionKey, {
+        iv: CryptoJS.enc.Hex.parse(iv),
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7
+      }).toString(),
+      iv: iv
     }
     
     localStorage.setItem(BIOMETRIC_KEY, JSON.stringify(credentialData))
@@ -230,6 +299,7 @@ export async function setupBiometric(userPassword) {
 
 /**
  * Authenticate with biometric and return password
+ * POPRAWKA: Używamy unikalnego klucza per urządzenie
  */
 export async function authenticateBiometric() {
   const credentialDataStr = localStorage.getItem(BIOMETRIC_KEY)
@@ -261,9 +331,30 @@ export async function authenticateBiometric() {
       throw new Error('Biometric authentication failed')
     }
     
-    // Decrypt and return the password
-    const decrypted = CryptoJS.AES.decrypt(credentialData.encryptedPassword, 'h173k_biometric_key')
+    // POPRAWKA: Używamy unikalnego klucza per urządzenie
+    const deviceKey = localStorage.getItem(BIOMETRIC_DEVICE_KEY)
+    if (!deviceKey) {
+      throw new Error('Device key not found. Please re-enable biometric.')
+    }
+    
+    // Derywujemy klucz z deviceKey
+    const encryptionKey = CryptoJS.PBKDF2(deviceKey, credentialData.iv + '_biometric_enc', {
+      keySize: 256 / 32,
+      iterations: 10000,
+      hasher: CryptoJS.algo.SHA256
+    })
+    
+    // Decrypt the password
+    const decrypted = CryptoJS.AES.decrypt(credentialData.encryptedPassword, encryptionKey, {
+      iv: CryptoJS.enc.Hex.parse(credentialData.iv),
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7
+    })
     const password = decrypted.toString(CryptoJS.enc.Utf8)
+    
+    if (!password) {
+      throw new Error('Failed to decrypt password. Please re-enable biometric.')
+    }
     
     clearFailedAttempts()
     return password
@@ -292,6 +383,7 @@ export function getAuthMethod() {
  */
 export function removeBiometric() {
   localStorage.removeItem(BIOMETRIC_KEY)
+  // Uwaga: NIE usuwamy deviceKey - może być używany ponownie
   if (getAuthMethod() === 'biometric') {
     localStorage.setItem(AUTH_METHOD_KEY, 'pin')
   }
@@ -309,7 +401,9 @@ export function getFailedAttempts() {
  */
 export function resetAuth() {
   localStorage.removeItem(PIN_HASH_KEY)
+  localStorage.removeItem(PIN_SALT_KEY)
   localStorage.removeItem(BIOMETRIC_KEY)
+  localStorage.removeItem(BIOMETRIC_DEVICE_KEY)
   localStorage.removeItem(AUTH_METHOD_KEY)
   localStorage.removeItem(FAILED_ATTEMPTS_KEY)
   localStorage.removeItem(LOCKOUT_UNTIL_KEY)
