@@ -46,6 +46,9 @@ const POOL_CONFIG = {
 // Minimum SOL required to execute a swap transaction
 const MIN_SOL_FOR_SWAP = 0.003
 
+// SOL buffer added when replenishing
+const SOL_BUFFER = 0.003
+
 /**
  * Get CPMM Authority PDA
  */
@@ -555,6 +558,148 @@ export function useSwap(connection, wallet) {
     }
   }, [wallet, getSwapQuoteSOLtoH173K, executeSwap])
   
+  /**
+   * Parse insufficient lamports error to get required amount
+   * @param {Error|string} error - Error object or message
+   * @returns {Object|null} - { have, need } in lamports or null if not parseable
+   */
+  const parseInsufficientLamportsError = useCallback((error) => {
+    const errorStr = error?.message || error?.toString() || ''
+    
+    // Pattern: "insufficient lamports X, need Y"
+    const match = errorStr.match(/insufficient lamports\s+(\d+),?\s*need\s+(\d+)/i)
+    if (match) {
+      return {
+        have: parseInt(match[1]),
+        need: parseInt(match[2])
+      }
+    }
+    
+    // Alternative pattern from simulation: "Transfer: insufficient lamports"
+    const altMatch = errorStr.match(/Transfer:\s*insufficient lamports\s+(\d+),?\s*need\s+(\d+)/i)
+    if (altMatch) {
+      return {
+        have: parseInt(altMatch[1]),
+        need: parseInt(altMatch[2])
+      }
+    }
+    
+    return null
+  }, [])
+  
+  /**
+   * Replenish SOL based on deficit
+   * @param {number} deficitLamports - How many lamports are missing
+   * @returns {Object} - Swap result
+   */
+  const replenishSOL = useCallback(async (deficitLamports) => {
+    const deficitSOL = deficitLamports / LAMPORTS_PER_SOL
+    const targetSOL = deficitSOL + SOL_BUFFER
+    
+    console.log(`📊 SOL deficit: ${deficitSOL.toFixed(6)} SOL, getting ${targetSOL.toFixed(6)} SOL (with buffer)`)
+    
+    // Check current SOL
+    const currentLamports = await connection.getBalance(wallet.publicKey)
+    const currentSOL = currentLamports / LAMPORTS_PER_SOL
+    
+    if (currentSOL < MIN_SOL_FOR_SWAP) {
+      throw new Error(`Not enough SOL to execute swap. Have ${currentSOL.toFixed(6)} SOL, need at least ${MIN_SOL_FOR_SWAP} SOL. Please deposit SOL first.`)
+    }
+    
+    // Calculate how much H173K we need to swap
+    const { h173kNeeded, quote } = await calculateSwapForSOL(targetSOL)
+    
+    // Check H173K balance
+    const tokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, wallet.publicKey)
+    const tokenBalance = await connection.getTokenAccountBalance(tokenAccount)
+    const h173kBalance = Number(tokenBalance.value.uiAmount)
+    
+    console.log(`🪙 H173K needed: ${h173kNeeded.toFixed(2)}, H173K balance: ${h173kBalance.toFixed(2)}`)
+    
+    if (h173kNeeded > h173kBalance) {
+      throw new Error(`Insufficient H173K for SOL swap. Need ${h173kNeeded.toFixed(2)} h173k, have ${h173kBalance.toFixed(2)} h173k`)
+    }
+    
+    // Execute swap
+    console.log(`🔄 Swapping ${h173kNeeded.toFixed(2)} H173K for ~${targetSOL.toFixed(4)} SOL...`)
+    const result = await executeSwap(quote, 'H173KtoSOL')
+    
+    console.log(`✅ Swap complete! Got ${result.outputAmount.toFixed(6)} SOL`)
+    
+    return {
+      success: true,
+      h173kUsed: result.inputAmount,
+      solReceived: result.outputAmount,
+      signature: result.signature
+    }
+  }, [connection, wallet, calculateSwapForSOL, executeSwap])
+  
+  /**
+   * Execute an operation with automatic SOL replenishment
+   * If operation fails due to insufficient SOL, automatically swaps H173K for SOL and retries
+   * 
+   * @param {Function} operation - Async function to execute
+   * @param {Function} onSwap - Optional callback when swap occurs (for UI feedback)
+   * @returns {any} - Result of the operation
+   */
+  const withAutoSOL = useCallback(async (operation, onSwap) => {
+    if (!wallet?.publicKey) {
+      throw new Error('Wallet not connected')
+    }
+    
+    try {
+      // First attempt
+      return await operation()
+    } catch (error) {
+      // Check if it's an insufficient lamports error
+      const parsed = parseInsufficientLamportsError(error)
+      
+      if (!parsed) {
+        // Not a SOL issue, rethrow
+        throw error
+      }
+      
+      console.log(`⚠️ Insufficient SOL detected! Have: ${parsed.have} lamports, Need: ${parsed.need} lamports`)
+      
+      const deficit = parsed.need - parsed.have
+      
+      setLoading(true)
+      setError(null)
+      
+      try {
+        // Notify UI about swap
+        if (onSwap) {
+          onSwap({ status: 'swapping', deficit: deficit / LAMPORTS_PER_SOL })
+        }
+        
+        // Replenish SOL
+        const swapResult = await replenishSOL(deficit)
+        
+        // Notify UI about swap completion
+        if (onSwap) {
+          onSwap({ 
+            status: 'swapped', 
+            h173kUsed: swapResult.h173kUsed, 
+            solReceived: swapResult.solReceived 
+          })
+        }
+        
+        // Wait a moment for balance to update
+        await new Promise(r => setTimeout(r, 1500))
+        
+        // Retry the operation
+        console.log('🔄 Retrying operation after SOL replenishment...')
+        return await operation()
+        
+      } catch (swapError) {
+        setError(swapError.message)
+        throw swapError
+      } finally {
+        setLoading(false)
+      }
+    }
+  }, [wallet, parseInsufficientLamportsError, replenishSOL])
+  
   return {
     loading,
     error,
@@ -565,6 +710,7 @@ export function useSwap(connection, wallet) {
     calculateSwapForSOL,
     checkAutoReplenish,
     autoReplenishSOL,
+    withAutoSOL,
     convertSOLtoH173K,
     fetchPoolData,
     MIN_SOL_FOR_SWAP

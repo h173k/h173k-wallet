@@ -65,7 +65,7 @@ import {
 
 import './App.css'
 
-const MIN_SOL_BALANCE = 0.01
+const MIN_SOL_BALANCE = 0.015
 
 // ========== PWA HELPERS ==========
 function isMobileDevice() {
@@ -724,7 +724,6 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const { 
     convertSOLtoH173K, 
     getSwapQuoteSOLtoH173K, 
-    checkAutoReplenish,
     loading: swapLoading, 
     MIN_SOL_FOR_SWAP 
   } = useSwap(connection, sessionWallet)
@@ -1029,9 +1028,8 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const [showScanner, setShowScanner] = useState(false)
   const [confirmStep, setConfirmStep] = useState(false)
   const [txSignature, setTxSignature] = useState(null)
-  const [swapInfo, setSwapInfo] = useState(null) // Info about required swap
   
-  const { autoReplenishSOL, checkAutoReplenish, loading: swapLoading } = useSwap(connection, sessionWallet)
+  const { withAutoSOL, loading: swapLoading } = useSwap(connection, sessionWallet)
   const usdValue = toUSD && amount ? toUSD(parseFloat(amount) || 0) : null
   
   const handleScan = (data) => {
@@ -1046,85 +1044,46 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     if (!sendAmount || sendAmount <= 0) { showToast('Enter valid amount', 'error'); return }
     if (sendAmount > balance) { showToast('Insufficient balance', 'error'); return }
     
-    // Check if we need to auto-replenish SOL
-    if (solBalance < MIN_SOL_BALANCE) {
-      setLoading(true)
-      try {
-        const replenishCheck = await checkAutoReplenish(solBalance, balance, 0.02)
-        
-        if (replenishCheck.needsDeposit) {
-          showToast('Not enough SOL to execute swap. Please deposit SOL first.', 'error')
-          setLoading(false)
-          return
-        }
-        
-        if (!replenishCheck.canReplenish) {
-          showToast(replenishCheck.error || 'Cannot auto-replenish SOL', 'error')
-          setLoading(false)
-          return
-        }
-        
-        // Check if remaining balance after swap is enough to send
-        const remainingAfterSwap = balance - replenishCheck.h173kNeeded
-        if (remainingAfterSwap < sendAmount) {
-          showToast(`Insufficient h173k after SOL swap. Need ${replenishCheck.h173kNeeded.toFixed(2)} h173k for fees, leaving only ${remainingAfterSwap.toFixed(2)} h173k`, 'error')
-          setLoading(false)
-          return
-        }
-        
-        setSwapInfo({
-          h173kNeeded: replenishCheck.h173kNeeded,
-          solOutput: replenishCheck.solOutput
-        })
-      } catch (err) {
-        showToast('Error checking SOL balance: ' + err.message, 'error')
-        setLoading(false)
-        return
-      }
-      setLoading(false)
-    } else {
-      setSwapInfo(null)
-    }
-    
     setConfirmStep(true)
   }
   
   const handleSend = async () => {
     setLoading(true)
     try {
-      // Auto-replenish SOL if needed
-      if (solBalance < MIN_SOL_BALANCE) {
-        showToast('Swapping h173k for SOL...', 'info')
-        try { 
-          await autoReplenishSOL(0.02) 
-          showToast('SOL replenished! Sending...', 'info')
-        } catch (err) { 
-          showToast('Could not replenish SOL: ' + err.message, 'error')
-          setLoading(false)
-          return 
-        }
-      }
-      
       const recipientPubkey = new PublicKey(recipient)
       const sendAmount = parseFloat(amount)
       const amountLamports = Math.floor(sendAmount * Math.pow(10, TOKEN_DECIMALS))
       
-      const senderTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
-      const recipientTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, recipientPubkey)
-      
-      const transaction = new Transaction()
-      try { await getAccount(connection, recipientTokenAccount) } 
-      catch { transaction.add(createAssociatedTokenAccountInstruction(publicKey, recipientTokenAccount, recipientPubkey, TOKEN_MINT)) }
-      
-      transaction.add(createTransferInstruction(senderTokenAccount, recipientTokenAccount, publicKey, amountLamports))
-      
-      const { blockhash } = await connection.getLatestBlockhash()
-      transaction.recentBlockhash = blockhash
-      transaction.feePayer = publicKey
-      
-      const signed = sessionWallet.signTransaction(transaction)
-      const signature = await connection.sendRawTransaction(signed.serialize())
-      await connection.confirmTransaction(signature, 'confirmed')
+      // Use withAutoSOL wrapper for the entire send operation
+      const signature = await withAutoSOL(
+        async () => {
+          const senderTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
+          const recipientTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, recipientPubkey)
+          
+          const transaction = new Transaction()
+          try { await getAccount(connection, recipientTokenAccount) } 
+          catch { transaction.add(createAssociatedTokenAccountInstruction(publicKey, recipientTokenAccount, recipientPubkey, TOKEN_MINT)) }
+          
+          transaction.add(createTransferInstruction(senderTokenAccount, recipientTokenAccount, publicKey, amountLamports))
+          
+          const { blockhash } = await connection.getLatestBlockhash()
+          transaction.recentBlockhash = blockhash
+          transaction.feePayer = publicKey
+          
+          const signed = sessionWallet.signTransaction(transaction)
+          const sig = await connection.sendRawTransaction(signed.serialize())
+          await connection.confirmTransaction(sig, 'confirmed')
+          return sig
+        },
+        (swapInfo) => {
+          if (swapInfo.status === 'swapping') {
+            showToast('Swapping h173k for SOL...', 'info')
+          } else if (swapInfo.status === 'swapped') {
+            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
+            if (onRefresh) onRefresh()
+          }
+        }
+      )
       
       setTxSignature(signature)
       showToast('Transaction sent!', 'success')
@@ -1165,12 +1124,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
           <div className="confirm-row"><span className="confirm-label">Amount</span><span className="confirm-value">{formatNumber(parseFloat(amount))} h173k{usdValue && <span className="confirm-usd">({formatUSD(usdValue)})</span>}</span></div>
           <div className="confirm-row"><span className="confirm-label">To</span><span className="confirm-value address">{shortenAddress(recipient)}</span></div>
           <div className="confirm-row"><span className="confirm-label">Network Fee</span><span className="confirm-value">~0.000005 SOL</span></div>
-          {swapInfo && (
-            <div className="confirm-swap-info">
-              ⚡ Will auto-swap ~{formatNumber(swapInfo.h173kNeeded, 2)} h173k → {formatNumber(swapInfo.solOutput, 4)} SOL for fees
-            </div>
-          )}
-          <button className="btn btn-primary btn-action" onClick={handleSend} disabled={loading || swapLoading}>{loading ? (swapLoading ? 'Swapping...' : 'Sending...') : 'Confirm & Send'}</button>
+          <button className="btn btn-primary btn-action" onClick={handleSend} disabled={loading || swapLoading}>{loading ? (swapLoading ? 'Swapping SOL...' : 'Sending...') : 'Confirm & Send'}</button>
         </div>
       </div>
     )
@@ -1616,6 +1570,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
   if (subView === 'detail' && selectedContract) {
     return (
       <ContractDetailView
+        connection={connection}
         contract={selectedContract}
         metadata={contractsMetadata[selectedContract.publicKey.toString()]}
         escrow={escrow}
@@ -1713,9 +1668,8 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
   const [createdCode, setCreatedCode] = useState(null)
-  const [swapInfo, setSwapInfo] = useState(null)
   
-  const { autoReplenishSOL, checkAutoReplenish, loading: swapLoading } = useSwap(connection, sessionWallet)
+  const { withAutoSOL, loading: swapLoading } = useSwap(connection, sessionWallet)
   
   const handleCreate = async () => {
     const numAmount = parseFloat(amount)
@@ -1725,45 +1679,27 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
     }
     const requiredDeposit = numAmount * 2
     
-    // Check if we need to auto-replenish SOL first
-    let effectiveBalance = balance
-    if (solBalance < MIN_SOL_BALANCE) {
-      const replenishCheck = await checkAutoReplenish(solBalance, balance, 0.02)
-      
-      if (replenishCheck.needsDeposit) {
-        showToast('Not enough SOL to execute swap. Please deposit SOL first.', 'error')
-        return
-      }
-      
-      if (!replenishCheck.canReplenish) {
-        showToast(replenishCheck.error || 'Cannot auto-replenish SOL', 'error')
-        return
-      }
-      
-      effectiveBalance = balance - replenishCheck.h173kNeeded
-      setSwapInfo(replenishCheck)
-    }
-    
-    if (requiredDeposit > effectiveBalance) {
-      const msg = swapInfo 
-        ? `Insufficient balance after SOL swap. Need ${formatNumber(requiredDeposit)} h173k but will have ${formatNumber(effectiveBalance)} after swap.`
-        : `Insufficient balance. Need ${formatNumber(requiredDeposit)} h173k (2x amount) as deposit.`
-      showToast(msg, 'error')
+    if (requiredDeposit > balance) {
+      showToast(`Insufficient balance. Need ${formatNumber(requiredDeposit)} h173k (2x amount) as deposit.`, 'error')
       return
     }
     
     setLoading(true)
     try {
-      // Auto-replenish SOL if needed
-      if (solBalance < MIN_SOL_BALANCE) {
-        showToast('Swapping h173k for SOL...', 'info')
-        await autoReplenishSOL(0.02)
-        showToast('SOL replenished! Creating contract...', 'info')
-        if (onRefresh) onRefresh()
-      }
-      
       const code = generateCode()
-      const result = await escrow.createOffer(numAmount, code)
+      
+      // Use withAutoSOL wrapper - automatically handles SOL replenishment
+      const result = await withAutoSOL(
+        () => escrow.createOffer(numAmount, code),
+        (swapInfo) => {
+          if (swapInfo.status === 'swapping') {
+            showToast('Swapping h173k for SOL...', 'info')
+          } else if (swapInfo.status === 'swapped') {
+            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
+            if (onRefresh) onRefresh()
+          }
+        }
+      )
       
       // Save metadata
       const meta = JSON.parse(localStorage.getItem('h173k_contracts_metadata') || '{}')
@@ -1862,7 +1798,7 @@ function AcceptContractView({ connection, escrow, balance, solBalance, onBack, s
   const [loading, setLoading] = useState(false)
   const [foundContract, setFoundContract] = useState(null)
   
-  const { autoReplenishSOL, checkAutoReplenish, loading: swapLoading } = useSwap(connection, sessionWallet)
+  const { withAutoSOL, loading: swapLoading } = useSwap(connection, sessionWallet)
   
   const handleSearch = async () => {
     if (!code.trim()) {
@@ -1890,40 +1826,25 @@ function AcceptContractView({ connection, escrow, balance, solBalance, onBack, s
     
     const amount = fromTokenAmount(foundContract.amount)
     
-    // Check if we need to auto-replenish SOL first
-    let effectiveBalance = balance
-    if (solBalance < MIN_SOL_BALANCE) {
-      const replenishCheck = await checkAutoReplenish(solBalance, balance, 0.02)
-      
-      if (replenishCheck.needsDeposit) {
-        showToast('Not enough SOL to execute swap. Please deposit SOL first.', 'error')
-        return
-      }
-      
-      if (!replenishCheck.canReplenish) {
-        showToast(replenishCheck.error || 'Cannot auto-replenish SOL', 'error')
-        return
-      }
-      
-      effectiveBalance = balance - replenishCheck.h173kNeeded
-    }
-    
-    if (amount > effectiveBalance) {
-      showToast('Insufficient balance for deposit after SOL swap', 'error')
+    if (amount > balance) {
+      showToast(`Insufficient balance. Need ${formatNumber(amount)} h173k as deposit.`, 'error')
       return
     }
     
     setLoading(true)
     try {
-      // Auto-replenish SOL if needed
-      if (solBalance < MIN_SOL_BALANCE) {
-        showToast('Swapping h173k for SOL...', 'info')
-        await autoReplenishSOL(0.02)
-        showToast('SOL replenished! Accepting contract...', 'info')
-        if (onRefresh) onRefresh()
-      }
-      
-      await escrow.acceptOffer(foundContract.publicKey, code.trim())
+      // Use withAutoSOL wrapper - automatically handles SOL replenishment
+      await withAutoSOL(
+        () => escrow.acceptOffer(foundContract.publicKey, code.trim()),
+        (swapInfo) => {
+          if (swapInfo.status === 'swapping') {
+            showToast('Swapping h173k for SOL...', 'info')
+          } else if (swapInfo.status === 'swapped') {
+            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
+            if (onRefresh) onRefresh()
+          }
+        }
+      )
       
       // Save metadata
       const meta = JSON.parse(localStorage.getItem('h173k_contracts_metadata') || '{}')
@@ -2159,10 +2080,12 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess }) {
 }
 
 // ========== CONTRACT DETAIL VIEW ==========
-function ContractDetailView({ contract, metadata, escrow, publicKey, toUSD, onBack, showToast, onRefresh, onSaveMetadata }) {
+function ContractDetailView({ connection, contract, metadata, escrow, publicKey, toUSD, onBack, showToast, onRefresh, onSaveMetadata }) {
   const [loading, setLoading] = useState(false)
   const [showBurnConfirm, setShowBurnConfirm] = useState(false)
   const [burnCodeInput, setBurnCodeInput] = useState('')
+  
+  const { withAutoSOL, loading: swapLoading } = useSwap(connection, sessionWallet)
   
   const status = getStatusInfo(contract.status, contract, publicKey)
   const amount = fromTokenAmount(contract.amount)
@@ -2180,7 +2103,14 @@ function ContractDetailView({ contract, metadata, escrow, publicKey, toUSD, onBa
   const handleRelease = async () => {
     setLoading(true)
     try {
-      await escrow.releaseOffer(contract.publicKey)
+      await withAutoSOL(
+        () => escrow.releaseOffer(contract.publicKey),
+        (swapInfo) => {
+          if (swapInfo.status === 'swapped') {
+            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for SOL`, 'info')
+          }
+        }
+      )
       showToast('Release confirmed!', 'success')
       onRefresh()
       onBack()
@@ -2194,7 +2124,14 @@ function ContractDetailView({ contract, metadata, escrow, publicKey, toUSD, onBa
   const handleCancel = async () => {
     setLoading(true)
     try {
-      await escrow.cancelOffer(contract.publicKey)
+      await withAutoSOL(
+        () => escrow.cancelOffer(contract.publicKey),
+        (swapInfo) => {
+          if (swapInfo.status === 'swapped') {
+            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for SOL`, 'info')
+          }
+        }
+      )
       showToast('Contract cancelled', 'success')
       onRefresh()
       onBack()
@@ -2208,7 +2145,14 @@ function ContractDetailView({ contract, metadata, escrow, publicKey, toUSD, onBa
   const handleBurn = async () => {
     setLoading(true)
     try {
-      await escrow.burnOffer(contract.publicKey)
+      await withAutoSOL(
+        () => escrow.burnOffer(contract.publicKey),
+        (swapInfo) => {
+          if (swapInfo.status === 'swapped') {
+            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for SOL`, 'info')
+          }
+        }
+      )
       showToast('Deposits burned', 'success')
       onRefresh()
       onBack()
@@ -2276,19 +2220,19 @@ function ContractDetailView({ contract, metadata, escrow, publicKey, toUSD, onBa
       {/* Actions based on status */}
       <div className="detail-actions">
         {canCancelOffer(contract, publicKey) && (
-          <button className="btn btn-secondary" onClick={handleCancel} disabled={loading}>
-            Cancel Contract
+          <button className="btn btn-secondary" onClick={handleCancel} disabled={loading || swapLoading}>
+            {loading ? (swapLoading ? 'Swapping SOL...' : 'Cancelling...') : 'Cancel Contract'}
           </button>
         )}
         
         {canReleaseOffer(contract, publicKey) && (
           <>
-            <button className="btn btn-primary btn-action" onClick={handleRelease} disabled={loading}>
-              {loading ? 'Processing...' : 'Confirm Release'}
+            <button className="btn btn-primary btn-action" onClick={handleRelease} disabled={loading || swapLoading}>
+              {loading ? (swapLoading ? 'Swapping SOL...' : 'Processing...') : 'Confirm Release'}
             </button>
             
             {!showBurnConfirm ? (
-              <button className="btn btn-danger" onClick={() => setShowBurnConfirm(true)} disabled={loading}>
+              <button className="btn btn-danger" onClick={() => setShowBurnConfirm(true)} disabled={loading || swapLoading}>
                 Burn Deposits
               </button>
             ) : (
@@ -2310,9 +2254,9 @@ function ContractDetailView({ contract, metadata, escrow, publicKey, toUSD, onBa
                   <button 
                     className="btn btn-danger" 
                     onClick={handleBurn} 
-                    disabled={loading || !metadata?.code || burnCodeInput !== metadata.code}
+                    disabled={loading || swapLoading || !metadata?.code || burnCodeInput !== metadata.code}
                   >
-                    {loading ? 'Burning...' : 'Burn All'}
+                    {loading ? (swapLoading ? 'Swapping SOL...' : 'Burning...') : 'Burn All'}
                   </button>
                 </div>
               </div>
