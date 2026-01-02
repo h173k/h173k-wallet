@@ -1612,7 +1612,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
     <div className="escrow-view">
       <div className="view-header">
         <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
-        <h2>Escrow Contracts</h2>
+        <h2>MAD Contracts</h2>
       </div>
       
       <div className="escrow-actions">
@@ -1654,7 +1654,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <p>No escrow contracts yet</p>
+          <p>No MAD contracts yet</p>
           <p className="empty-hint">Create a new contract or accept one with a code</p>
         </div>
       ) : (
@@ -1796,7 +1796,7 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
       </div>
       
       <div className="escrow-info-card">
-        <p>Create an escrow contract as a <strong>buyer</strong>. You'll deposit <strong>2x the contract amount</strong> as collateral that will be held until the transaction is complete.</p>
+        <p>Create a MAD contract as a <strong>buyer</strong>. You'll deposit <strong>2x the contract amount</strong> as collateral that will be held until the transaction is complete.</p>
       </div>
       
       <div className="form-group">
@@ -2147,6 +2147,7 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess }) {
 function ContractDetailView({ contract, metadata, escrow, publicKey, toUSD, onBack, showToast, onRefresh, onSaveMetadata }) {
   const [loading, setLoading] = useState(false)
   const [showBurnConfirm, setShowBurnConfirm] = useState(false)
+  const [burnCodeInput, setBurnCodeInput] = useState('')
   
   const status = getStatusInfo(contract.status, contract, publicKey)
   const amount = fromTokenAmount(contract.amount)
@@ -2201,6 +2202,7 @@ function ContractDetailView({ contract, metadata, escrow, publicKey, toUSD, onBa
     } finally {
       setLoading(false)
       setShowBurnConfirm(false)
+      setBurnCodeInput('')
     }
   }
   
@@ -2276,10 +2278,27 @@ function ContractDetailView({ contract, metadata, escrow, publicKey, toUSD, onBa
               </button>
             ) : (
               <div className="burn-confirm">
-                <p className="warning-text">⚠️ This will permanently destroy ALL deposits. Are you sure?</p>
+                <p className="warning-text">⚠️ This will permanently destroy ALL deposits. This action cannot be undone!</p>
+                <p className="burn-code-instruction">Type the contract code to confirm:</p>
+                <input
+                  type="text"
+                  className="form-input burn-code-input"
+                  placeholder="Enter contract code"
+                  value={burnCodeInput}
+                  onChange={(e) => setBurnCodeInput(e.target.value.toUpperCase())}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck="false"
+                />
                 <div className="burn-actions">
-                  <button className="btn" onClick={() => setShowBurnConfirm(false)}>Cancel</button>
-                  <button className="btn btn-danger" onClick={handleBurn} disabled={loading}>Yes, Burn All</button>
+                  <button className="btn" onClick={() => { setShowBurnConfirm(false); setBurnCodeInput('') }}>Cancel</button>
+                  <button 
+                    className="btn btn-danger" 
+                    onClick={handleBurn} 
+                    disabled={loading || !metadata?.code || burnCodeInput !== metadata.code}
+                  >
+                    {loading ? 'Burning...' : 'Burn All'}
+                  </button>
                 </div>
               </div>
             )}
