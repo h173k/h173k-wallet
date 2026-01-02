@@ -926,10 +926,10 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       onTouchEnd={handleTouchEnd}
     >
       {/* Pull to refresh indicator */}
-      {pullProgress > 0 && (
-        <div className="pull-refresh-indicator" style={{ opacity: pullProgress, transform: `translateY(${pullProgress * 30}px)` }}>
-          <RefreshIcon size={24} />
-          <span>{pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh'}</span>
+      {(pullProgress > 0 || refreshing) && (
+        <div className="pull-refresh-indicator" style={{ opacity: refreshing ? 1 : pullProgress, transform: `translateY(${refreshing ? 30 : pullProgress * 30}px)` }}>
+          <RefreshIcon size={24} className={refreshing ? 'spinning' : ''} />
+          <span>{refreshing ? 'Refreshing...' : (pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh')}</span>
         </div>
       )}
       
@@ -1365,10 +1365,10 @@ function HistoryView({ connection, publicKey, onBack }) {
       </div>
       
       {/* Pull to refresh indicator */}
-      {pullProgress > 0 && (
-        <div className="pull-refresh-indicator history-pull" style={{ opacity: pullProgress, transform: `translateY(${pullProgress * 20}px)` }}>
-          <RefreshIcon size={20} />
-          <span>{pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh'}</span>
+      {(pullProgress > 0 || refreshing) && (
+        <div className="pull-refresh-indicator history-pull" style={{ opacity: refreshing ? 1 : pullProgress, transform: `translateY(${refreshing ? 20 : pullProgress * 20}px)` }}>
+          <RefreshIcon size={20} className={refreshing ? 'spinning' : ''} />
+          <span>{refreshing ? 'Refreshing...' : (pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh')}</span>
         </div>
       )}
       
@@ -1637,10 +1637,10 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
       </div>
       
       {/* Pull to refresh indicator */}
-      {pullProgress > 0 && (
-        <div className="pull-refresh-indicator escrow-pull" style={{ opacity: pullProgress, transform: `translateY(${pullProgress * 20}px)` }}>
-          <RefreshIcon size={20} />
-          <span>{pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh'}</span>
+      {(pullProgress > 0 || refreshing) && (
+        <div className="pull-refresh-indicator escrow-pull" style={{ opacity: refreshing ? 1 : pullProgress, transform: `translateY(${refreshing ? 20 : pullProgress * 20}px)` }}>
+          <RefreshIcon size={20} className={refreshing ? 'spinning' : ''} />
+          <span>{refreshing ? 'Refreshing...' : (pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh')}</span>
         </div>
       )}
       

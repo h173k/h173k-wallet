@@ -2244,7 +2244,11 @@ body {
 }
 
 .pull-refresh-indicator svg {
-  animation: pullSpin 1s linear infinite;
+  transition: transform 0.2s ease;
+}
+
+.pull-refresh-indicator svg.spinning {
+  animation: pullSpin 0.8s linear infinite;
 }
 
 @keyframes pullSpin {
