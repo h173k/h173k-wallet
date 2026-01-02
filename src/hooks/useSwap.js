@@ -47,7 +47,7 @@ const POOL_CONFIG = {
 const MIN_SOL_FOR_SWAP = 0.003
 
 // SOL buffer added when replenishing
-const SOL_BUFFER = 0.003
+const SOL_BUFFER = 0.006
 
 /**
  * Get CPMM Authority PDA
