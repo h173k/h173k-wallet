@@ -47,7 +47,7 @@ const POOL_CONFIG = {
 const MIN_SOL_FOR_SWAP = 0.003
 
 // SOL buffer added when replenishing
-const SOL_BUFFER = 0.006
+const SOL_BUFFER = 0.007
 
 /**
  * Get CPMM Authority PDA
@@ -640,7 +640,7 @@ export function useSwap(connection, wallet) {
         }
         
         // Try to get more SOL
-        const solToGet = SOL_BUFFER * (attempt + 1) // Increase each retry: 0.006, 0.012
+        const solToGet = SOL_BUFFER * (attempt + 1) // Increase each retry: 0.007, 0.014
         console.log(`💡 Will try to swap for ${solToGet.toFixed(4)} SOL and retry...`)
         
         try {

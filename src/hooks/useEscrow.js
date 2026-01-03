@@ -5,7 +5,8 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID, 
   getAssociatedTokenAddress,
   getAccount,
-  createAssociatedTokenAccountInstruction
+  createAssociatedTokenAccountInstruction,
+  createTransferInstruction
 } from '@solana/spl-token'
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor'
 import { PROGRAM_ID, TOKEN_MINT, TOKEN_DECIMALS, OfferStatus } from '../constants'
@@ -20,6 +21,56 @@ import {
   fromTokenAmount,
   parseOfferStatus
 } from '../utils'
+import {
+  getReferrer,
+  calculateReferralBonusLamports,
+  getLastKnownPrice,
+  storeLastKnownPrice
+} from '../referral'
+import { getH173KPrice } from './useSwap'
+
+// ============================================================================
+// HELPER: GET PRICE FOR REFERRAL CALCULATIONS
+// ============================================================================
+
+/**
+ * Get price for referral bonus calculation from multiple sources
+ * Priority: 1. Provided price, 2. Last known price from localStorage, 3. Direct pool price
+ * @param {Connection} connection - Solana connection
+ * @param {number|null} providedPrice - Price passed as parameter
+ * @returns {Promise<number|null>} Price in SOL per H173K token
+ */
+async function getReferralPrice(connection, providedPrice) {
+  // 1. Use provided price if available
+  if (providedPrice && providedPrice > 0) {
+    console.log('🎁 Using provided price:', providedPrice)
+    return providedPrice
+  }
+  
+  // 2. Try last known price from localStorage
+  const lastKnown = getLastKnownPrice()
+  if (lastKnown && lastKnown > 0) {
+    console.log('🎁 Using last known price:', lastKnown)
+    return lastKnown
+  }
+  
+  // 3. Fetch price directly from Raydium pool
+  console.log('🎁 Fetching price from pool...')
+  try {
+    const poolPrice = await getH173KPrice(connection)
+    if (poolPrice && poolPrice > 0) {
+      console.log('🎁 Got price from pool:', poolPrice)
+      // Store it for future use
+      storeLastKnownPrice(poolPrice)
+      return poolPrice
+    }
+  } catch (err) {
+    console.warn('🎁 Failed to fetch pool price:', err.message)
+  }
+  
+  console.warn('🎁 No price available from any source')
+  return null
+}
 
 // ============================================================================
 // LOCAL STORAGE KEYS & CACHE MANAGEMENT
@@ -139,6 +190,80 @@ function isTerminalStatus(status) {
   return statusValue === OfferStatus.Completed || 
          statusValue === OfferStatus.Burned || 
          statusValue === OfferStatus.Cancelled
+}
+
+/**
+ * Prepare referral bonus instructions for a transaction
+ * @param {Connection} connection - Solana connection
+ * @param {PublicKey} walletPublicKey - User's wallet public key
+ * @param {PublicKey} userTokenAccount - User's token account to send bonus from
+ * @param {number|null} currentPrice - Current token price (optional)
+ * @returns {Promise<{preInstructions: Array, postInstructions: Array}>}
+ */
+async function prepareReferralInstructions(connection, walletPublicKey, userTokenAccount, currentPrice) {
+  const preInstructions = []
+  const postInstructions = []
+  
+  try {
+    const referrer = getReferrer()
+    console.log('🎁 Referral check - referrer:', referrer)
+    
+    if (!referrer || referrer === walletPublicKey.toString()) {
+      console.log('🎁 No referral - referrer is null or same as wallet')
+      return { preInstructions, postInstructions }
+    }
+    
+    // Get price with multiple fallbacks (provided -> localStorage -> pool)
+    const priceToUse = await getReferralPrice(connection, currentPrice)
+    
+    if (!priceToUse || priceToUse <= 0) {
+      console.warn('🎁 No valid price available from any source')
+      return { preInstructions, postInstructions }
+    }
+    
+    const referralBonusLamports = calculateReferralBonusLamports(priceToUse, TOKEN_DECIMALS)
+    console.log('🎁 Referral bonus lamports:', referralBonusLamports)
+    
+    if (!referralBonusLamports || referralBonusLamports <= 0) {
+      console.log('🎁 No referral bonus - lamports is null or 0')
+      return { preInstructions, postInstructions }
+    }
+    
+    const referrerPubkey = new PublicKey(referrer)
+    const referrerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, referrerPubkey)
+    
+    // Check if referrer token account exists, create if needed
+    try {
+      await getAccount(connection, referrerTokenAccount)
+      console.log('🎁 Referrer token account exists')
+    } catch {
+      preInstructions.push(
+        createAssociatedTokenAccountInstruction(
+          walletPublicKey,
+          referrerTokenAccount,
+          referrerPubkey,
+          TOKEN_MINT
+        )
+      )
+      console.log('🎁 Will create referrer token account')
+    }
+    
+    // Add referral bonus transfer
+    postInstructions.push(
+      createTransferInstruction(
+        userTokenAccount,
+        referrerTokenAccount,
+        walletPublicKey,
+        BigInt(referralBonusLamports)
+      )
+    )
+    console.log(`🎁 Adding referral bonus: ${referralBonusLamports} lamports to ${referrer}`)
+    
+  } catch (err) {
+    console.warn('🎁 Could not prepare referral bonus:', err.message)
+  }
+  
+  return { preInstructions, postInstructions }
 }
 
 // ============================================================================
@@ -534,7 +659,7 @@ export function useEscrowProgram(connection, wallet) {
   /**
    * Create a new offer
    */
-  const createOffer = useCallback(async (amount, code, name) => {
+  const createOffer = useCallback(async (amount, code, name, currentPrice = null) => {
     setLoading(true)
     setError(null)
 
@@ -567,6 +692,11 @@ export function useEscrowProgram(connection, wallet) {
       const codeHash = hashCode(code, offerPDA)
       const tokenAmount = toTokenAmount(amount)
 
+      // Prepare referral bonus instructions
+      const { preInstructions, postInstructions } = await prepareReferralInstructions(
+        connection, wallet.publicKey, buyerTokenAccount, currentPrice
+      )
+
       const tx = await program.methods
         .createOffer(tokenAmount, Array.from(codeHash))
         .accounts({
@@ -581,6 +711,8 @@ export function useEscrowProgram(connection, wallet) {
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
+        .preInstructions(preInstructions)
+        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Created:', tx)
@@ -619,12 +751,12 @@ export function useEscrowProgram(connection, wallet) {
     } finally {
       setLoading(false)
     }
-  }, [getProgram, wallet?.publicKey, getOrCreateBuyerIndex, initializeBuyerIndex])
+  }, [connection, getProgram, wallet?.publicKey, getOrCreateBuyerIndex, initializeBuyerIndex])
 
   /**
    * Accept an offer (as seller)
    */
-  const acceptOffer = useCallback(async (offerPubkey, code) => {
+  const acceptOffer = useCallback(async (offerPubkey, code, currentPrice = null) => {
     setLoading(true)
     setError(null)
 
@@ -649,6 +781,11 @@ export function useEscrowProgram(connection, wallet) {
       const sellerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, wallet.publicKey)
       const escrowVault = await getAssociatedTokenAddress(TOKEN_MINT, escrowVaultAuthorityPDA, true)
 
+      // Prepare referral bonus instructions
+      const { preInstructions, postInstructions } = await prepareReferralInstructions(
+        connection, wallet.publicKey, sellerTokenAccount, currentPrice
+      )
+
       const tx = await program.methods
         .acceptOffer(code)
         .accounts({
@@ -661,6 +798,8 @@ export function useEscrowProgram(connection, wallet) {
           mint: TOKEN_MINT,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
+        .preInstructions(preInstructions)
+        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Accepted:', tx)
@@ -682,12 +821,12 @@ export function useEscrowProgram(connection, wallet) {
     } finally {
       setLoading(false)
     }
-  }, [getProgram, wallet?.publicKey, getSellerIndex, initializeSellerIndex])
+  }, [connection, getProgram, wallet?.publicKey, getSellerIndex, initializeSellerIndex])
 
   /**
    * Cancel an offer (only if pending)
    */
-  const cancelOffer = useCallback(async (offerPubkey) => {
+  const cancelOffer = useCallback(async (offerPubkey, currentPrice = null) => {
     setLoading(true)
     setError(null)
 
@@ -702,6 +841,11 @@ export function useEscrowProgram(connection, wallet) {
       const buyerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, offer.buyer)
       const escrowVault = await getAssociatedTokenAddress(TOKEN_MINT, escrowVaultAuthorityPDA, true)
 
+      // Prepare referral bonus instructions
+      const { preInstructions, postInstructions } = await prepareReferralInstructions(
+        connection, wallet.publicKey, buyerTokenAccount, currentPrice
+      )
+
       const tx = await program.methods
         .cancelOffer()
         .accounts({
@@ -714,6 +858,8 @@ export function useEscrowProgram(connection, wallet) {
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
+        .preInstructions(preInstructions)
+        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Cancelled:', tx)
@@ -730,12 +876,12 @@ export function useEscrowProgram(connection, wallet) {
     } finally {
       setLoading(false)
     }
-  }, [getProgram, wallet?.publicKey])
+  }, [connection, getProgram, wallet?.publicKey])
 
   /**
    * Release/confirm completion of an offer
    */
-  const releaseOffer = useCallback(async (offerPubkey) => {
+  const releaseOffer = useCallback(async (offerPubkey, currentPrice = null) => {
     setLoading(true)
     setError(null)
 
@@ -752,6 +898,15 @@ export function useEscrowProgram(connection, wallet) {
       const sellerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, offer.seller)
       const escrowVault = await getAssociatedTokenAddress(TOKEN_MINT, escrowVaultAuthorityPDA, true)
 
+      // Determine which token account to use for referral (buyer or seller based on who is calling)
+      const isBuyerForReferral = offer.buyer.equals(wallet.publicKey)
+      const userTokenAccountForReferral = isBuyerForReferral ? buyerTokenAccount : sellerTokenAccount
+
+      // Prepare referral bonus instructions
+      const { preInstructions, postInstructions } = await prepareReferralInstructions(
+        connection, wallet.publicKey, userTokenAccountForReferral, currentPrice
+      )
+
       const tx = await program.methods
         .confirmCompletion()
         .accounts({
@@ -766,6 +921,8 @@ export function useEscrowProgram(connection, wallet) {
           buyer: offer.buyer,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
+        .preInstructions(preInstructions)
+        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Released:', tx)
@@ -794,12 +951,12 @@ export function useEscrowProgram(connection, wallet) {
     } finally {
       setLoading(false)
     }
-  }, [getProgram, wallet?.publicKey])
+  }, [connection, getProgram, wallet?.publicKey])
 
   /**
    * Burn all deposits for an offer
    */
-  const burnOffer = useCallback(async (offerPubkey) => {
+  const burnOffer = useCallback(async (offerPubkey, currentPrice = null) => {
     setLoading(true)
     setError(null)
 
@@ -814,6 +971,17 @@ export function useEscrowProgram(connection, wallet) {
 
       const escrowVault = await getAssociatedTokenAddress(TOKEN_MINT, escrowVaultAuthorityPDA, true)
 
+      // Determine which token account to use for referral (buyer or seller based on who is calling)
+      const isBuyerForReferral = offer.buyer.equals(wallet.publicKey)
+      const userTokenAccountForReferral = isBuyerForReferral 
+        ? await getAssociatedTokenAddress(TOKEN_MINT, offer.buyer)
+        : await getAssociatedTokenAddress(TOKEN_MINT, offer.seller)
+
+      // Prepare referral bonus instructions
+      const { preInstructions, postInstructions } = await prepareReferralInstructions(
+        connection, wallet.publicKey, userTokenAccountForReferral, currentPrice
+      )
+
       const tx = await program.methods
         .burnDeposits()
         .accounts({
@@ -827,6 +995,8 @@ export function useEscrowProgram(connection, wallet) {
           mint: TOKEN_MINT,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
+        .preInstructions(preInstructions)
+        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Burned:', tx)
@@ -843,7 +1013,7 @@ export function useEscrowProgram(connection, wallet) {
     } finally {
       setLoading(false)
     }
-  }, [getProgram, wallet?.publicKey])
+  }, [connection, getProgram, wallet?.publicKey])
 
   /**
    * Fetch single offer status (for manual refresh)

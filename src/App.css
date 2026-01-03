@@ -2660,3 +2660,191 @@ body {
     display: flex;
   }
 }
+
+/* ============================================
+   Referral Section Styles
+   ============================================ */
+
+.referral-link-section {
+  margin-bottom: 16px;
+}
+
+.referral-description {
+  font-size: 13px;
+  color: var(--color-white-70);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.referral-link-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-white-05);
+  border: 1px solid var(--color-white-10);
+  border-radius: var(--border-radius-md);
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-bottom: 12px;
+}
+
+.referral-link-box:active {
+  background: var(--color-white-10);
+  transform: scale(0.98);
+}
+
+.referral-link-text {
+  font-size: 12px;
+  color: var(--color-white-70);
+  word-break: break-all;
+  flex: 1;
+  margin-right: 12px;
+}
+
+.referral-copy-btn {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.referral-info {
+  background: var(--color-white-05);
+  border-radius: var(--border-radius-md);
+  padding: 12px 16px;
+  margin-top: 12px;
+}
+
+.referral-info .settings-item {
+  padding: 8px 0;
+  border: none;
+}
+
+.referral-note {
+  font-size: 12px;
+  color: var(--color-white-50);
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.referral-info-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-white-50);
+  font-size: 13px;
+  padding: 8px 0;
+  cursor: pointer;
+  text-decoration: underline;
+  margin-top: 8px;
+}
+
+.referral-details {
+  background: var(--color-white-05);
+  border-radius: var(--border-radius-md);
+  padding: 16px;
+  margin-top: 12px;
+}
+
+.referral-details p {
+  font-size: 13px;
+  color: var(--color-white-70);
+  margin-bottom: 8px;
+}
+
+.referral-details ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.referral-details li {
+  font-size: 12px;
+  color: var(--color-white-50);
+  padding: 6px 0;
+  padding-left: 16px;
+  position: relative;
+  line-height: 1.4;
+}
+
+.referral-details li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--color-success);
+}
+
+/* Confirm view referral styles */
+.confirm-row.referral-row {
+  background: rgba(74, 222, 128, 0.1);
+  border-radius: var(--border-radius-sm);
+  padding: 8px 12px;
+  margin: 4px -12px;
+}
+
+.confirm-value.referral-value {
+  color: var(--color-success);
+  font-size: 13px;
+}
+
+.confirm-row.total-row {
+  border-top: 1px solid var(--color-white-10);
+  padding-top: 12px;
+  margin-top: 8px;
+}
+
+.confirm-row.total-row .confirm-label {
+  font-weight: var(--font-medium);
+}
+
+.confirm-row.total-row .confirm-value {
+  font-weight: var(--font-bold);
+}
+
+/* ============================================
+   RPC Error Banner Styles
+   ============================================ */
+
+.rpc-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.15), rgba(248, 113, 113, 0.05));
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: var(--border-radius-md);
+  padding: 12px 16px;
+  margin: 0 16px 12px 16px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.rpc-error-banner:active {
+  transform: scale(0.98);
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.25), rgba(248, 113, 113, 0.1));
+}
+
+.rpc-error-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.rpc-error-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.rpc-error-title {
+  font-size: 14px;
+  font-weight: var(--font-medium);
+  color: var(--color-error);
+  margin-bottom: 2px;
+}
+
+.rpc-error-message {
+  font-size: 12px;
+  color: var(--color-white-70);
+  line-height: 1.4;
+}
+
+.rpc-error-arrow {
+  color: var(--color-white-50);
+  flex-shrink: 0;
+}

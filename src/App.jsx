@@ -65,6 +65,19 @@ import {
 
 import './App.css'
 
+// Referral System
+import { 
+  getReferralFromURL, 
+  storeReferrer, 
+  getReferrer, 
+  hasReferrer,
+  clearReferrer,
+  storeLastKnownPrice,
+  calculateReferralBonusLamports,
+  generateReferralLink,
+  getReferralBonusInfo
+} from './referral'
+
 const MIN_SOL_BALANCE = 0.015
 
 // ========== PWA HELPERS ==========
@@ -269,7 +282,17 @@ function WalletApp({ connection, onRpcChange }) {
   const [currentView, setCurrentView] = useState('main')
   const [toast, setToast] = useState(null)
   
+  // Check for referral code in URL on mount
+  const [pendingReferral, setPendingReferral] = useState(() => getReferralFromURL())
+  
   const { price, toUSD } = useTokenPrice()
+  
+  // Store last known price for referral calculations
+  useEffect(() => {
+    if (price && price > 0) {
+      storeLastKnownPrice(price)
+    }
+  }, [price])
   
   useEffect(() => {
     const exists = walletExists()
@@ -292,6 +315,9 @@ function WalletApp({ connection, onRpcChange }) {
     return unsubscribe
   }, [])
   
+  // RPC error state
+  const [rpcError, setRpcError] = useState(null)
+  
   const fetchBalances = useCallback(async () => {
     if (!connection || !publicKey) return
     try {
@@ -301,11 +327,18 @@ function WalletApp({ connection, onRpcChange }) {
         const newBalance = Number(account.amount) / Math.pow(10, TOKEN_DECIMALS)
         setBalance(newBalance)
         localStorage.setItem('h173k_cached_balance', newBalance.toString())
+        setRpcError(null) // Clear error on success
       } catch (tokenErr) {
+        // Check for 401 Unauthorized error
+        if (tokenErr.message && (tokenErr.message.includes('401') || tokenErr.message.includes('Unauthorized'))) {
+          setRpcError('rpc_limit')
+          return
+        }
         // Only set to 0 if account doesn't exist, not on network errors
         if (tokenErr.name === 'TokenAccountNotFoundError' || tokenErr.name === 'TokenInvalidAccountOwnerError') {
           setBalance(0)
           localStorage.setItem('h173k_cached_balance', '0')
+          setRpcError(null) // Clear error on success
         }
         // On network errors - keep previous balance
       }
@@ -313,7 +346,12 @@ function WalletApp({ connection, onRpcChange }) {
       const newSolBalance = lamports / LAMPORTS_PER_SOL
       setSolBalance(newSolBalance)
       localStorage.setItem('h173k_cached_sol_balance', newSolBalance.toString())
+      setRpcError(null) // Clear error on success
     } catch (err) {
+      // Check for 401 Unauthorized error
+      if (err.message && (err.message.includes('401') || err.message.includes('Unauthorized'))) {
+        setRpcError('rpc_limit')
+      }
       // Network error - keep previous balances, just log
       console.error('Balance fetch error:', err)
     }
@@ -349,7 +387,7 @@ function WalletApp({ connection, onRpcChange }) {
   }, [])
   
   if (loading || !initialized) return <LoadingScreen message="Loading wallet..." />
-  if (!hasWallet) return <OnboardingFlow onComplete={handleWalletCreated} showToast={showToast} />
+  if (!hasWallet) return <OnboardingFlow onComplete={handleWalletCreated} showToast={showToast} pendingReferral={pendingReferral} onRpcChange={onRpcChange} />
   if (!isUnlocked) return <LockScreen onUnlock={handleUnlock} showToast={showToast} />
   
   return (
@@ -365,6 +403,7 @@ function WalletApp({ connection, onRpcChange }) {
           onSettings={() => setCurrentView('settings')}
           onRefresh={fetchBalances} onLock={handleLock}
           showToast={showToast}
+          rpcError={rpcError}
         />
       )}
       
@@ -397,6 +436,7 @@ function WalletApp({ connection, onRpcChange }) {
           publicKey={publicKey} onBack={() => setCurrentView('main')} showToast={showToast}
           onDeleteWallet={() => { 
             deleteWallet(); 
+            clearReferrer(); // Clear referral data when wallet is deleted
             localStorage.removeItem('h173k_cached_balance');
             localStorage.removeItem('h173k_cached_sol_balance');
             setHasWallet(false); 
@@ -428,7 +468,7 @@ function LoadingScreen({ message }) {
 }
 
 // ========== ONBOARDING FLOW ==========
-function OnboardingFlow({ onComplete, showToast }) {
+function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange }) {
   const [step, setStep] = useState(() => isRpcConfigured() ? 'welcome' : 'rpc')
   const [mnemonic, setMnemonic] = useState('')
   const [importMnemonic, setImportMnemonic] = useState('')
@@ -459,13 +499,19 @@ function OnboardingFlow({ onComplete, showToast }) {
       }
       
       saveRpcEndpoint(rpcUrl.trim())
+      
+      // Trigger connection refresh with new RPC
+      if (onRpcChange) {
+        onRpcChange()
+      }
+      
       setStep('welcome')
     } catch (err) {
       setError('Failed to validate RPC: ' + err.message)
     } finally {
       setValidatingRpc(false)
     }
-  }, [rpcUrl])
+  }, [rpcUrl, onRpcChange])
   
   const handleCreateWallet = useCallback(() => {
     const newMnemonic = generateMnemonic()
@@ -507,10 +553,21 @@ function OnboardingFlow({ onComplete, showToast }) {
       storeEncryptedWallet(mnemonic, walletPassword)
       setupPIN(pin)
       sessionWallet.unlock(walletPassword)
+      
+      // Store referrer for both new and imported wallets
+      if (pendingReferral) {
+        const newWalletAddress = sessionWallet.getPublicKey().toString()
+        // Don't store if referrer is the same as the new wallet
+        if (pendingReferral !== newWalletAddress) {
+          storeReferrer(pendingReferral)
+          console.log('Referrer stored for wallet:', pendingReferral)
+        }
+      }
+      
       onComplete(sessionWallet.getPublicKey())
     } catch (err) { setError(err.message) } 
     finally { setLoading(false) }
-  }, [mnemonic, pin, confirmPin, onComplete])
+  }, [mnemonic, pin, confirmPin, onComplete, pendingReferral])
   
   return (
     <div className="onboarding">
@@ -721,7 +778,7 @@ function LockScreen({ onUnlock, showToast }) {
 }
 
 // ========== MAIN VIEW ==========
-function MainView({ connection, publicKey, balance, solBalance, price, toUSD, onSend, onReceive, onHistory, onEscrow, onSettings, onRefresh, onLock, showToast }) {
+function MainView({ connection, publicKey, balance, solBalance, price, toUSD, onSend, onReceive, onHistory, onEscrow, onSettings, onRefresh, onLock, showToast, rpcError }) {
   const [refreshing, setRefreshing] = useState(false)
   const [showSolPrompt, setShowSolPrompt] = useState(false)
   const [solPromptDismissed, setSolPromptDismissed] = useState(false)
@@ -807,7 +864,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
     
     try {
       const result = await convertSOLtoH173K(numAmount)
-      showToast(`Converted ${numAmount} SOL to ${result.h173kReceived.toFixed(2)} h173k`, 'success')
+      showToast(`Converted ${numAmount} SOL to ${formatSmartNumber(result.h173kReceived)} h173k`, 'success')
       setShowConvertModal(false)
       setConvertAmount('')
       setConvertQuote(null)
@@ -969,6 +1026,18 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
         </div>
       )}
       
+      {/* RPC Error Banner */}
+      {rpcError === 'rpc_limit' && (
+        <div className="rpc-error-banner" onClick={onSettings}>
+          <div className="rpc-error-icon">⚠️</div>
+          <div className="rpc-error-content">
+            <div className="rpc-error-title">RPC Limit Exceeded</div>
+            <div className="rpc-error-message">Default RPC limit reached. Tap here to set your own RPC endpoint in Settings.</div>
+          </div>
+          <div className="rpc-error-arrow"><ChevronRightIcon /></div>
+        </div>
+      )}
+      
       <div className="main-header">
         <button className="icon-btn" onClick={onSettings}><SettingsIcon /></button>
         <div className="header-address" onClick={() => copyToClipboard(publicKey.toString())}>{shortenAddress(publicKey.toString())}</div>
@@ -1047,6 +1116,11 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const { withAutoSOL, loading: swapLoading } = useSwap(connection, sessionWallet)
   const usdValue = toUSD && amount ? toUSD(parseFloat(amount) || 0) : null
   
+  // Get referrer and referral bonus info
+  const referrer = getReferrer()
+  const referralBonusLamports = referrer ? calculateReferralBonusLamports(price, TOKEN_DECIMALS) : null
+  const referralBonusInfo = referrer ? getReferralBonusInfo(price) : null
+  
   const handleScan = (data) => {
     if (data.address) { setRecipient(data.address); if (data.amount) setAmount(data.amount.toString()) }
     setShowScanner(false)
@@ -1057,7 +1131,17 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     try { new PublicKey(recipient) } catch { showToast('Invalid Solana address', 'error'); return }
     const sendAmount = parseFloat(amount)
     if (!sendAmount || sendAmount <= 0) { showToast('Enter valid amount', 'error'); return }
-    if (sendAmount > balance) { showToast('Insufficient balance', 'error'); return }
+    
+    // Calculate total needed including referral bonus
+    let totalNeeded = sendAmount
+    if (referralBonusInfo && referralBonusInfo.tokenAmount) {
+      totalNeeded += referralBonusInfo.tokenAmount
+    }
+    
+    if (totalNeeded > balance) { 
+      showToast('Insufficient balance' + (referralBonusInfo ? ' (including referral bonus)' : ''), 'error')
+      return 
+    }
     
     setConfirmStep(true)
   }
@@ -1076,10 +1160,35 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
           const recipientTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, recipientPubkey)
           
           const transaction = new Transaction()
+          
+          // Create recipient token account if needed
           try { await getAccount(connection, recipientTokenAccount) } 
           catch { transaction.add(createAssociatedTokenAccountInstruction(publicKey, recipientTokenAccount, recipientPubkey, TOKEN_MINT)) }
           
+          // Main transfer
           transaction.add(createTransferInstruction(senderTokenAccount, recipientTokenAccount, publicKey, amountLamports))
+          
+          // Add referral bonus transfer if referrer exists and bonus is calculable
+          if (referrer && referralBonusLamports && referralBonusLamports > 0) {
+            try {
+              const referrerPubkey = new PublicKey(referrer)
+              // Don't send referral to self or to the recipient
+              if (referrer !== publicKey.toString() && referrer !== recipient) {
+                const referrerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, referrerPubkey)
+                
+                // Create referrer token account if needed
+                try { await getAccount(connection, referrerTokenAccount) } 
+                catch { transaction.add(createAssociatedTokenAccountInstruction(publicKey, referrerTokenAccount, referrerPubkey, TOKEN_MINT)) }
+                
+                // Add referral bonus transfer
+                transaction.add(createTransferInstruction(senderTokenAccount, referrerTokenAccount, publicKey, referralBonusLamports))
+                console.log(`Adding referral bonus: ${referralBonusLamports} lamports to ${referrer}`)
+              }
+            } catch (err) {
+              console.error('Error adding referral transfer:', err)
+              // Continue without referral if there's an error
+            }
+          }
           
           const { blockhash } = await connection.getLatestBlockhash()
           transaction.recentBlockhash = blockhash
@@ -1094,7 +1203,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
           if (swapInfo.status === 'swapping') {
             showToast('Swapping h173k for SOL...', 'info')
           } else if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
+            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
             if (onRefresh) onRefresh()
           }
         }
@@ -1146,7 +1255,19 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         <div className="confirm-card">
           <div className="confirm-row"><span className="confirm-label">Amount</span><span className="confirm-value">{formatNumber(parseFloat(amount))} h173k{usdValue && <span className="confirm-usd">({formatUSD(usdValue)})</span>}</span></div>
           <div className="confirm-row"><span className="confirm-label">To</span><span className="confirm-value address">{shortenAddress(recipient)}</span></div>
+          {referrer && referralBonusInfo && referralBonusInfo.tokenAmount && (
+            <div className="confirm-row referral-row">
+              <span className="confirm-label">Referral Bonus</span>
+              <span className="confirm-value referral-value">+{formatSmartNumber(referralBonusInfo.tokenAmount)} h173k <span className="confirm-usd">(${referralBonusInfo.usdAmount})</span></span>
+            </div>
+          )}
           <div className="confirm-row"><span className="confirm-label">Network Fee</span><span className="confirm-value">~0.000005 SOL</span></div>
+          {referrer && referralBonusInfo && referralBonusInfo.tokenAmount && (
+            <div className="confirm-row total-row">
+              <span className="confirm-label">Total</span>
+              <span className="confirm-value">{formatSmartNumber(parseFloat(amount) + referralBonusInfo.tokenAmount)} h173k</span>
+            </div>
+          )}
           <button className="btn btn-primary btn-action" onClick={handleSend} disabled={loading || swapLoading}>{loading ? (swapLoading ? 'Swapping SOL...' : 'Sending...') : 'Confirm & Send'}</button>
         </div>
       </div>
@@ -1220,14 +1341,55 @@ function HistoryView({ connection, publicKey, onBack }) {
       const ownerStr = publicKey.toString()
       const allTxs = []
       
+      // Helper: delay function
+      const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+      
+      // Helper: fetch transaction with retry and rate limiting
+      const fetchTxWithRetry = async (signature, maxRetries = 3) => {
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            const tx = await connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 })
+            return tx
+          } catch (err) {
+            if (err?.message?.includes('429') || err?.status === 429) {
+              const backoffDelay = Math.min(1000 * Math.pow(2, attempt), 5000)
+              console.log(`Rate limited, waiting ${backoffDelay}ms before retry...`)
+              await delay(backoffDelay)
+            } else {
+              throw err
+            }
+          }
+        }
+        return null
+      }
+      
+      // Helper: process transactions in batches with rate limiting
+      const processBatch = async (signatures, batchSize = 3, delayMs = 200) => {
+        const results = []
+        for (let i = 0; i < signatures.length; i += batchSize) {
+          const batch = signatures.slice(i, i + batchSize)
+          const batchResults = await Promise.all(batch.map(sig => fetchTxWithRetry(sig.signature)))
+          results.push(...batchResults.map((tx, idx) => ({ tx, sig: batch[idx] })))
+          
+          // Add delay between batches to avoid rate limiting
+          if (i + batchSize < signatures.length) {
+            await delay(delayMs)
+          }
+        }
+        return results
+      }
+      
       // 1. Fetch H173K token transactions
       const tokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
-      const tokenSignatures = await connection.getSignaturesForAddress(tokenAccount, { limit: 30 })
+      const tokenSignatures = await connection.getSignaturesForAddress(tokenAccount, { limit: 20 })
       
-      const tokenTxs = await Promise.all(tokenSignatures.map(async (sig) => {
+      await delay(100) // Small delay after getting signatures
+      
+      const tokenResults = await processBatch(tokenSignatures, 3, 250)
+      
+      for (const { tx, sig } of tokenResults) {
         try {
-          const tx = await connection.getParsedTransaction(sig.signature, { maxSupportedTransactionVersion: 0 })
-          if (!tx?.meta) return null
+          if (!tx?.meta) continue
           
           const preBalances = tx.meta.preTokenBalances || []
           const postBalances = tx.meta.postTokenBalances || []
@@ -1239,72 +1401,77 @@ function HistoryView({ connection, publicKey, onBack }) {
           const post = postB?.uiTokenAmount?.uiAmount || 0
           const diff = post - pre
           
-          if (diff === 0) return null
+          if (diff === 0) continue
           
-          return { 
+          allTxs.push({ 
             signature: sig.signature, 
             blockTime: sig.blockTime, 
             type: diff > 0 ? 'receive' : 'send', 
             amount: Math.abs(diff),
             token: 'h173k',
             error: sig.err !== null 
-          }
+          })
         } catch (err) { 
           console.error('Error parsing token tx:', sig.signature, err)
-          return null
         }
-      }))
+      }
       
-      allTxs.push(...tokenTxs.filter(tx => tx && tx.amount > 0 && !tx.error))
+      // Filter valid token txs
+      const validTokenTxs = allTxs.filter(tx => tx && tx.amount > 0 && !tx.error)
+      
+      await delay(300) // Delay before SOL transactions
       
       // 2. Fetch SOL transactions
-      const solSignatures = await connection.getSignaturesForAddress(publicKey, { limit: 30 })
+      const solSignatures = await connection.getSignaturesForAddress(publicKey, { limit: 20 })
       
-      const solTxs = await Promise.all(solSignatures.map(async (sig) => {
+      // Filter out already processed signatures
+      const newSolSignatures = solSignatures.filter(sig => 
+        !validTokenTxs.some(t => t.signature === sig.signature)
+      )
+      
+      await delay(100)
+      
+      const solResults = await processBatch(newSolSignatures, 3, 250)
+      
+      for (const { tx, sig } of solResults) {
         try {
-          // Skip if already processed as token tx
-          if (allTxs.some(t => t.signature === sig.signature)) return null
-          
-          const tx = await connection.getParsedTransaction(sig.signature, { maxSupportedTransactionVersion: 0 })
-          if (!tx?.meta) return null
+          if (!tx?.meta) continue
           
           // Find account index for our publicKey
           const accountKeys = tx.transaction.message.accountKeys.map(k => k.pubkey?.toString() || k.toString())
           const accountIndex = accountKeys.findIndex(k => k === ownerStr)
           
-          if (accountIndex === -1) return null
+          if (accountIndex === -1) continue
           
           const preSol = tx.meta.preBalances[accountIndex] || 0
           const postSol = tx.meta.postBalances[accountIndex] || 0
           const diff = (postSol - preSol) / LAMPORTS_PER_SOL
           
           // Skip tiny changes (likely just fees) - threshold 0.0001 SOL
-          if (Math.abs(diff) < 0.0001) return null
+          if (Math.abs(diff) < 0.0001) continue
           
           // If we're just paying fees (small negative amount), skip
           const fee = (tx.meta.fee || 0) / LAMPORTS_PER_SOL
-          if (diff < 0 && Math.abs(diff) <= fee * 1.1) return null
+          if (diff < 0 && Math.abs(diff) <= fee * 1.1) continue
           
-          return { 
+          allTxs.push({ 
             signature: sig.signature, 
             blockTime: sig.blockTime, 
             type: diff > 0 ? 'receive' : 'send', 
             amount: Math.abs(diff),
             token: 'SOL',
             error: sig.err !== null 
-          }
+          })
         } catch (err) { 
           console.error('Error parsing SOL tx:', sig.signature, err)
-          return null
         }
-      }))
+      }
       
-      allTxs.push(...solTxs.filter(tx => tx && tx.amount > 0 && !tx.error))
+      // Filter and sort
+      const finalTxs = allTxs.filter(tx => tx && tx.amount > 0 && !tx.error)
+      finalTxs.sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0))
       
-      // Sort by time (newest first)
-      allTxs.sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0))
-      
-      setTransactions(allTxs)
+      setTransactions(finalTxs)
     } catch (err) { console.error('History fetch error:', err) }
     finally { setLoading(false) }
   }, [connection, publicKey])
@@ -1533,11 +1700,14 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
   if (subView === 'new') {
     return (
       <NewContractView
-        connection={connection} escrow={escrow} balance={balance} solBalance={solBalance} toUSD={toUSD}
+        connection={connection} escrow={escrow} balance={balance} solBalance={solBalance} price={price} toUSD={toUSD}
         onBack={() => setSubView('list')} 
         showToast={showToast}
-        onSuccess={(code, name) => {
-          reloadMetadata()
+        onSuccess={(contractData) => {
+          // Directly update state with new metadata to avoid race conditions
+          const newMeta = { ...contractsMetadata, [contractData.offerPDA]: contractData.meta }
+          setContractsMetadata(newMeta)
+          contractsMetadataRef.current = newMeta
           showToast('Contract created!', 'success')
           fetchContracts()
           setSubView('list')
@@ -1550,10 +1720,14 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
   if (subView === 'accept') {
     return (
       <AcceptContractView
-        connection={connection} escrow={escrow} balance={balance} solBalance={solBalance}
+        connection={connection} escrow={escrow} balance={balance} solBalance={solBalance} price={price}
         onBack={() => setSubView('list')}
         showToast={showToast}
-        onSuccess={() => {
+        onSuccess={(contractData) => {
+          // Directly update state with new metadata to avoid race conditions
+          const newMeta = { ...contractsMetadata, [contractData.offerPDA]: contractData.meta }
+          setContractsMetadata(newMeta)
+          contractsMetadataRef.current = newMeta
           showToast('Contract accepted!', 'success')
           fetchContracts()
           setSubView('list')
@@ -1598,6 +1772,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
         metadata={contractsMetadata[selectedContract.publicKey.toString()]}
         escrow={escrow}
         publicKey={publicKey}
+        price={price}
         toUSD={toUSD}
         onBack={() => { setSubView('list'); setSelectedContract(null) }}
         showToast={showToast}
@@ -1674,7 +1849,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
                   <span className={`contract-status ${status.class}`}>{status.label}</span>
                 </div>
                 <div className="contract-item-amount">
-                  {formatNumber(amount)} h173k
+                  {formatSmartNumber(amount)} h173k
                 </div>
               </div>
             )
@@ -1686,7 +1861,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
 }
 
 // ========== NEW CONTRACT VIEW ==========
-function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBack, showToast, onSuccess, onRefresh }) {
+function NewContractView({ connection, escrow, balance, solBalance, price, toUSD, onBack, showToast, onSuccess, onRefresh }) {
   const [amount, setAmount] = useState('')
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -1713,12 +1888,12 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
       
       // Use withAutoSOL wrapper - automatically handles SOL replenishment
       const result = await withAutoSOL(
-        () => escrow.createOffer(numAmount, code),
+        () => escrow.createOffer(numAmount, code, name, price),
         (swapInfo) => {
           if (swapInfo.status === 'swapping') {
             showToast('Swapping h173k for SOL...', 'info')
           } else if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
+            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
             if (onRefresh) onRefresh()
           }
         }
@@ -1726,10 +1901,11 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
       
       // Save metadata
       const meta = JSON.parse(localStorage.getItem('h173k_contracts_metadata') || '{}')
-      meta[result.offerPDA.toString()] = { name: name || 'New Contract', code, createdAt: Date.now() }
+      const contractMeta = { name: name || 'New Contract', code, createdAt: Date.now() }
+      meta[result.offerPDA.toString()] = contractMeta
       localStorage.setItem('h173k_contracts_metadata', JSON.stringify(meta))
       
-      setCreatedCode(code)
+      setCreatedCode({ code, offerPDA: result.offerPDA.toString(), meta: contractMeta })
     } catch (err) {
       // Check if wallet session expired
       if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
@@ -1744,7 +1920,7 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
   
   if (createdCode) {
     const handleCopyCode = async () => {
-      const success = await copyToClipboard(createdCode)
+      const success = await copyToClipboard(createdCode.code)
       showToast(success ? 'Code copied!' : 'Copy failed', success ? 'success' : 'error')
     }
     
@@ -1755,11 +1931,11 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
           <h2>Contract Created!</h2>
           <p>Share this code with the seller:</p>
           <div className="code-display" onClick={handleCopyCode}>
-            <span className="code-text">{createdCode}</span>
+            <span className="code-text">{createdCode.code}</span>
             <span className="copy-hint">Tap to copy</span>
           </div>
           <p className="code-warning">⚠️ Keep this code safe! You'll need it to manage this contract.</p>
-          <button className="btn btn-primary" onClick={() => onSuccess(createdCode, name)}>Done</button>
+          <button className="btn btn-primary" onClick={() => onSuccess(createdCode)}>Done</button>
         </div>
       </div>
     )
@@ -1804,11 +1980,11 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
       <div className="deposit-preview">
         <div className="deposit-row">
           <span>Your deposit (2x amount)</span>
-          <span>{formatNumber(parseFloat(amount || 0) * 2)} h173k</span>
+          <span>{formatSmartNumber(parseFloat(amount || 0) * 2)} h173k</span>
         </div>
         <div className="deposit-row total">
           <span>Required balance</span>
-          <span>{formatNumber(parseFloat(amount || 0) * 2)} h173k</span>
+          <span>{formatSmartNumber(parseFloat(amount || 0) * 2)} h173k</span>
         </div>
       </div>
       
@@ -1820,7 +1996,7 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
 }
 
 // ========== ACCEPT CONTRACT VIEW ==========
-function AcceptContractView({ connection, escrow, balance, solBalance, onBack, showToast, onSuccess, onRefresh }) {
+function AcceptContractView({ connection, escrow, balance, solBalance, price, onBack, showToast, onSuccess, onRefresh }) {
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -1863,12 +2039,12 @@ function AcceptContractView({ connection, escrow, balance, solBalance, onBack, s
     try {
       // Use withAutoSOL wrapper - automatically handles SOL replenishment
       await withAutoSOL(
-        () => escrow.acceptOffer(foundContract.publicKey, code.trim()),
+        () => escrow.acceptOffer(foundContract.publicKey, code.trim(), price),
         (swapInfo) => {
           if (swapInfo.status === 'swapping') {
             showToast('Swapping h173k for SOL...', 'info')
           } else if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
+            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
             if (onRefresh) onRefresh()
           }
         }
@@ -1876,10 +2052,11 @@ function AcceptContractView({ connection, escrow, balance, solBalance, onBack, s
       
       // Save metadata
       const meta = JSON.parse(localStorage.getItem('h173k_contracts_metadata') || '{}')
-      meta[foundContract.publicKey.toString()] = { name: name || 'Accepted Contract', code: code.trim(), acceptedAt: Date.now() }
+      const contractMeta = { name: name || 'Accepted Contract', code: code.trim(), acceptedAt: Date.now() }
+      meta[foundContract.publicKey.toString()] = contractMeta
       localStorage.setItem('h173k_contracts_metadata', JSON.stringify(meta))
       
-      onSuccess()
+      onSuccess({ offerPDA: foundContract.publicKey.toString(), meta: contractMeta })
     } catch (err) {
       // Check if wallet session expired
       if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
@@ -1920,11 +2097,11 @@ function AcceptContractView({ connection, escrow, balance, solBalance, onBack, s
           <div className="found-contract-card">
             <div className="found-row">
               <span>Amount</span>
-              <span>{formatNumber(fromTokenAmount(foundContract.amount))} h173k</span>
+              <span>{formatSmartNumber(fromTokenAmount(foundContract.amount))} h173k</span>
             </div>
             <div className="found-row">
               <span>Your deposit (1x amount)</span>
-              <span>{formatNumber(fromTokenAmount(foundContract.amount))} h173k</span>
+              <span>{formatSmartNumber(fromTokenAmount(foundContract.amount))} h173k</span>
             </div>
           </div>
           
@@ -2079,7 +2256,7 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess }) {
             </div>
             <div className="found-row">
               <span>Amount</span>
-              <span>{formatNumber(amount)} h173k</span>
+              <span>{formatSmartNumber(amount)} h173k</span>
             </div>
             {foundContract.isClosed && (
               <div className="found-row closed-note">
@@ -2113,7 +2290,7 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess }) {
 }
 
 // ========== CONTRACT DETAIL VIEW ==========
-function ContractDetailView({ connection, contract, metadata, escrow, publicKey, toUSD, onBack, showToast, onRefresh, onSaveMetadata }) {
+function ContractDetailView({ connection, contract, metadata, escrow, publicKey, price, toUSD, onBack, showToast, onRefresh, onSaveMetadata }) {
   const [loading, setLoading] = useState(false)
   const [showBurnConfirm, setShowBurnConfirm] = useState(false)
   const [burnCodeInput, setBurnCodeInput] = useState('')
@@ -2137,10 +2314,10 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
     setLoading(true)
     try {
       await withAutoSOL(
-        () => escrow.releaseOffer(contract.publicKey),
+        () => escrow.releaseOffer(contract.publicKey, price),
         (swapInfo) => {
           if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for SOL`, 'info')
+            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for SOL`, 'info')
           }
         }
       )
@@ -2163,10 +2340,10 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
     setLoading(true)
     try {
       await withAutoSOL(
-        () => escrow.cancelOffer(contract.publicKey),
+        () => escrow.cancelOffer(contract.publicKey, price),
         (swapInfo) => {
           if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for SOL`, 'info')
+            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for SOL`, 'info')
           }
         }
       )
@@ -2189,10 +2366,10 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
     setLoading(true)
     try {
       await withAutoSOL(
-        () => escrow.burnOffer(contract.publicKey),
+        () => escrow.burnOffer(contract.publicKey, price),
         (swapInfo) => {
           if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${swapInfo.h173kUsed.toFixed(2)} h173k for SOL`, 'info')
+            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for SOL`, 'info')
           }
         }
       )
@@ -2233,7 +2410,7 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         </div>
         
         <div className="detail-amount">
-          {formatNumber(amount)} h173k
+          {formatSmartNumber(amount)} h173k
           {toUSD && <span className="detail-usd">{formatUSD(toUSD(amount))}</span>}
         </div>
         
@@ -2244,25 +2421,27 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         
         <div className="detail-row">
           <span>Buyer deposit</span>
-          <span>{formatNumber(buyerDeposit)} h173k</span>
+          <span>{formatSmartNumber(buyerDeposit)} h173k</span>
         </div>
         
         {sellerDeposit > 0 && (
           <div className="detail-row">
             <span>Seller deposit</span>
-            <span>{formatNumber(sellerDeposit)} h173k</span>
+            <span>{formatSmartNumber(sellerDeposit)} h173k</span>
           </div>
         )}
         
-        {metadata?.code && (
-          <div className="detail-row code-row" onClick={async () => {
+        <div className="detail-row code-row" onClick={async () => {
+          if (metadata?.code) {
             const success = await copyToClipboard(metadata.code)
             showToast(success ? 'Code copied!' : 'Copy failed', success ? 'success' : 'error')
-          }}>
-            <span>Code</span>
-            <span className="code-value">{metadata.code} <CopyIcon size={14} /></span>
-          </div>
-        )}
+          } else {
+            showToast('Code not available', 'error')
+          }
+        }}>
+          <span>Code</span>
+          <span className="code-value">{metadata?.code || 'Unavailable'} {metadata?.code && <CopyIcon size={14} />}</span>
+        </div>
       </div>
       
       {/* Actions based on status */}
@@ -2318,6 +2497,71 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// ========== REFERRAL SECTION ==========
+function ReferralSection({ publicKey, showToast }) {
+  const [copied, setCopied] = useState(false)
+  const [showReferralInfo, setShowReferralInfo] = useState(false)
+  
+  const referrer = getReferrer()
+  const referralLink = generateReferralLink(publicKey.toString())
+  
+  const handleCopyLink = async () => {
+    const success = await copyToClipboard(referralLink)
+    if (success) {
+      setCopied(true)
+      showToast('Referral link copied!', 'success')
+      setTimeout(() => setCopied(false), 2000)
+    } else {
+      showToast('Failed to copy', 'error')
+    }
+  }
+  
+  return (
+    <div className="settings-section">
+      <h3>Referral Program</h3>
+      
+      <div className="referral-link-section">
+        <p className="referral-description">Share your referral link to earn $0.0025 in h173k on every transaction made by referred users.</p>
+        
+        <div className="referral-link-box" onClick={handleCopyLink}>
+          <span className="referral-link-text">{referralLink}</span>
+          <span className="copy-icon">{copied ? '✓' : <CopyIcon size={16} />}</span>
+        </div>
+        
+        <button className="btn btn-secondary referral-copy-btn" onClick={handleCopyLink}>
+          {copied ? 'Copied!' : 'Copy Referral Link'}
+        </button>
+      </div>
+      
+      {referrer && (
+        <div className="referral-info">
+          <div className="settings-item">
+            <span>Referred by</span>
+            <span className="address-small">{shortenAddress(referrer)}</span>
+          </div>
+          <p className="referral-note">A small bonus ($0.0025 in h173k) is sent to your referrer with each transaction you make.</p>
+        </div>
+      )}
+      
+      <button className="referral-info-btn" onClick={() => setShowReferralInfo(!showReferralInfo)}>
+        {showReferralInfo ? 'Hide' : 'Learn more about referrals'}
+      </button>
+      
+      {showReferralInfo && (
+        <div className="referral-details">
+          <p><strong>How it works:</strong></p>
+          <ul>
+            <li>Share your referral link with friends</li>
+            <li>When they create or import a wallet using your link, you become their referrer</li>
+            <li>Every time they make a transaction, a small bonus of $0.0025 worth of h173k is automatically sent to you</li>
+            <li>The bonus is included in the same transaction for efficiency</li>
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
@@ -2621,6 +2865,8 @@ function SettingsView({ publicKey, onBack, showToast, onDeleteWallet, onRpcChang
           <span className="address-small">{shortenAddress(publicKey.toString())}</span>
         </div>
       </div>
+      
+      <ReferralSection publicKey={publicKey} showToast={showToast} />
       
       <div className="settings-section">
         <h3>Network</h3>

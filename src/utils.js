@@ -20,7 +20,7 @@ export function formatNumber(num, decimals = 2) {
 
 /**
  * Format number with smart precision - shows more decimals for small values
- * Ensures small values are never displayed as "0"
+ * Ensures small values are never displayed as "0" or "0.00"
  */
 export function formatSmartNumber(num, minDecimals = 2, maxDecimals = 8) {
   if (num === null || num === undefined || isNaN(num)) return '0'
@@ -28,9 +28,21 @@ export function formatSmartNumber(num, minDecimals = 2, maxDecimals = 8) {
   
   const absNum = Math.abs(num)
   
+  // For very small numbers, find the first significant digit
+  if (absNum > 0 && absNum < 0.000001) {
+    // Use exponential notation for extremely small numbers
+    return num.toExponential(2)
+  }
+  
   // Determine appropriate decimal places based on value size
   let decimals = minDecimals
-  if (absNum < 0.01) {
+  if (absNum < 0.000001) {
+    decimals = maxDecimals
+  } else if (absNum < 0.0001) {
+    decimals = Math.max(minDecimals, 8)
+  } else if (absNum < 0.001) {
+    decimals = Math.max(minDecimals, 7)
+  } else if (absNum < 0.01) {
     decimals = Math.max(minDecimals, 6)
   } else if (absNum < 0.1) {
     decimals = Math.max(minDecimals, 4)
@@ -47,12 +59,20 @@ export function formatSmartNumber(num, minDecimals = 2, maxDecimals = 8) {
     maximumFractionDigits: decimals,
   })
   
-  // If result would be "0" but num is not 0, show more precision
-  if (formatted === '0' && num !== 0) {
-    return num.toLocaleString('en-US', {
+  // If result would be "0", "0.0", "0.00" etc. but num is not 0, show more precision
+  const parsedBack = parseFloat(formatted.replace(/,/g, ''))
+  if (parsedBack === 0 && num !== 0) {
+    // Try with maximum decimals
+    const maxFormatted = num.toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: maxDecimals,
     })
+    // If still shows as zero, use exponential
+    const parsedMax = parseFloat(maxFormatted.replace(/,/g, ''))
+    if (parsedMax === 0) {
+      return num.toExponential(2)
+    }
+    return maxFormatted
   }
   
   return formatted
