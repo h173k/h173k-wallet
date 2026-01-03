@@ -2525,7 +2525,7 @@ function ReferralSection({ publicKey, showToast }) {
       <h3>Referral Program</h3>
       
       <div className="referral-link-section">
-        <p className="referral-description">Share your referral link to earn $0.0025 in h173k on every transaction made by referred users.</p>
+        <p className="referral-description">Share your referral link to earn $0.01 in h173k on every transaction made by referred users.</p>
         
         <div className="referral-link-box" onClick={handleCopyLink}>
           <span className="referral-link-text">{referralLink}</span>
@@ -2543,7 +2543,7 @@ function ReferralSection({ publicKey, showToast }) {
             <span>Referred by</span>
             <span className="address-small">{shortenAddress(referrer)}</span>
           </div>
-          <p className="referral-note">A small bonus ($0.0025 in h173k) is sent to your referrer with each transaction you make.</p>
+          <p className="referral-note">A small bonus ($0.01 in h173k) is sent to your referrer with each transaction you make.</p>
         </div>
       )}
       
@@ -2557,7 +2557,7 @@ function ReferralSection({ publicKey, showToast }) {
           <ul>
             <li>Share your referral link with friends</li>
             <li>When they create or import a wallet using your link, you become their referrer</li>
-            <li>Every time they make a transaction, a small bonus of $0.0025 worth of h173k is automatically sent to you</li>
+            <li>Every time they make a transaction, a small bonus of $0.01 worth of h173k is automatically sent to you</li>
             <li>The bonus is included in the same transaction for efficiency</li>
           </ul>
         </div>
