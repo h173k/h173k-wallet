@@ -133,6 +133,16 @@ export function QRCodeScanner({
     }
   }, [])
   
+  // Set iOS-specific video attributes (React doesn't handle webkit- attrs well)
+  useEffect(() => {
+    if (videoRef.current) {
+      const video = videoRef.current
+      video.setAttribute('playsinline', '')
+      video.setAttribute('webkit-playsinline', '')
+      video.setAttribute('x-webkit-airplay', 'allow')
+    }
+  }, [])
+  
   // Stop camera
   const stopCamera = useCallback(() => {
     console.log('🛑 Stopping camera...')
@@ -173,17 +183,45 @@ export function QRCodeScanner({
         throw new Error('Camera API not available. Make sure you are using HTTPS.')
       }
       
-      const constraints = {
-        video: { 
-          facingMode: { ideal: facingMode },
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 }
-        },
-        audio: false
-      }
+      // Try back camera first (for mobile), then any camera as fallback
+      let stream = null
       
-      console.log('Requesting camera with constraints:', constraints)
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      // Attempt 1: Back camera with flexible constraints (best for mobile QR scanning)
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            facingMode: { exact: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        })
+        console.log('✅ Got back camera')
+      } catch (backCamErr) {
+        console.log('Back camera failed, trying any camera...', backCamErr.name)
+        
+        // Attempt 2: Any camera with minimal constraints
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { 
+              facingMode: facingMode,
+              width: { ideal: 640 },
+              height: { ideal: 480 }
+            },
+            audio: false
+          })
+          console.log('✅ Got fallback camera')
+        } catch (anyCamErr) {
+          console.log('Fallback failed, trying minimal...', anyCamErr.name)
+          
+          // Attempt 3: Absolute minimal - just give me ANY video
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          })
+          console.log('✅ Got minimal camera')
+        }
+      }
       
       if (!mountedRef.current) {
         // Component unmounted while waiting for camera
@@ -267,13 +305,10 @@ export function QRCodeScanner({
   
   // Auto-start camera on mount
   useEffect(() => {
-    // Small delay to ensure component is fully mounted
-    const timer = setTimeout(() => {
-      startCamera()
-    }, 100)
+    // Start immediately - delay can break user gesture context on iOS
+    startCamera()
     
     return () => {
-      clearTimeout(timer)
       stopCamera()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -385,8 +420,8 @@ export function QRCodeScanner({
           autoPlay
           playsInline
           muted
-          webkitPlaysinline="true"
-          x-webkit-airplay="allow"
+          disablePictureInPicture
+          disableRemotePlayback
           className="scanner-video"
           style={{ 
             width: '100%', 
