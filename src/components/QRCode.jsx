@@ -385,7 +385,8 @@ export function QRCodeScanner({
           autoPlay
           playsInline
           muted
-          webkit-playsinline="true"
+          webkitPlaysinline="true"
+          x-webkit-airplay="allow"
           className="scanner-video"
           style={{ 
             width: '100%', 
