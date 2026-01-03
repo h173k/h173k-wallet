@@ -282,6 +282,16 @@ function WalletApp({ connection, onRpcChange }) {
     setInitialized(true)
   }, [])
   
+  // Listen for session lock events (auto-lock after inactivity)
+  useEffect(() => {
+    const unsubscribe = sessionWallet.onLock(({ reason }) => {
+      console.log(`🔒 Wallet locked (reason: ${reason})`)
+      setIsUnlocked(false)
+      setCurrentView('main') // Reset to main view when locked
+    })
+    return unsubscribe
+  }, [])
+  
   const fetchBalances = useCallback(async () => {
     if (!connection || !publicKey) return
     try {
@@ -334,7 +344,7 @@ function WalletApp({ connection, onRpcChange }) {
   }, [])
   
   const handleLock = useCallback(() => {
-    sessionWallet.lock()
+    sessionWallet.lock('manual')
     setIsUnlocked(false)
   }, [])
   
@@ -803,7 +813,12 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       setConvertQuote(null)
       onRefresh()
     } catch (err) {
-      showToast('Conversion failed: ' + err.message, 'error')
+      // Check if wallet session expired
+      if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
+        showToast('Session expired. Please unlock your wallet again.', 'error')
+      } else {
+        showToast('Conversion failed: ' + err.message, 'error')
+      }
     }
   }
   
@@ -1088,7 +1103,15 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       setTxSignature(signature)
       showToast('Transaction sent!', 'success')
       onRefresh()
-    } catch (err) { console.error('Send error:', err); showToast('Transaction failed: ' + err.message, 'error') }
+    } catch (err) { 
+      console.error('Send error:', err)
+      // Check if wallet session expired
+      if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
+        showToast('Session expired. Please unlock your wallet again.', 'error')
+      } else {
+        showToast('Transaction failed: ' + err.message, 'error')
+      }
+    }
     finally { setLoading(false) }
   }
   
@@ -1708,7 +1731,12 @@ function NewContractView({ connection, escrow, balance, solBalance, toUSD, onBac
       
       setCreatedCode(code)
     } catch (err) {
-      showToast('Failed to create: ' + err.message, 'error')
+      // Check if wallet session expired
+      if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
+        showToast('Session expired. Please unlock your wallet again.', 'error')
+      } else {
+        showToast('Failed to create: ' + err.message, 'error')
+      }
     } finally {
       setLoading(false)
     }
@@ -1853,7 +1881,12 @@ function AcceptContractView({ connection, escrow, balance, solBalance, onBack, s
       
       onSuccess()
     } catch (err) {
-      showToast('Failed to accept: ' + err.message, 'error')
+      // Check if wallet session expired
+      if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
+        showToast('Session expired. Please unlock your wallet again.', 'error')
+      } else {
+        showToast('Failed to accept: ' + err.message, 'error')
+      }
     } finally {
       setLoading(false)
     }
@@ -2115,7 +2148,12 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
       onRefresh()
       onBack()
     } catch (err) {
-      showToast('Release failed: ' + err.message, 'error')
+      // Check if wallet session expired
+      if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
+        showToast('Session expired. Please unlock your wallet again.', 'error')
+      } else {
+        showToast('Release failed: ' + err.message, 'error')
+      }
     } finally {
       setLoading(false)
     }
@@ -2136,7 +2174,12 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
       onRefresh()
       onBack()
     } catch (err) {
-      showToast('Cancel failed: ' + err.message, 'error')
+      // Check if wallet session expired
+      if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
+        showToast('Session expired. Please unlock your wallet again.', 'error')
+      } else {
+        showToast('Cancel failed: ' + err.message, 'error')
+      }
     } finally {
       setLoading(false)
     }
@@ -2157,7 +2200,12 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
       onRefresh()
       onBack()
     } catch (err) {
-      showToast('Burn failed: ' + err.message, 'error')
+      // Check if wallet session expired
+      if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
+        showToast('Session expired. Please unlock your wallet again.', 'error')
+      } else {
+        showToast('Burn failed: ' + err.message, 'error')
+      }
     } finally {
       setLoading(false)
       setShowBurnConfirm(false)
