@@ -158,7 +158,7 @@ export function calculateReferralBonus(currentPrice) {
     return null
   }
   
-  // $0.0025 / price per token = number of tokens
+  // $0.01 / price per token = number of tokens
   const bonusTokens = REFERRAL_BONUS_USD / price
   
   return bonusTokens
