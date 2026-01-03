@@ -3,7 +3,7 @@
  * Scanner and Generator for addresses
  * 
  * FIXES:
- * - Standard black-on-white QR for universal compatibility
+ * - White QR on transparent background for dark UI aesthetics
  * - iOS video attributes for mobile camera
  * - Better error handling for video.play()
  * - inversionAttempts: 'attemptBoth' for scanning inverted QRs
@@ -42,14 +42,14 @@ export function QRCodeGenerator({
         const QRCodeLib = await import('qrcode')
         const QRCode = QRCodeLib.default || QRCodeLib
         
-        // Use STANDARD black-on-white colors for universal compatibility
-        // This ensures QR codes work across all scanners including our own
+        // White QR on transparent background for dark UI
+        // Scanner uses inversionAttempts: 'attemptBoth' to handle inverted QRs
         await QRCode.toCanvas(canvasRef.current, data, {
           width: size,
           margin: 2,
           color: {
-            dark: '#000000',   // Black QR modules (standard)
-            light: '#ffffff'   // White background (standard)
+            dark: '#ffffff',    // White QR modules
+            light: '#00000000'  // Transparent background
           },
           errorCorrectionLevel
         })
@@ -63,9 +63,8 @@ export function QRCodeGenerator({
             const logoX = (size - logoSize) / 2
             const logoY = (size - logoSize) / 2
             
-            // White background behind logo
-            ctx.fillStyle = '#ffffff'
-            ctx.fillRect(logoX - 4, logoY - 4, logoSize + 8, logoSize + 8)
+            // Transparent background behind logo
+            ctx.clearRect(logoX - 4, logoY - 4, logoSize + 8, logoSize + 8)
             ctx.drawImage(img, logoX, logoY, logoSize, logoSize)
           }
           img.src = logo
@@ -544,7 +543,7 @@ export const QR_STYLES = `
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: #ffffff;
+  background: transparent;
   border-radius: 16px;
 }
 

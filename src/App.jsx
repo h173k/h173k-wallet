@@ -2603,8 +2603,10 @@ function SettingsView({ publicKey, onBack, showToast, onDeleteWallet, onRpcChang
             <>
               <p>Enter your PIN to view recovery phrase</p>
               <input type="password" className="form-input pin-input" placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" />
-              <button className="btn btn-primary" onClick={handleShowBackup}>Reveal Phrase</button>
-              <button className="btn" onClick={() => setShowBackup(false)}>Cancel</button>
+              <div className="backup-actions">
+                <button className="btn btn-primary" onClick={handleShowBackup}>Reveal Phrase</button>
+                <button className="btn" onClick={() => setShowBackup(false)}>Cancel</button>
+              </div>
             </>
           ) : (
             <><div className="mnemonic-words">{mnemonic.split(' ').map((word, i) => <div key={i} className="mnemonic-word"><span className="word-number">{i + 1}</span><span className="word-text">{word}</span></div>)}</div><button className="btn" onClick={() => { setMnemonic(''); setShowBackup(false) }}>Done</button></>

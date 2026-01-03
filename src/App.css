@@ -1538,6 +1538,19 @@ body {
   margin-top: 12px;
 }
 
+.backup-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.backup-actions .btn {
+  margin-top: 0;
+  flex: 1;
+  max-width: 160px;
+}
+
 /* === Address Preview (Import Flow) === */
 .address-preview-card {
   background: var(--color-white-05);
