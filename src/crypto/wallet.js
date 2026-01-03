@@ -321,6 +321,7 @@ export function changePassword(oldPassword, newPassword) {
 
 /**
  * Session wallet class for maintaining unlocked state
+ * Includes event system for lock notifications
  */
 export class SessionWallet {
   constructor() {
@@ -329,6 +330,32 @@ export class SessionWallet {
     this.unlocked = false
     this.lockTimeout = null
     this.autoLockMinutes = 5
+    this._lockListeners = []
+  }
+  
+  /**
+   * Add a listener for lock events
+   * @param {Function} callback - Called when wallet is locked, receives { reason: 'manual' | 'auto' | 'error' }
+   * @returns {Function} Unsubscribe function
+   */
+  onLock(callback) {
+    this._lockListeners.push(callback)
+    return () => {
+      this._lockListeners = this._lockListeners.filter(cb => cb !== callback)
+    }
+  }
+  
+  /**
+   * Notify all listeners about lock event
+   */
+  _notifyLock(reason = 'manual') {
+    this._lockListeners.forEach(callback => {
+      try {
+        callback({ reason, timestamp: Date.now() })
+      } catch (err) {
+        console.error('Lock listener error:', err)
+      }
+    })
   }
   
   unlock(password) {
@@ -340,7 +367,7 @@ export class SessionWallet {
     return this.publicKey
   }
   
-  lock() {
+  lock(reason = 'manual') {
     // POPRAWKA: Bezpieczne czyszczenie pamięci
     if (this.keypair && this.keypair.secretKey) {
       // Nadpisz secretKey zerami przed usunięciem
@@ -357,6 +384,8 @@ export class SessionWallet {
       clearTimeout(this.lockTimeout)
       this.lockTimeout = null
     }
+    // Notify listeners about lock event
+    this._notifyLock(reason)
   }
   
   resetAutoLock() {
@@ -364,7 +393,7 @@ export class SessionWallet {
       clearTimeout(this.lockTimeout)
     }
     this.lockTimeout = setTimeout(() => {
-      this.lock()
+      this.lock('auto') // Pass 'auto' as reason for automatic lock
     }, this.autoLockMinutes * 60 * 1000)
   }
   

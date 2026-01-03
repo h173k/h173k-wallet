@@ -1,6 +1,12 @@
 /**
  * H173K Wallet - QR Code Components
  * Scanner and Generator for addresses
+ * 
+ * FIXES:
+ * - Standard black-on-white QR for universal compatibility
+ * - iOS video attributes for mobile camera
+ * - Better error handling for video.play()
+ * - inversionAttempts: 'attemptBoth' for scanning inverted QRs
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
@@ -36,12 +42,14 @@ export function QRCodeGenerator({
         const QRCodeLib = await import('qrcode')
         const QRCode = QRCodeLib.default || QRCodeLib
         
+        // Use STANDARD black-on-white colors for universal compatibility
+        // This ensures QR codes work across all scanners including our own
         await QRCode.toCanvas(canvasRef.current, data, {
           width: size,
           margin: 2,
           color: {
-            dark: '#ffffff',  // White QR code
-            light: '#00000000'  // Transparent background
+            dark: '#000000',   // Black QR modules (standard)
+            light: '#ffffff'   // White background (standard)
           },
           errorCorrectionLevel
         })
@@ -55,6 +63,7 @@ export function QRCodeGenerator({
             const logoX = (size - logoSize) / 2
             const logoY = (size - logoSize) / 2
             
+            // White background behind logo
             ctx.fillStyle = '#ffffff'
             ctx.fillRect(logoX - 4, logoY - 4, logoSize + 8, logoSize + 8)
             ctx.drawImage(img, logoX, logoY, logoSize, logoSize)
@@ -96,6 +105,7 @@ export function QRCodeScanner({
   const animationRef = useRef(null)
   const streamRef = useRef(null)
   const jsQRRef = useRef(null)
+  const mountedRef = useRef(true)
   
   const [scanning, setScanning] = useState(false)
   const [hasCamera, setHasCamera] = useState(true)
@@ -104,123 +114,255 @@ export function QRCodeScanner({
   
   // Load jsQR on mount
   useEffect(() => {
+    mountedRef.current = true
+    
     import('jsqr').then(module => {
-      jsQRRef.current = module.default
+      if (mountedRef.current) {
+        jsQRRef.current = module.default
+        console.log('✅ jsQR loaded')
+      }
     }).catch(err => {
       console.error('Failed to load jsQR:', err)
-      setError('Failed to load scanner')
+      if (mountedRef.current) {
+        setError('Failed to load scanner')
+      }
     })
-  }, [])
-  
-  // Start camera
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode,
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      })
-      
-      streamRef.current = stream
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current.play()
-          setCameraReady(true)
-          setScanning(true)
-          setError(null)
-        }
-      }
-    } catch (err) {
-      console.error('Camera error:', err)
-      setHasCamera(false)
-      if (err.name === 'NotAllowedError') {
-        setError('Camera access denied. Please allow camera access in your browser settings.')
-      } else if (err.name === 'NotFoundError') {
-        setError('No camera found on this device.')
-      } else {
-        setError('Unable to access camera: ' + err.message)
-      }
-      onError?.(err)
+    
+    return () => {
+      mountedRef.current = false
     }
-  }, [facingMode, onError])
+  }, [])
   
   // Stop camera
   const stopCamera = useCallback(() => {
+    console.log('🛑 Stopping camera...')
+    
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current)
       animationRef.current = null
     }
     
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current.getTracks().forEach(track => {
+        track.stop()
+        console.log('Track stopped:', track.kind)
+      })
       streamRef.current = null
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
     }
     
     setScanning(false)
     setCameraReady(false)
   }, [])
   
+  // Start camera
+  const startCamera = useCallback(async () => {
+    console.log('📷 Starting camera...')
+    setError(null)
+    setHasCamera(true)
+    
+    // Stop any existing stream first
+    stopCamera()
+    
+    try {
+      // Check if getUserMedia is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API not available. Make sure you are using HTTPS.')
+      }
+      
+      const constraints = {
+        video: { 
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 }
+        },
+        audio: false
+      }
+      
+      console.log('Requesting camera with constraints:', constraints)
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      
+      if (!mountedRef.current) {
+        // Component unmounted while waiting for camera
+        stream.getTracks().forEach(track => track.stop())
+        return
+      }
+      
+      console.log('✅ Got camera stream:', stream.getVideoTracks()[0]?.label)
+      streamRef.current = stream
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        
+        // Wait for video to be ready
+        videoRef.current.onloadedmetadata = async () => {
+          console.log('Video metadata loaded')
+          if (!mountedRef.current) return
+          
+          try {
+            // Play video - this may fail on iOS without user interaction
+            await videoRef.current.play()
+            console.log('✅ Video playing')
+            
+            if (mountedRef.current) {
+              setCameraReady(true)
+              setScanning(true)
+              setError(null)
+            }
+          } catch (playErr) {
+            console.error('Video play error:', playErr)
+            // On iOS, autoplay might be blocked - try again on user interaction
+            if (playErr.name === 'NotAllowedError') {
+              setError('Tap to start camera')
+              // Set up click handler to retry
+              if (videoRef.current) {
+                videoRef.current.onclick = async () => {
+                  try {
+                    await videoRef.current.play()
+                    setCameraReady(true)
+                    setScanning(true)
+                    setError(null)
+                    videoRef.current.onclick = null
+                  } catch (e) {
+                    console.error('Retry play failed:', e)
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        videoRef.current.onerror = (e) => {
+          console.error('Video error:', e)
+          setError('Video error occurred')
+        }
+      }
+    } catch (err) {
+      console.error('Camera error:', err)
+      
+      if (!mountedRef.current) return
+      
+      setHasCamera(false)
+      
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setError('Camera access denied. Please allow camera access in your browser settings.')
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setError('No camera found on this device.')
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        setError('Camera is in use by another application.')
+      } else if (err.name === 'OverconstrainedError') {
+        setError('Camera does not meet requirements.')
+      } else if (err.message?.includes('HTTPS')) {
+        setError('Camera requires HTTPS connection.')
+      } else {
+        setError('Unable to access camera: ' + (err.message || err.name || 'Unknown error'))
+      }
+      
+      onError?.(err)
+    }
+  }, [facingMode, onError, stopCamera])
+  
   // Auto-start camera on mount
   useEffect(() => {
-    startCamera()
-    return () => stopCamera()
+    // Small delay to ensure component is fully mounted
+    const timer = setTimeout(() => {
+      startCamera()
+    }, 100)
+    
+    return () => {
+      clearTimeout(timer)
+      stopCamera()
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   
   // Scan for QR codes
   useEffect(() => {
-    if (!scanning || !cameraReady || !videoRef.current || !canvasRef.current) return
+    if (!scanning || !cameraReady || !videoRef.current || !canvasRef.current) {
+      return
+    }
     
     const video = videoRef.current
     const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    
+    let scanCount = 0
     
     const scan = () => {
-      if (!jsQRRef.current || video.readyState !== video.HAVE_ENOUGH_DATA) {
+      if (!mountedRef.current || !jsQRRef.current) {
         animationRef.current = requestAnimationFrame(scan)
         return
       }
       
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+        animationRef.current = requestAnimationFrame(scan)
+        return
+      }
+      
+      // Set canvas size to match video
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+      }
+      
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
       
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      const code = jsQRRef.current(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'dontInvert'
-      })
-      
-      if (code) {
-        // Validate it's a Solana address or our app URL
-        const data = code.data
-        const parsed = parseQRData(data)
-        if (parsed.address && isValidSolanaAddress(parsed.address)) {
-          stopCamera()
-          onScan(parsed)
-          return
-        } else if (isValidSolanaAddress(data)) {
-          stopCamera()
-          onScan({ type: 'address', address: data })
-          return
+      try {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        
+        // Try both normal and inverted QR codes
+        const code = jsQRRef.current(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth'
+        })
+        
+        if (code && code.data) {
+          console.log('🎯 QR Code detected:', code.data)
+          
+          // Validate it's a Solana address or payment URL
+          const data = code.data.trim()
+          const parsed = parseQRData(data)
+          
+          if (parsed.address && isValidSolanaAddress(parsed.address)) {
+            console.log('✅ Valid Solana address found:', parsed.address)
+            stopCamera()
+            onScan(parsed)
+            return
+          } else if (isValidSolanaAddress(data)) {
+            console.log('✅ Valid plain Solana address:', data)
+            stopCamera()
+            onScan({ type: 'address', address: data })
+            return
+          } else {
+            // Log but continue scanning - might be a different QR
+            scanCount++
+            if (scanCount % 60 === 0) { // Log every ~1 second at 60fps
+              console.log('QR found but not valid Solana address:', data.substring(0, 50))
+            }
+          }
         }
+      } catch (scanErr) {
+        // Ignore scanning errors, just continue
+        console.error('Scan error:', scanErr)
       }
       
       animationRef.current = requestAnimationFrame(scan)
     }
     
+    console.log('🔍 Starting QR scan loop')
     animationRef.current = requestAnimationFrame(scan)
     
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current)
+        animationRef.current = null
       }
     }
   }, [scanning, cameraReady, onScan, stopCamera])
   
-  if (!hasCamera || error) {
+  // Error/no camera state
+  if (!hasCamera || (error && !error.includes('Tap to start'))) {
     return (
       <div className={`qr-scanner-error ${className}`}>
         <div className="scanner-error-icon">📷</div>
@@ -240,18 +382,39 @@ export function QRCodeScanner({
       <div className="scanner-viewport">
         <video 
           ref={videoRef} 
-          playsInline 
+          autoPlay
+          playsInline
           muted
+          webkit-playsinline="true"
           className="scanner-video"
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            objectFit: 'cover',
+            transform: 'scaleX(1)' // Prevent mirror on some devices
+          }}
         />
-        <canvas ref={canvasRef} className="scanner-canvas" />
+        <canvas 
+          ref={canvasRef} 
+          className="scanner-canvas" 
+          style={{ display: 'none' }}
+        />
         <div className="scanner-overlay">
           <div className="scanner-frame" />
         </div>
-        {!cameraReady && (
-          <div className="scanner-loading">
-            <div className="loading-spinner" />
-            <p>Starting camera...</p>
+        {(!cameraReady || error) && (
+          <div className="scanner-loading" onClick={error ? startCamera : undefined}>
+            {error ? (
+              <>
+                <p>{error}</p>
+                <p style={{ fontSize: '12px', opacity: 0.7 }}>Tap to retry</p>
+              </>
+            ) : (
+              <>
+                <div className="loading-spinner" />
+                <p>Starting camera...</p>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -263,11 +426,15 @@ export function QRCodeScanner({
 // ========== HELPER FUNCTIONS ==========
 
 /**
- * Validate Solana address
+ * Validate Solana address (base58, 32-44 chars)
  */
 function isValidSolanaAddress(str) {
+  if (!str || typeof str !== 'string') return false
+  
+  // Solana addresses are 32-44 characters of base58
+  if (str.length < 32 || str.length > 44) return false
+  
   try {
-    // Check if it's a base58 encoded 32-byte address
     const decoded = decodeBase58(str)
     return decoded.length === 32
   } catch {
@@ -276,34 +443,18 @@ function isValidSolanaAddress(str) {
 }
 
 /**
- * Check if it's a valid Solana Pay or H173K URL
- */
-function isValidPaymentURL(str) {
-  try {
-    // Check for solana: protocol (Solana Pay)
-    if (str.startsWith('solana:')) {
-      const address = str.replace('solana:', '').split('?')[0]
-      return isValidSolanaAddress(address)
-    }
-    // Legacy h173k: protocol
-    if (str.startsWith('h173k:')) {
-      const address = str.replace('h173k://', '').split('?')[0]
-      return isValidSolanaAddress(address)
-    }
-    // Plain address
-    return isValidSolanaAddress(str)
-  } catch {
-    return false
-  }
-}
-
-/**
- * Parse QR code data
+ * Parse QR code data - supports multiple formats
  */
 function parseQRData(data) {
+  if (!data || typeof data !== 'string') {
+    return { type: 'unknown', raw: data }
+  }
+  
+  const trimmed = data.trim()
+  
   // Solana Pay format: solana:<address>?amount=<amount>&memo=<memo>
-  if (data.startsWith('solana:')) {
-    const withoutProtocol = data.replace('solana:', '')
+  if (trimmed.startsWith('solana:')) {
+    const withoutProtocol = trimmed.replace('solana:', '')
     const [address, queryString] = withoutProtocol.split('?')
     const params = new URLSearchParams(queryString || '')
     
@@ -317,8 +468,8 @@ function parseQRData(data) {
   }
   
   // Legacy h173k:// format
-  if (data.startsWith('h173k://')) {
-    const withoutProtocol = data.replace('h173k://', '')
+  if (trimmed.startsWith('h173k://')) {
+    const withoutProtocol = trimmed.replace('h173k://', '')
     const [address, queryString] = withoutProtocol.split('?')
     const params = new URLSearchParams(queryString || '')
     
@@ -331,25 +482,20 @@ function parseQRData(data) {
   }
   
   // Plain address
-  if (isValidSolanaAddress(data)) {
+  if (isValidSolanaAddress(trimmed)) {
     return {
       type: 'address',
-      address: data
+      address: trimmed
     }
   }
   
-  return { type: 'unknown', raw: data }
+  return { type: 'unknown', raw: trimmed }
 }
 
 /**
- * Generate payment URL for QR
- */
-/**
  * Generate payment URL for QR (Solana Pay format)
- * https://docs.solanapay.com/spec
  */
 export function generatePaymentURL(address, amount = null, memo = null) {
-  // Solana Pay format: solana:<recipient>?amount=<amount>&spl-token=<mint>&memo=<memo>
   let url = `solana:${address}`
   const params = new URLSearchParams()
   
@@ -382,7 +528,7 @@ function decodeBase58(str) {
     num = num / BigInt(256)
   }
   
-  // Add leading zeros
+  // Add leading zeros for '1' characters
   for (const char of str) {
     if (char !== '1') break
     bytes.unshift(0)
@@ -391,14 +537,14 @@ function decodeBase58(str) {
   return new Uint8Array(bytes)
 }
 
-// ========== CSS (to be added to App.css) ==========
+// ========== CSS ==========
 export const QR_STYLES = `
 .qr-code-container {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(255, 255, 255, 0.05);
+  background: #ffffff;
   border-radius: 16px;
 }
 
@@ -441,6 +587,7 @@ export const QR_STYLES = `
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
 }
 
 .scanner-frame {
@@ -457,13 +604,6 @@ export const QR_STYLES = `
   50% { border-color: rgba(255, 255, 255, 1); }
 }
 
-.scanner-stop {
-  position: absolute;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
 .scanner-loading {
   position: absolute;
   top: 0;
@@ -477,6 +617,7 @@ export const QR_STYLES = `
   background: rgba(0, 0, 0, 0.8);
   color: rgba(255, 255, 255, 0.8);
   gap: 12px;
+  cursor: pointer;
 }
 
 .scanner-hint {
