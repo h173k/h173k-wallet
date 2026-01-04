@@ -2454,11 +2454,24 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         )}
         
         {canReleaseOffer(contract, publicKey) && (
+          <button className="btn btn-primary btn-action" onClick={handleRelease} disabled={loading || swapLoading}>
+            {loading ? (swapLoading ? 'Swapping SOL...' : 'Processing...') : 'Confirm Release'}
+          </button>
+        )}
+        
+        {/* Show confirmation status when user already confirmed */}
+        {hasAlreadyConfirmed(contract, publicKey) && (
+          <div className="release-confirmed-notice">
+            <div className="confirmed-icon">✓</div>
+            <div className="confirmed-text">
+              <strong>Release Confirmed</strong>
+              <p>You have confirmed the release. Waiting for the other party to confirm.</p>
+            </div>
+          </div>
+        )}
+        
+        {canBurnOffer(contract, publicKey) && (
           <>
-            <button className="btn btn-primary btn-action" onClick={handleRelease} disabled={loading || swapLoading}>
-              {loading ? (swapLoading ? 'Swapping SOL...' : 'Processing...') : 'Confirm Release'}
-            </button>
-            
             {!showBurnConfirm ? (
               <button className="btn btn-danger" onClick={() => setShowBurnConfirm(true)} disabled={loading || swapLoading}>
                 Burn Deposits
@@ -2490,17 +2503,6 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
               </div>
             )}
           </>
-        )}
-        
-        {/* Show confirmation status when user already confirmed */}
-        {hasAlreadyConfirmed(contract, publicKey) && (
-          <div className="release-confirmed-notice">
-            <div className="confirmed-icon">✓</div>
-            <div className="confirmed-text">
-              <strong>Release Confirmed</strong>
-              <p>You have confirmed the release. Waiting for the other party to confirm.</p>
-            </div>
-          </div>
         )}
         
         {isTerminal && (

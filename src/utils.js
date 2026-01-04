@@ -418,7 +418,23 @@ export function canReleaseOffer(offer, userPubkey) {
  * Check if offer can be burned
  */
 export function canBurnOffer(offer, userPubkey) {
-  return canReleaseOffer(offer, userPubkey)
+  const status = parseOfferStatus(offer.status)
+  const buyerStr = offer.buyer?.toString ? offer.buyer.toString() : offer.buyer
+  const sellerStr = offer.seller?.toString ? offer.seller.toString() : offer.seller
+  const userStr = userPubkey?.toString ? userPubkey.toString() : userPubkey
+  
+  const isBuyer = buyerStr === userStr
+  const isSeller = sellerStr && sellerStr !== '11111111111111111111111111111111' && sellerStr === userStr
+  
+  // Must be buyer or seller
+  if (!isBuyer && !isSeller) {
+    return false
+  }
+  
+  // Can burn in Locked, BuyerConfirmed or SellerConfirmed states
+  return status === OfferStatus.Locked || 
+         status === OfferStatus.BuyerConfirmed || 
+         status === OfferStatus.SellerConfirmed
 }
 
 /**
