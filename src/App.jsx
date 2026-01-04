@@ -791,7 +791,9 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   
   const { 
     convertSOLtoH173K, 
-    getSwapQuoteSOLtoH173K, 
+    getSwapQuoteSOLtoH173K,
+    calculateSwapForSOL,
+    executeSwap,
     loading: swapLoading, 
     MIN_SOL_FOR_SWAP 
   } = useSwap(connection, sessionWallet)
@@ -832,6 +834,35 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const handleDismissSolPrompt = () => {
     setSolPromptDismissed(true)
     setShowSolPrompt(false)
+  }
+  
+  // Emergency swap h173k -> 0.001 SOL
+  const [emergencySwapping, setEmergencySwapping] = useState(false)
+  
+  const handleEmergencySwap = async () => {
+    if (balance <= 0) {
+      showToast('No h173k balance to swap', 'error')
+      return
+    }
+    
+    setEmergencySwapping(true)
+    try {
+      const targetSOL = 0.001
+      const { h173kNeeded, quote } = await calculateSwapForSOL(targetSOL)
+      
+      if (h173kNeeded > balance) {
+        showToast(`Need ${h173kNeeded.toFixed(2)} h173k, have ${balance.toFixed(2)}`, 'error')
+        return
+      }
+      
+      const result = await executeSwap(quote, 'H173KtoSOL')
+      showToast(`Swapped ${result.inputAmount.toFixed(2)} h173k for ${result.outputAmount.toFixed(4)} SOL`, 'success')
+      onRefresh()
+    } catch (err) {
+      showToast('Swap failed: ' + err.message, 'error')
+    } finally {
+      setEmergencySwapping(false)
+    }
   }
   
   // SOL to h173k conversion
@@ -944,6 +975,16 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
               <button className="btn btn-primary btn-action" onClick={handleCheckDeposit} disabled={refreshing}>
                 {refreshing ? 'Checking...' : 'I\'ve Deposited SOL'}
               </button>
+              {balance > 0 && (
+                <button 
+                  className="btn btn-action" 
+                  onClick={handleEmergencySwap} 
+                  disabled={emergencySwapping || swapLoading}
+                  style={{ backgroundColor: '#f59e0b', borderColor: '#f59e0b' }}
+                >
+                  {emergencySwapping ? 'Swapping...' : 'Swap h173k for 0.001 SOL'}
+                </button>
+              )}
               <button className="btn" onClick={handleDismissSolPrompt}>
                 Skip for Now
               </button>
