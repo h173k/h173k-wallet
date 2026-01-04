@@ -836,7 +836,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
     setShowSolPrompt(false)
   }
   
-  // Emergency swap h173k -> 0.001 SOL
+  // Emergency swap h173k -> 0.003 SOL
   const [emergencySwapping, setEmergencySwapping] = useState(false)
   
   const handleEmergencySwap = async () => {
@@ -847,7 +847,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
     
     setEmergencySwapping(true)
     try {
-      const targetSOL = 0.001
+      const targetSOL = 0.003
       const { h173kNeeded, quote } = await calculateSwapForSOL(targetSOL)
       
       if (h173kNeeded > balance) {
@@ -982,7 +982,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
                   disabled={emergencySwapping || swapLoading}
                   style={{ backgroundColor: '#f59e0b', borderColor: '#f59e0b' }}
                 >
-                  {emergencySwapping ? 'Swapping...' : 'Swap h173k for 0.001 SOL'}
+                  {emergencySwapping ? 'Swapping...' : 'Swap h173k for 0.003 SOL'}
                 </button>
               )}
               <button className="btn" onClick={handleDismissSolPrompt}>
