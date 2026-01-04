@@ -60,7 +60,8 @@ import {
   parseOfferStatus,
   canCancelOffer,
   canReleaseOffer,
-  canBurnOffer
+  canBurnOffer,
+  hasAlreadyConfirmed
 } from './utils'
 
 import './App.css'
@@ -2489,6 +2490,17 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
               </div>
             )}
           </>
+        )}
+        
+        {/* Show confirmation status when user already confirmed */}
+        {hasAlreadyConfirmed(contract, publicKey) && (
+          <div className="release-confirmed-notice">
+            <div className="confirmed-icon">✓</div>
+            <div className="confirmed-text">
+              <strong>Release Confirmed</strong>
+              <p>You have confirmed the release. Waiting for the other party to confirm.</p>
+            </div>
+          </div>
         )}
         
         {isTerminal && (

@@ -2848,3 +2848,52 @@ body {
   color: var(--color-white-50);
   flex-shrink: 0;
 }
+
+/* ============================================
+   Release Confirmed Notice Styles
+   ============================================ */
+
+.release-confirmed-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.15), rgba(74, 222, 128, 0.05));
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: var(--border-radius-md);
+  padding: 16px;
+  margin-top: 8px;
+}
+
+.release-confirmed-notice .confirmed-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(74, 222, 128, 0.2);
+  border-radius: var(--border-radius-full);
+  color: var(--color-success);
+  font-size: 16px;
+  font-weight: var(--font-bold);
+  flex-shrink: 0;
+}
+
+.release-confirmed-notice .confirmed-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.release-confirmed-notice .confirmed-text strong {
+  display: block;
+  font-size: 14px;
+  font-weight: var(--font-medium);
+  color: var(--color-success);
+  margin-bottom: 4px;
+}
+
+.release-confirmed-notice .confirmed-text p {
+  font-size: 13px;
+  color: var(--color-white-70);
+  line-height: 1.4;
+  margin: 0;
+}

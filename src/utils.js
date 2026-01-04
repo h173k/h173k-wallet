@@ -353,6 +353,31 @@ export function canCancelOffer(offer, userPubkey) {
 }
 
 /**
+ * Check if user has already confirmed release
+ */
+export function hasAlreadyConfirmed(offer, userPubkey) {
+  const status = parseOfferStatus(offer.status)
+  const buyerStr = offer.buyer?.toString ? offer.buyer.toString() : offer.buyer
+  const sellerStr = offer.seller?.toString ? offer.seller.toString() : offer.seller
+  const userStr = userPubkey?.toString ? userPubkey.toString() : userPubkey
+  
+  const isBuyer = buyerStr === userStr
+  const isSeller = sellerStr && sellerStr !== '11111111111111111111111111111111' && sellerStr === userStr
+  
+  // Buyer already confirmed
+  if (isBuyer && status === OfferStatus.BuyerConfirmed) {
+    return true
+  }
+  
+  // Seller already confirmed
+  if (isSeller && status === OfferStatus.SellerConfirmed) {
+    return true
+  }
+  
+  return false
+}
+
+/**
  * Check if offer can be released
  */
 export function canReleaseOffer(offer, userPubkey) {
@@ -361,10 +386,32 @@ export function canReleaseOffer(offer, userPubkey) {
   const sellerStr = offer.seller?.toString ? offer.seller.toString() : offer.seller
   const userStr = userPubkey?.toString ? userPubkey.toString() : userPubkey
   
-  return (status === OfferStatus.Locked || 
-          status === OfferStatus.BuyerConfirmed || 
-          status === OfferStatus.SellerConfirmed) &&
-    (buyerStr === userStr || sellerStr === userStr)
+  const isBuyer = buyerStr === userStr
+  const isSeller = sellerStr && sellerStr !== '11111111111111111111111111111111' && sellerStr === userStr
+  
+  // Not buyer or seller - can't release
+  if (!isBuyer && !isSeller) {
+    return false
+  }
+  
+  // Status must be Locked, BuyerConfirmed or SellerConfirmed
+  if (status !== OfferStatus.Locked && 
+      status !== OfferStatus.BuyerConfirmed && 
+      status !== OfferStatus.SellerConfirmed) {
+    return false
+  }
+  
+  // If buyer already confirmed (BuyerConfirmed), only seller can confirm now
+  if (status === OfferStatus.BuyerConfirmed && isBuyer) {
+    return false // Buyer already confirmed, can't click again
+  }
+  
+  // If seller already confirmed (SellerConfirmed), only buyer can confirm now
+  if (status === OfferStatus.SellerConfirmed && isSeller) {
+    return false // Seller already confirmed, can't click again
+  }
+  
+  return true
 }
 
 /**
