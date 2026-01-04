@@ -1721,7 +1721,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
   if (subView === 'accept') {
     return (
       <AcceptContractView
-        connection={connection} escrow={escrow} balance={balance} solBalance={solBalance} price={price}
+        connection={connection} escrow={escrow} balance={balance} solBalance={solBalance} price={price} toUSD={toUSD}
         onBack={() => setSubView('list')}
         showToast={showToast}
         onSuccess={(contractData) => {
@@ -1997,7 +1997,7 @@ function NewContractView({ connection, escrow, balance, solBalance, price, toUSD
 }
 
 // ========== ACCEPT CONTRACT VIEW ==========
-function AcceptContractView({ connection, escrow, balance, solBalance, price, onBack, showToast, onSuccess, onRefresh }) {
+function AcceptContractView({ connection, escrow, balance, solBalance, price, toUSD, onBack, showToast, onSuccess, onRefresh }) {
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -2100,6 +2100,12 @@ function AcceptContractView({ connection, escrow, balance, solBalance, price, on
               <span>Amount</span>
               <span>{formatSmartNumber(fromTokenAmount(foundContract.amount))} h173k</span>
             </div>
+            {toUSD && (
+              <div className="found-row">
+                <span>Value</span>
+                <span>{formatUSD(toUSD(fromTokenAmount(foundContract.amount)))}</span>
+              </div>
+            )}
             <div className="found-row">
               <span>Your deposit (1x amount)</span>
               <span>{formatSmartNumber(fromTokenAmount(foundContract.amount))} h173k</span>
