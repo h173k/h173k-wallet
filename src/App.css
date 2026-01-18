@@ -523,6 +523,7 @@ body {
   gap: 12px;
   max-width: 280px;
   margin: 0 auto;
+  justify-items: center;
 }
 
 .pin-key {
@@ -907,16 +908,13 @@ body {
 
 /* === Action Row === */
 .action-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   margin-bottom: 30px;
-  justify-content: center;
 }
 
 .action-btn {
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: 33.333%;
   background: transparent;
   border: none;
   border-radius: var(--border-radius-lg);
@@ -928,6 +926,8 @@ body {
   cursor: pointer;
   transition: all var(--transition-fast);
   color: var(--color-white);
+  justify-self: center;
+  width: 100%;
 }
 
 .action-btn:hover {
@@ -969,15 +969,13 @@ body {
 
 /* === MAD Info === */
 .action-btn-wrapper {
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: 33.333%;
   position: relative;
+  display: flex;
+  justify-content: center;
 }
 
 .action-btn-wrapper .action-btn {
   width: 100%;
-  max-width: 100%;
 }
 
 .mad-info-btn {
