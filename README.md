@@ -127,19 +127,6 @@ export const TOKEN_DECIMALS = 9
 - **Jupiter**: Swap quotes and execution
 - **Solana RPC**: Blockchain interactions
 
-## Future Roadmap
-
-- [ ] Push notifications for transactions
-- [ ] Multiple account support
-- [ ] NFT display
-- [ ] DApp browser
-- [ ] Hardware wallet support
-- [ ] Multi-language support
-
-## License
-
-MIT License
-
 ## Disclaimer
 
 This wallet is provided as-is. Always verify transactions before signing. The developers are not responsible for any loss of funds due to user error or software bugs.
