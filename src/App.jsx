@@ -2067,9 +2067,6 @@ const handleCreate = async () => {
 
     const BUYER_INDEX_RENT  = 12166080 / 1e9  // 0.01216608 SOL — rent nowego buyerIndex PDA
     const ESCROW_VAULT_RENT = 0.00204          // ATA rent — escrowVault zawsze nowy (unikalny offerPDA)
-    const WSOL_ATA_RENT     = 0.00204          // ATA rent — używany przy obliczaniu sponsorAmt
-    const BASE_FEE_MARGIN   = 0.00001          // margines opłaty tx przy sponsor transferze
-    const WSOL_MINT_PUBKEY  = new PublicKey('So11111111111111111111111111111111111111112')
 
     // 1. buyerIndex — koszt tylko przy pierwszym kontrakcie tego portfela
     let buyerIndexRent = 0
@@ -2084,32 +2081,9 @@ const handleCreate = async () => {
     // 2. escrowVault ATA — zawsze ponoszony (każdy kontrakt = nowy unikalny vault)
     const escrowVaultRent = ESCROW_VAULT_RENT
 
-    // 3. sponsorAmt — SOL który twórca kontraktu wysyła do referrera wewnątrz createOffer.
-    //    Ten transfer wychodzi z portfela twórcy, więc musi być wliczony do extraSOLNeeded
-    //    zanim withAutoSOL wyliczy TARGET — inaczej po operacji portfel spada poniżej WSOL_ATA_RENT.
-    //    Logika jest identyczna jak w useEscrow.js::prepareReferralInstructions.
-    let sponsorAmt = 0
-    const referrer = getReferrer()
-    if (getSponsorAccounts() && referrer && referrer !== sessionWallet.publicKey.toString()) {
-      const { sponsorSol } = getReplenishSettings()
-      try {
-        const referrerPubkey = new PublicKey(referrer)
-        const referrerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, referrerPubkey)
-        // Only include sponsorAmt if referrer actually has an H173K token account.
-        // If they don't, useEscrow will skip the bonus entirely, so no SOL sponsoring is needed.
-        await getAccount(connection, referrerTokenAccount)
-        const referrerWSOLAccount = await getAssociatedTokenAddress(WSOL_MINT_PUBKEY, referrerPubkey)
-        let referrerHasWSOLATA = false
-        try { await getAccount(connection, referrerWSOLAccount); referrerHasWSOLATA = true } catch { referrerHasWSOLATA = false }
-        sponsorAmt = (sponsorSol > 0 ? sponsorSol : 0) + BASE_FEE_MARGIN + (referrerHasWSOLATA ? 0 : WSOL_ATA_RENT)
-      } catch {
-        // Referrer has no H173K token account or on-chain check failed — no sponsoring needed
-        sponsorAmt = 0
-      }
-    }
-
+    // NOTE: sponsorAmt removed — referrer never receives SOL sponsorship.
     // Suma wszystkich kosztów SOL które createOffer poniesie z portfela twórcy
-    const extraSOLNeeded = buyerIndexRent + escrowVaultRent + sponsorAmt
+    const extraSOLNeeded = buyerIndexRent + escrowVaultRent
 
     const result = await withAutoSOL(
       () => escrow.createOffer(numAmount, code, name, price),
@@ -3363,7 +3337,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
       
-      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.1.1</span></div></div>
+      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.1.2.1</span></div></div>
     </div>
   )
 }
