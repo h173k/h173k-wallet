@@ -1345,13 +1345,15 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
               if (referrer !== publicKey.toString() && referrer !== recipient) {
                 const referrerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, referrerPubkey)
                 
-                // Create referrer token account if needed
-                try { await getAccount(connection, referrerTokenAccount) } 
-                catch { transaction.add(createAssociatedTokenAccountInstruction(publicKey, referrerTokenAccount, referrerPubkey, TOKEN_MINT)) }
-                
-                // Add referral bonus transfer
-                transaction.add(createTransferInstruction(senderTokenAccount, referrerTokenAccount, publicKey, referralBonusLamports))
-                console.log(`Adding referral bonus: ${referralBonusLamports} lamports to ${referrer}`)
+                // Only send bonus if referrer already has a token account — never create it on their behalf
+                try {
+                  await getAccount(connection, referrerTokenAccount)
+                  // Add referral bonus transfer
+                  transaction.add(createTransferInstruction(senderTokenAccount, referrerTokenAccount, publicKey, referralBonusLamports))
+                  console.log(`Adding referral bonus: ${referralBonusLamports} lamports to ${referrer}`)
+                } catch {
+                  console.warn(`Skipping referral bonus: referrer has no token account`)
+                }
               }
             } catch (err) {
               console.error('Error adding referral transfer:', err)
@@ -2092,13 +2094,17 @@ const handleCreate = async () => {
       const { sponsorSol } = getReplenishSettings()
       try {
         const referrerPubkey = new PublicKey(referrer)
+        const referrerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, referrerPubkey)
+        // Only include sponsorAmt if referrer actually has an H173K token account.
+        // If they don't, useEscrow will skip the bonus entirely, so no SOL sponsoring is needed.
+        await getAccount(connection, referrerTokenAccount)
         const referrerWSOLAccount = await getAssociatedTokenAddress(WSOL_MINT_PUBKEY, referrerPubkey)
         let referrerHasWSOLATA = false
         try { await getAccount(connection, referrerWSOLAccount); referrerHasWSOLATA = true } catch { referrerHasWSOLATA = false }
         sponsorAmt = (sponsorSol > 0 ? sponsorSol : 0) + BASE_FEE_MARGIN + (referrerHasWSOLATA ? 0 : WSOL_ATA_RENT)
       } catch {
-        // Nie udało się sprawdzić on-chain — worst case: zakładamy że referrer nie ma WSOL ATA
-        sponsorAmt = (sponsorSol > 0 ? sponsorSol : 0) + BASE_FEE_MARGIN + WSOL_ATA_RENT
+        // Referrer has no H173K token account or on-chain check failed — no sponsoring needed
+        sponsorAmt = 0
       }
     }
 
@@ -3357,7 +3363,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
       
-      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.1.0</span></div></div>
+      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.1.1</span></div></div>
     </div>
   )
 }

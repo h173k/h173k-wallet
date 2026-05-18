@@ -232,22 +232,14 @@ async function prepareReferralInstructions(connection, walletPublicKey, userToke
     const referrerPubkey = new PublicKey(referrer)
     const referrerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, referrerPubkey)
     
-    // Check if referrer token account exists, create if needed
-    let referrerHasTokenAccount = true
+    // Check if referrer token account exists.
+    // If it doesn't exist, skip the bonus entirely — the referrer must create their own ATA first.
     try {
       await getAccount(connection, referrerTokenAccount)
       console.log('🎁 Referrer token account exists')
     } catch {
-      referrerHasTokenAccount = false
-      preInstructions.push(
-        createAssociatedTokenAccountInstruction(
-          walletPublicKey,
-          referrerTokenAccount,
-          referrerPubkey,
-          TOKEN_MINT
-        )
-      )
-      console.log('🎁 Will create referrer token account')
+      console.warn('🎁 Skipping referral bonus: referrer has no token account')
+      return { preInstructions, postInstructions }
     }
 
     // If sponsoring is enabled, send SOL to referrer so they can auto-replenish.
