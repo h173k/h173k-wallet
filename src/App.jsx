@@ -1787,13 +1787,15 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
   const fetchContracts = useCallback(async () => {
     if (!publicKey) return
     
-    // Always reload metadata from localStorage to get latest hidden flags
+    // Read latest metadata from localStorage but do NOT overwrite React state yet
+    // (overwriting here causes a race condition that drops freshly-saved names)
     let currentMeta = contractsMetadataRef.current
     try {
       const stored = localStorage.getItem('h173k_contracts_metadata')
-      currentMeta = stored ? JSON.parse(stored) : {}
-      setContractsMetadata(currentMeta)
-      contractsMetadataRef.current = currentMeta
+      if (stored) {
+        currentMeta = JSON.parse(stored)
+        contractsMetadataRef.current = currentMeta
+      }
     } catch { /* ignore */ }
     
     setLoading(true)
@@ -1805,6 +1807,8 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
         return !currentMeta[key]?.hidden
       })
       setContracts(visible)
+      // Update state only after async work is done, with the consistent snapshot
+      setContractsMetadata(currentMeta)
     } catch (err) {
       console.error('Fetch contracts error:', err)
     } finally {
@@ -1822,8 +1826,10 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   
   const saveMetadata = (key, data) => {
-    const newMeta = { ...contractsMetadata, [key]: { ...contractsMetadata[key], ...data } }
+    const current = JSON.parse(localStorage.getItem('h173k_contracts_metadata') || '{}')
+    const newMeta = { ...current, [key]: { ...current[key], ...data } }
     setContractsMetadata(newMeta)
+    contractsMetadataRef.current = newMeta
     localStorage.setItem('h173k_contracts_metadata', JSON.stringify(newMeta))
   }
   
@@ -1880,9 +1886,10 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
         showToast={showToast}
         onSuccess={(contractData) => {
           // Directly update state with new metadata to avoid race conditions
-          const newMeta = { ...contractsMetadata, [contractData.offerPDA]: contractData.meta }
+          const newMeta = { ...contractsMetadataRef.current, [contractData.offerPDA]: contractData.meta }
           setContractsMetadata(newMeta)
           contractsMetadataRef.current = newMeta
+          localStorage.setItem('h173k_contracts_metadata', JSON.stringify(newMeta))
           showToast('Contract created!', 'success')
           fetchContracts()
           setSubView('list')
@@ -3337,7 +3344,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
       
-      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.1.2.1</span></div></div>
+      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.1.2.2</span></div></div>
     </div>
   )
 }
