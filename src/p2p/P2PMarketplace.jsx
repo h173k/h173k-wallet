@@ -169,7 +169,9 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
 
   const handlePost = async (data) => {
     try {
-      await postOffer({ ...data, nickname: profile.nickname, currency }, onSwap)
+      const nick = (data.nickname || profile.nickname || '').trim()
+      await postOffer({ ...data, nickname: nick, currency }, onSwap)
+      if (nick && nick !== profile.nickname) onProfileChange({ ...profile, nickname: nick })
       showToast('Offer posted!', 'success')
       setShowCreate(false)
       reload()
@@ -276,7 +278,7 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
       {/* ===== Create modal ===== */}
       {showCreate && (
         <CreateOffer cur={cur} defaultType={side} posting={posting} solBalance={solBalance}
-          balance={balance} price={price}
+          balance={balance} price={price} nickname={profile.nickname}
           onClose={() => setShowCreate(false)} onSubmit={handlePost} />
       )}
 
@@ -326,8 +328,10 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
   const [revealed, setRevealed] = useState(false)
   const [amount, setAmount] = useState(() => String(offer.minUsd || ''))
 
-  // Per the offer type: a "buy" offer = you buy h173k; a "sell" offer = you sell h173k.
-  const viewerAction = offer.type === 'buy' ? 'buy' : 'sell'
+  // You take the OPPOSITE side of the posted offer:
+  //  - a SELL offer (someone sells h173k) => you BUY h173k (receive h173k, 1× deposit).
+  //  - a BUY offer  (someone buys h173k)  => you SELL h173k (send h173k, 2× deposit).
+  const viewerAction = offer.type === 'sell' ? 'buy' : 'sell'
   const sendsH173k = viewerAction === 'sell'          // you send h173k when selling
   const multiplier = sendsH173k ? 2 : 1               // MAD deposit: seller(send)=2×, buyer(receive)=1×
   const minH173k = price > 0 ? offer.minUsd / price : null
@@ -463,8 +467,9 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
 // ===========================================================================
 // Create offer
 // ===========================================================================
-function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, onClose, onSubmit }) {
+function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, nickname: initialNickname, onClose, onSubmit }) {
   const [type, setType] = useState(defaultType)
+  const [nickname, setNickname] = useState(initialNickname || '')
   const [pricePerUsd, setPrice] = useState('')
   const [minUsd, setMin] = useState('')
   const [maxUsd, setMax] = useState('')
@@ -510,12 +515,13 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, on
     setSubmitted(true)
     const p = parseFloat(pricePerUsd)
     const mx = parseFloat(maxUsd)
+    if (!nickname.trim()) return alertMsg('Enter a nickname')
     if (!(p > 0)) return alertMsg('Enter a valid price')
     if (!(mn > 0)) return alertMsg('Enter a valid minimum size')
     if (!(mx >= mn)) return alertMsg('Max size must be ≥ min size')
     if (methods.length === 0) return alertMsg('Add at least one payment method')
     if (!contact.trim()) return alertMsg('Enter your contact')
-    onSubmit({ type, pricePerUsd: p, minUsd: mn, maxUsd: mx, paymentMethods: methods, contactType, contact: contact.trim() })
+    onSubmit({ nickname: nickname.trim(), type, pricePerUsd: p, minUsd: mn, maxUsd: mx, paymentMethods: methods, contactType, contact: contact.trim() })
   }
 
   return (
@@ -529,6 +535,13 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, on
         <div className="p2p-type-toggle">
           <button className={`p2p-tab ${type === 'buy' ? 'active' : ''}`} onClick={() => setType('buy')}>Buy h173k</button>
           <button className={`p2p-tab ${type === 'sell' ? 'active' : ''}`} onClick={() => setType('sell')}>Sell h173k</button>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Nickname (shown on your offer)</label>
+          <input className="form-input" maxLength={32} value={nickname}
+            style={submitted && !nickname.trim() ? { borderColor: 'var(--color-error)' } : undefined}
+            onChange={(e) => setNickname(e.target.value)} placeholder="e.g. satoshi" />
         </div>
 
         <div className="form-group">
