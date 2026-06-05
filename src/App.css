@@ -2951,3 +2951,223 @@ body {
   border-color: var(--color-primary);
   color: var(--color-white);
 }
+
+/* ============================================
+   P2P Marketplace
+   ============================================ */
+
+/* "P2P Marketplace" button — like +New Contract but slightly transparent white bg, black text */
+.btn-p2p {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--color-black);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  margin-bottom: 24px;
+}
+.btn-p2p:hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* Banner */
+.p2p-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.p2p-tabs, .p2p-type-toggle {
+  display: flex;
+  gap: 8px;
+  background: var(--color-white-05);
+  border: 1px solid var(--color-white-10);
+  border-radius: var(--border-radius-md);
+  padding: 4px;
+}
+
+.p2p-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--color-white-70);
+  font-family: var(--font-main);
+  font-size: 15px;
+  font-weight: var(--font-medium);
+  padding: 10px 8px;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.p2p-tab.active {
+  background: var(--color-white);
+  color: var(--color-black);
+}
+.p2p-tab:not(.active):hover {
+  background: var(--color-white-10);
+  color: var(--color-white);
+}
+
+.p2p-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.p2p-mini-select {
+  flex: 1 1 auto;
+  min-width: 90px;
+  background: var(--color-white-05);
+  border: 1px solid var(--color-white-20);
+  color: var(--color-white);
+  font-family: var(--font-main);
+  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+}
+.p2p-mini-select:focus { outline: none; border-color: var(--color-white-50); }
+.p2p-mini-select option { background: #1a1a1a; color: var(--color-white); }
+
+.p2p-select option { background: #1a1a1a; color: var(--color-white); }
+
+.p2p-icon-btn {
+  background: var(--color-white-05);
+  border: 1px solid var(--color-white-20);
+  color: var(--color-white);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all var(--transition-fast);
+}
+.p2p-icon-btn:hover { background: var(--color-white-10); }
+.p2p-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.p2p-create-btn {
+  width: 100%;
+  border-color: var(--color-white-50);
+}
+
+/* Offer cards */
+.p2p-card .p2p-card-price {
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+.p2p-card-sub { color: var(--color-white-50); font-size: 13px; }
+
+.p2p-card-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--color-white-70);
+  margin-bottom: 6px;
+}
+.p2p-card-row span:first-child { color: var(--color-white-50); }
+
+.p2p-card-date {
+  font-size: 11px;
+  color: var(--color-white-30);
+  margin-top: 6px;
+}
+
+.p2p-you {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--color-white-10);
+  color: var(--color-white-70);
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 6px;
+}
+
+/* Chips */
+.p2p-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.p2p-chip {
+  font-size: 12px;
+  background: var(--color-white-10);
+  border: 1px solid var(--color-white-10);
+  color: var(--color-white-70);
+  padding: 4px 10px;
+  border-radius: 14px;
+}
+.p2p-chip.removable { cursor: pointer; }
+.p2p-chip.removable:hover { background: rgba(248, 113, 113, 0.2); color: var(--color-error); }
+
+/* Modals */
+.p2p-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+@media (min-width: 600px) {
+  .p2p-modal-overlay { align-items: center; }
+}
+
+.p2p-modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: #141414;
+  border: 1px solid var(--color-white-20);
+  border-radius: var(--border-radius-lg);
+  padding: 20px;
+  animation: p2pSlideUp 0.2s ease-out;
+}
+@keyframes p2pSlideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.p2p-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.p2p-modal-head h3 {
+  font-size: 18px;
+  font-weight: var(--font-medium);
+}
+
+.p2p-row2 {
+  display: flex;
+  gap: 12px;
+}
+.p2p-row2 .form-group { flex: 1; }
+
+.p2p-type-toggle { margin-top: 0; }
+
+/* Contact box */
+.p2p-contact-box { margin-top: 8px; }
+.p2p-contact-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--color-white-05);
+  border: 1px solid var(--color-white-20);
+  border-radius: var(--border-radius-md);
+  padding: 12px 16px;
+  font-size: 16px;
+  margin-bottom: 12px;
+  word-break: break-all;
+}
+.p2p-tg-btn { width: 100%; }

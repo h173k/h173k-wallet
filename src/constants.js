@@ -128,7 +128,7 @@ export function saveReplenishSettings(settings) {
 const SPONSOR_KEY = 'h173k_sponsor_accounts'
 
 export function getSponsorAccounts() {
-  try { const val = localStorage.getItem(SPONSOR_KEY); return val === null ? true : val === 'true' } catch { return true }
+  try { const val = localStorage.getItem(SPONSOR_KEY); return val === null ? false : val === 'true' } catch { return false }
 }
 
 export function saveSponsorAccounts(value) {

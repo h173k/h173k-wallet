@@ -45,6 +45,10 @@ import { QRCodeGenerator, QRCodeScanner } from './components/QRCode'
 import { useSwap } from './hooks/useSwap'
 import { useEscrowProgram } from './hooks/useEscrow'
 
+// P2P Marketplace
+import P2PMarketplace from './p2p/P2PMarketplace'
+import { getP2PProfile, saveP2PProfile, isP2POnboarded } from './p2p/useP2P'
+
 // Constants & Utils
 import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals } from './constants'
 import { useTokenPrice } from './usePrice'
@@ -437,6 +441,15 @@ function WalletApp({ connection, onRpcChange }) {
           solBalance={solBalance} price={price} toUSD={toUSD}
           onBack={() => setCurrentView('main')} showToast={showToast} onRefresh={fetchBalances}
           h173kDecimals={h173kDecimals}
+          onOpenP2P={() => setCurrentView('p2p')}
+        />
+      )}
+
+      {currentView === 'p2p' && (
+        <P2PMarketplace
+          connection={connection} publicKey={publicKey} balance={balance}
+          solBalance={solBalance} price={price} toUSD={toUSD}
+          onBack={() => setCurrentView('escrow')} showToast={showToast}
         />
       )}
       
@@ -1748,7 +1761,7 @@ function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
 }
 
 // ========== ESCROW VIEW ==========
-function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onRefresh, h173kDecimals }) {
+function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onRefresh, h173kDecimals, onOpenP2P }) {
   const [subView, setSubView] = useState('list') // list, new, accept, detail, import
   const [contracts, setContracts] = useState([])
   const [selectedContract, setSelectedContract] = useState(null)
@@ -1989,7 +2002,11 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
           Accept Contract
         </button>
       </div>
-      
+
+      <button className="btn btn-p2p" onClick={onOpenP2P}>
+        P2P Marketplace
+      </button>
+
       {/* Action buttons above contracts */}
       <div className="escrow-top-actions">
         <button className="escrow-action-btn refresh-action-btn" onClick={handleRefresh} disabled={refreshing}>
@@ -2877,6 +2894,33 @@ function ReplenishNowButton({ connection, solBalance, showToast }) {
   )
 }
 
+// ========== P2P SETTINGS SECTION (only visible once onboarded) ==========
+function P2PSettingsSection({ showToast }) {
+  const initial = getP2PProfile()
+  const [nickname, setNickname] = useState(initial?.nickname || '')
+  if (!initial) return null // hidden until the user has used P2P at least once
+
+  const save = () => {
+    const n = nickname.trim()
+    if (!n) { showToast('Nickname cannot be empty', 'error'); return }
+    if (n.length > 32) { showToast('Nickname too long (max 32)', 'error'); return }
+    const current = getP2PProfile() || initial
+    saveP2PProfile({ ...current, nickname: n })
+    showToast('P2P nickname saved', 'success')
+  }
+
+  return (
+    <div className="settings-section">
+      <h3>P2P Marketplace</h3>
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <label className="form-label">Nickname</label>
+        <input className="form-input" maxLength={32} value={nickname} onChange={(e) => setNickname(e.target.value)} />
+      </div>
+      <button className="btn btn-secondary" onClick={save}>Save nickname</button>
+    </div>
+  )
+}
+
 // ========== SETTINGS VIEW ==========
 function SettingsView({ connection, publicKey, solBalance, onBack, showToast, onDeleteWallet, onRpcChange, onDecimalsChange }) {
   const [showBackup, setShowBackup] = useState(false)
@@ -3295,6 +3339,8 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
       </div>
       
       <ReferralSection publicKey={publicKey} showToast={showToast} />
+
+      <P2PSettingsSection showToast={showToast} />
       
       <div className="settings-section">
         <h3>Network</h3>
@@ -3344,7 +3390,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
       
-      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.1.2.2</span></div></div>
+      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.2.2.2</span></div></div>
     </div>
   )
 }
