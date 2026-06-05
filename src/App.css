@@ -2963,16 +2963,35 @@ body {
    P2P Marketplace
    ============================================ */
 
-/* "P2P Marketplace" button — like +New Contract but slightly transparent white bg, black text */
+/* "P2P Marketplace" button — warm gradient background, dark text */
 .btn-p2p {
   width: 100%;
-  background: rgba(255, 255, 255, 0.85);
+  background: linear-gradient(90deg, #EA6A4E 0%, #F5A623 100%);
   color: var(--color-black);
-  border: 1px solid rgba(255, 255, 255, 0.85);
+  border: none;
+  font-weight: var(--font-medium);
   margin-bottom: 24px;
 }
 .btn-p2p:hover {
-  background: rgba(255, 255, 255, 0.7);
+  filter: brightness(1.06);
+}
+
+/* Gradient title in the P2P section header */
+.p2p-view .view-header h2 {
+  background-image: linear-gradient(90deg, #EA6A4E 0%, #F5A623 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Gradient "MAD" label under the action icon */
+.mad-label {
+  background-image: linear-gradient(90deg, #EA6A4E 0%, #F5A623 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 
 /* Banner */

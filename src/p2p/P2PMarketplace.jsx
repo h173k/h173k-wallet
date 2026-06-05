@@ -59,7 +59,7 @@ function P2POnboarding({ onDone, onBack, showToast }) {
   }
 
   return (
-    <div className="escrow-view">
+    <div className="escrow-view p2p-view">
       <div className="view-header">
         <button className="back-btn" onClick={onBack}><Back /> Back</button>
         <h2>P2P Marketplace</h2>
