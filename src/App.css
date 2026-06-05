@@ -962,6 +962,16 @@ body {
   color: var(--color-black);
 }
 
+/* MAD icon: the SVG is a gradient disc with the shield cut out, so no white circle */
+.action-icon.mad-icon {
+  background: transparent;
+}
+.mad-icon svg {
+  width: 100%;
+  height: 100%;
+  stroke: none;
+}
+
 .action-btn span {
   font-size: 14px;
   color: var(--color-white-70);
@@ -988,9 +998,13 @@ body {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 1px solid var(--color-white-30);
+  border: 1px solid rgba(242, 140, 70, 0.55);
   background: transparent;
-  color: var(--color-white-30);
+  background-image: linear-gradient(90deg, #EA6A4E 0%, #F5A623 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
   font-size: 10px;
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -999,8 +1013,7 @@ body {
 }
 
 .mad-info-btn:hover {
-  border-color: var(--color-white-50);
-  color: var(--color-white-50);
+  border-color: rgba(245, 166, 35, 0.9);
 }
 
 .mad-info-btn:active {
@@ -2963,21 +2976,32 @@ body {
    P2P Marketplace
    ============================================ */
 
-/* "P2P Marketplace" button — warm gradient background, dark text */
+/* "P2P Marketplace" button — gradient fill; black label reads as a cutout on the black page */
 .btn-p2p {
   width: 100%;
   background: linear-gradient(90deg, #EA6A4E 0%, #F5A623 100%);
-  color: var(--color-black);
+  color: #000;
+  -webkit-text-fill-color: #000;
   border: none;
   font-weight: var(--font-medium);
   margin-bottom: 24px;
 }
+/* Keep the gradient on hover (override the generic .btn:hover that swaps in translucent white) */
 .btn-p2p:hover {
-  filter: brightness(1.06);
+  background: linear-gradient(90deg, #EA6A4E 0%, #F5A623 100%);
 }
 
 /* Gradient title in the P2P section header */
 .p2p-view .view-header h2 {
+  background-image: linear-gradient(90deg, #EA6A4E 0%, #F5A623 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Gradient "MAD Contracts" title (escrow section only, not P2P) */
+.escrow-view:not(.p2p-view) .view-header h2 {
   background-image: linear-gradient(90deg, #EA6A4E 0%, #F5A623 100%);
   -webkit-background-clip: text;
   background-clip: text;

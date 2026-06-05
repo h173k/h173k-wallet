@@ -1210,7 +1210,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
         </button>
         <div className="action-btn-wrapper">
           <button className="action-btn" onClick={onEscrow} disabled={needsDeposit}>
-            <div className="action-icon"><EscrowIcon size={24} /></div>
+            <div className="action-icon mad-icon"><EscrowIcon size={24} /></div>
             <span className="mad-label">MAD</span>
           </button>
           <button className="mad-info-btn" onClick={() => setShowMADInfo(true)}>?</button>
@@ -3415,14 +3415,14 @@ function ReceiveIcon({ size = 24 }) {
 
 function EscrowIcon({ size = 24 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24">
       <defs>
         <linearGradient id="madGrad" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor="#EA6A4E" />
           <stop offset="100%" stopColor="#F5A623" />
         </linearGradient>
       </defs>
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="url(#madGrad)" />
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="url(#madGrad)" />
     </svg>
   )
 }
