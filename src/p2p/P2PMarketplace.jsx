@@ -328,12 +328,13 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
   const [revealed, setRevealed] = useState(false)
   const [amount, setAmount] = useState(() => String(offer.minUsd || ''))
 
-  // You take the OPPOSITE side of the posted offer:
-  //  - a SELL offer (someone sells h173k) => you BUY h173k (receive h173k, 1× deposit).
-  //  - a BUY offer  (someone buys h173k)  => you SELL h173k (send h173k, 2× deposit).
-  const viewerAction = offer.type === 'sell' ? 'buy' : 'sell'
-  const sendsH173k = viewerAction === 'sell'          // you send h173k when selling
-  const multiplier = sendsH173k ? 2 : 1               // MAD deposit: seller(send)=2×, buyer(receive)=1×
+  // My side of this trade:
+  //  - my own offer  => I'm the advertiser, on the offer's own side.
+  //  - someone else's => I'm the taker, on the OPPOSITE side.
+  // Who sends h173k? sell offer: advertiser sends / taker receives. buy offer: advertiser receives / taker sends.
+  const sendsH173k = isMine ? (offer.type === 'sell') : (offer.type === 'buy')
+  const viewerAction = sendsH173k ? 'sell' : 'buy'    // sell h173k = send it; buy h173k = receive it
+  const multiplier = sendsH173k ? 2 : 1               // MAD deposit: buyer(send h173k)=2×, seller(receive)=1×
   const minH173k = price > 0 ? offer.minUsd / price : null
   const required = minH173k != null ? minH173k * multiplier : null   // h173k to back the MIN size (reveal gate)
   const enough = required != null && balance >= required
@@ -347,7 +348,10 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
   const neededForAmount = (calc?.h173kAmount != null) ? calc.h173kAmount * multiplier : null
   const enoughForAmount = neededForAmount == null ? null : balance >= neededForAmount
 
-  const setAmt = (e) => { const v = e.target.value; if (v === '' || (parseFloat(v) >= 0 && !v.includes('-'))) setAmount(v) }
+  const setAmt = (e) => {
+    const v = e.target.value.replace(',', '.')
+    if (v === '' || /^\d*\.?\d*$/.test(v)) setAmount(v)
+  }
 
   const tryReveal = () => {
     if (isMine) return
@@ -381,9 +385,8 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
           <label className="form-label">
             {viewerAction === 'buy' ? 'How much do you want to buy? ($ value)' : 'How much do you want to sell? ($ value)'}
           </label>
-          <input className="form-input" type="number" inputMode="decimal" min="0" step="any" value={amount}
+          <input className="form-input" type="text" inputMode="decimal" value={amount}
             style={amt > 0 && !inRange ? { borderColor: 'var(--color-error)' } : undefined}
-            onKeyDown={(e) => { if (['-', 'e', 'E', '+'].includes(e.key)) e.preventDefault() }}
             onChange={setAmt} placeholder={`${formatNumber(offer.minUsd, 2)} – ${formatNumber(offer.maxUsd, 2)}`} />
           {amt > 0 && !inRange && <span className="form-hint" style={{ color: 'var(--color-error)' }}>Outside the offer range (${formatNumber(offer.minUsd, 2)}–${formatNumber(offer.maxUsd, 2)}).</span>}
         </div>
