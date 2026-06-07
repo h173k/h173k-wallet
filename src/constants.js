@@ -134,6 +134,23 @@ export function getSponsorAccounts() {
 export function saveSponsorAccounts(value) {
   try { localStorage.setItem(SPONSOR_KEY, value ? 'true' : 'false') } catch {}
 }
+
+// ========== AUTO-LOCK TIMEOUT SETTING ==========
+const AUTO_LOCK_KEY = 'h173k_auto_lock_seconds'
+export const DEFAULT_AUTO_LOCK_SECONDS = 300
+export const AUTO_LOCK_OPTIONS = [60, 300, 900, 1800, 3600] // 1, 5, 15, 30, 60 min
+
+export function getAutoLockSeconds() {
+  try {
+    const v = parseInt(localStorage.getItem(AUTO_LOCK_KEY), 10)
+    if (v >= 30 && v <= 86400) return v
+  } catch {}
+  return DEFAULT_AUTO_LOCK_SECONDS
+}
+
+export function saveAutoLockSeconds(seconds) {
+  try { localStorage.setItem(AUTO_LOCK_KEY, String(seconds)) } catch {}
+}
 // ========== H173K DISPLAY DECIMAL SETTINGS ==========
 const H173K_DECIMALS_KEY = 'h173k_display_decimals'
 export const DEFAULT_H173K_DECIMALS = 6

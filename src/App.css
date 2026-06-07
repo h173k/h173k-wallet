@@ -1841,6 +1841,28 @@ body {
   font-weight: var(--font-medium);
 }
 
+.deposit-note {
+  font-size: 11px;
+  color: var(--color-white-50);
+  font-weight: var(--font-regular);
+}
+
+/* Auto-lock setting: spacing between label and the seconds input */
+.autolock-row { gap: 16px; }
+.autolock-field { display: inline-flex; align-items: center; gap: 6px; }
+.autolock-input {
+  width: 84px;
+  background: var(--color-white-05);
+  border: 1px solid var(--color-white-20);
+  border-radius: 8px;
+  color: var(--color-white);
+  padding: 8px 10px;
+  font-size: 14px;
+  text-align: right;
+}
+.autolock-input:focus { outline: none; border-color: var(--color-white); }
+.autolock-unit { color: var(--color-white-50); font-size: 14px; }
+
 .contract-item-usd {
   font-size: 13px;
   font-weight: var(--font-regular);

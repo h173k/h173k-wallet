@@ -50,7 +50,7 @@ import P2PMarketplace from './p2p/P2PMarketplace'
 import { getP2PProfile, saveP2PProfile, isP2POnboarded } from './p2p/useP2P'
 
 // Constants & Utils
-import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals } from './constants'
+import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS } from './constants'
 import { useTokenPrice } from './usePrice'
 import { 
   formatNumber, 
@@ -304,6 +304,8 @@ function WalletApp({ connection, onRpcChange }) {
   }, [price])
   
   useEffect(() => {
+    // Apply the saved auto-lock timeout before any unlock happens.
+    sessionWallet.autoLockMinutes = getAutoLockSeconds() / 60
     const exists = walletExists()
     setHasWallet(exists)
     if (exists && sessionWallet.isUnlocked()) {
@@ -2675,13 +2677,13 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         </div>
         
         <div className="detail-row">
-          <span>Buyer deposit</span>
+          <span>Buyer deposit <span className="deposit-note">(payment+deposit)</span></span>
           <span>{formatH173K(buyerDeposit, h173kDecimals)} h173k</span>
         </div>
         
         {sellerDeposit > 0 && (
           <div className="detail-row">
-            <span>Seller deposit</span>
+            <span>Seller deposit <span className="deposit-note">(deposit)</span></span>
             <span>{formatH173K(sellerDeposit, h173kDecimals)} h173k</span>
           </div>
         )}
@@ -2942,6 +2944,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
   const [rpcUrl, setRpcUrl] = useState(getRpcEndpoint())
   const [validatingRpc, setValidatingRpc] = useState(false)
   const [h173kDecimals, setH173kDecimals] = useState(() => getH173KDecimals())
+  const [autoLock, setAutoLock] = useState(() => String(getAutoLockSeconds()))
   
   useEffect(() => {
     const check = async () => { 
@@ -3391,7 +3394,37 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
       
-      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.2.2.3</span></div></div>
+      <div className="settings-section">
+        <h3>Security</h3>
+        <div className="settings-item autolock-row">
+          <span>Auto-lock after</span>
+          <span className="autolock-field">
+            <input className="autolock-input" type="text" inputMode="numeric" value={autoLock}
+              onChange={(e) => setAutoLock(e.target.value.replace(/[^\d]/g, ''))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.currentTarget.blur(); return }
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  const cur = parseInt(autoLock, 10) || 0
+                  const next = Math.min(86400, Math.max(30, cur + (e.key === 'ArrowUp' ? 1 : -1)))
+                  setAutoLock(String(next))
+                }
+              }}
+              onBlur={() => {
+                let s = parseInt(autoLock, 10)
+                if (!Number.isFinite(s)) s = DEFAULT_AUTO_LOCK_SECONDS
+                s = Math.min(86400, Math.max(30, s))
+                setAutoLock(String(s))
+                saveAutoLockSeconds(s)
+                sessionWallet.setAutoLockMinutes(s / 60)
+                showToast('Auto-lock updated', 'success')
+              }} />
+            <span className="autolock-unit">sec</span>
+          </span>
+        </div>
+      </div>
+
+      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.2.3.3</span></div></div>
     </div>
   )
 }

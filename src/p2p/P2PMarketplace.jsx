@@ -352,6 +352,14 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
     const v = e.target.value.replace(',', '.')
     if (v === '' || /^\d*\.?\d*$/.test(v)) setAmount(v)
   }
+  // Up/Down arrows step the value by 1 (laptop convenience; type=text has no native spinner).
+  const stepAmt = (e) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+    e.preventDefault()
+    const cur = parseFloat(amount) || 0
+    const next = e.key === 'ArrowUp' ? cur + 1 : Math.max(0, cur - 1)
+    setAmount(String(Number(next.toFixed(6))))
+  }
 
   const tryReveal = () => {
     if (isMine) return
@@ -387,7 +395,7 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
           </label>
           <input className="form-input" type="text" inputMode="decimal" value={amount}
             style={amt > 0 && !inRange ? { borderColor: 'var(--color-error)' } : undefined}
-            onChange={setAmt} placeholder={`${formatNumber(offer.minUsd, 2)} – ${formatNumber(offer.maxUsd, 2)}`} />
+            onChange={setAmt} onKeyDown={stepAmt} placeholder={`${formatNumber(offer.minUsd, 2)} – ${formatNumber(offer.maxUsd, 2)}`} />
           {amt > 0 && !inRange && <span className="form-hint" style={{ color: 'var(--color-error)' }}>Outside the offer range (${formatNumber(offer.minUsd, 2)}–${formatNumber(offer.maxUsd, 2)}).</span>}
         </div>
 
@@ -497,7 +505,9 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
   const blockMinus = (e) => { if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') e.preventDefault() }
 
   const addMethod = () => {
-    const m = pmInput.trim().slice(0, MAX_METHOD_LEN)
+    // Title-case each word (e.g. "bank transfer" -> "Bank Transfer", "m-pesa" -> "M-Pesa").
+    const titleCase = (s) => s.replace(/(^|[\s\-/])(\p{L})/gu, (_, b, ch) => b + ch.toUpperCase())
+    const m = titleCase(pmInput.trim().slice(0, MAX_METHOD_LEN))
     if (!m) return
     if (methods.includes(m)) { setPmInput(''); return }
     if (methods.length >= MAX_PAYMENT_METHODS) { alertMsg(`Max ${MAX_PAYMENT_METHODS} payment methods`); return }
