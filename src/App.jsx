@@ -51,7 +51,18 @@ import { getP2PProfile, saveP2PProfile, isP2POnboarded } from './p2p/useP2P'
 
 // Messenger (E2E encrypted)
 import MessengerView from './messenger/MessengerView'
-import { store as messengerStore, scanIncomingMessages } from './messenger/messenger'
+import {
+  store as messengerStore,
+  scanIncomingMessages,
+  getNotificationsEnabled,
+  setNotificationsEnabled,
+  getMessengerScanLimit,
+  setMessengerScanLimit,
+  MESSENGER_SCAN_OPTIONS,
+  getTxNotificationsEnabled,
+  setTxNotificationsEnabled,
+  showAppNotification,
+} from './messenger/messenger'
 
 // Constants & Utils
 import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS } from './constants'
@@ -299,6 +310,8 @@ function WalletApp({ connection, onRpcChange }) {
   })
   // When set, the messenger opens directly on this peer's thread (e.g. from P2P).
   const [messengerTarget, setMessengerTarget] = useState(null)
+  // Last seen h173k balance, used to detect incoming transfers for notifications.
+  const prevH173kRef = useRef(null)
 
   // Open the messenger focused on a specific peer, ensuring the thread exists.
   const openMessengerWith = useCallback((address, suggestedName) => {
@@ -316,6 +329,21 @@ function WalletApp({ connection, onRpcChange }) {
     update()
     return messengerStore.subscribe(update)
   }, [])
+
+  // Open the relevant conversation when a message notification is clicked.
+  useEffect(() => {
+    const openFrom = (address) => { if (address) openMessengerWith(address) }
+    const onWinEvent = (e) => openFrom(e.detail)
+    const onSwMessage = (e) => {
+      if (e.data && e.data.type === 'h173k-open-thread') openFrom(e.data.from)
+    }
+    window.addEventListener('h173k-open-thread', onWinEvent)
+    if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', onSwMessage)
+    return () => {
+      window.removeEventListener('h173k-open-thread', onWinEvent)
+      if (navigator.serviceWorker) navigator.serviceWorker.removeEventListener('message', onSwMessage)
+    }
+  }, [openMessengerWith])
   
   // Check for referral code in URL on mount
   const [pendingReferral, setPendingReferral] = useState(() => getReferralFromURL())
@@ -364,6 +392,13 @@ function WalletApp({ connection, onRpcChange }) {
         try {
           const account = await getAccount(connection, tokenAccount)
           const newBalance = Number(account.amount) / Math.pow(10, TOKEN_DECIMALS)
+          // Notify on incoming h173k (balance increased since the last refresh).
+          const prev = prevH173kRef.current
+          if (prev !== null && newBalance > prev + 1e-9 && getTxNotificationsEnabled()) {
+            const delta = newBalance - prev
+            showAppNotification('Received h173k', '+' + formatH173K(delta, h173kDecimals) + ' h173k', { tag: 'h173k-tx' })
+          }
+          prevH173kRef.current = newBalance
           setBalance(newBalance)
           localStorage.setItem('h173k_cached_balance', newBalance.toString())
           setRpcError(null)
@@ -2908,6 +2943,98 @@ function SponsorAccountsToggle({ showToast }) {
   )
 }
 
+// ========== MESSENGER SETTINGS ==========
+function MessengerSettings({ showToast }) {
+  const [notif, setNotif] = useState(() => getNotificationsEnabled())
+  const [txNotif, setTxNotif] = useState(() => getTxNotificationsEnabled())
+  const [limit, setLimit] = useState(() => getMessengerScanLimit())
+
+  // Ensure the platform allows notifications, prompting if needed. Returns true if granted.
+  const ensurePermission = async () => {
+    if (typeof Notification === 'undefined') {
+      showToast('Notifications are not supported on this device', 'error')
+      return false
+    }
+    let perm = Notification.permission
+    if (perm === 'default') {
+      try { perm = await Notification.requestPermission() } catch { perm = 'denied' }
+    }
+    if (perm !== 'granted') {
+      showToast('Notification permission denied', 'error')
+      return false
+    }
+    return true
+  }
+
+  const toggleNotif = async () => {
+    if (!notif) {
+      if (!(await ensurePermission())) { setNotificationsEnabled(false); setNotif(false); return }
+      setNotificationsEnabled(true); setNotif(true)
+      showToast('Message notifications enabled', 'success')
+    } else {
+      setNotificationsEnabled(false); setNotif(false)
+      showToast('Message notifications disabled', 'info')
+    }
+  }
+
+  const toggleTxNotif = async () => {
+    if (!txNotif) {
+      if (!(await ensurePermission())) { setTxNotificationsEnabled(false); setTxNotif(false); return }
+      setTxNotificationsEnabled(true); setTxNotif(true)
+      showToast('Transaction notifications enabled', 'success')
+    } else {
+      setTxNotificationsEnabled(false); setTxNotif(false)
+      showToast('Transaction notifications disabled', 'info')
+    }
+  }
+
+  const chooseLimit = (n) => {
+    setMessengerScanLimit(n); setLimit(n)
+    showToast('Scanning ' + n + ' entries per refresh', 'success')
+  }
+
+  return (
+    <>
+      <div className="settings-section">
+        <h3>Notifications</h3>
+        <div className="settings-item" onClick={toggleTxNotif} style={{ cursor: 'pointer' }}>
+          <div>
+            <div>Incoming transactions</div>
+            <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '2px' }}>
+              Notify me when h173k arrives (while the app is open or in the background)
+            </div>
+          </div>
+          <span className={`badge ${txNotif ? 'enabled' : ''}`}>{txNotif ? 'On' : 'Off'}</span>
+        </div>
+        <div className="settings-item" onClick={toggleNotif} style={{ cursor: 'pointer' }}>
+          <div>
+            <div>New messages</div>
+            <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '2px' }}>
+              Notify me of new messenger messages
+            </div>
+          </div>
+          <span className={`badge ${notif ? 'enabled' : ''}`}>{notif ? 'On' : 'Off'}</span>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <h3>Messenger</h3>
+        <div className="settings-item" style={{ display: 'block' }}>
+          <div>Entries scanned per refresh</div>
+          <div style={{ fontSize: '12px', opacity: 0.6, margin: '2px 0 10px' }}>
+            Higher values catch more history but use more RPC
+          </div>
+          <div className="messenger-scan-options">
+            {MESSENGER_SCAN_OPTIONS.map((n) => (
+              <button key={n} className={`scan-opt ${limit === n ? 'active' : ''}`} onClick={() => chooseLimit(n)}>{n}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ========== REPLENISH NOW BUTTON ==========
 // Separate component so it can call useSwap as a hook
 function ReplenishNowButton({ connection, solBalance, showToast }) {
@@ -3472,7 +3599,9 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         </div>
       </div>
 
-      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.4.3.3</span></div></div>
+      <MessengerSettings showToast={showToast} />
+
+      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.4.4.3</span></div></div>
     </div>
   )
 }

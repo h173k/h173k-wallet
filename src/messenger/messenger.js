@@ -51,7 +51,39 @@ export const MSG_COST_LAMPORTS = Math.round(MSG_COST * Math.pow(10, TOKEN_DECIMA
 
 export const MAX_MESSAGE_LENGTH = 200          // characters
 export const MAX_MESSAGES_PER_THREAD = 100     // stored per thread
-export const MAX_SCAN_PER_UPDATE = 100         // signatures fetched per refresh
+export const MAX_SCAN_PER_UPDATE = 100         // default signatures fetched per refresh
+
+// User-configurable: how many signatures to scan per refresh.
+export const MESSENGER_SCAN_OPTIONS = [100, 200, 300, 500, 800, 1000]
+export const DEFAULT_MESSENGER_SCAN = 100
+const SCAN_LIMIT_KEY = 'h173k_msg_scan_limit'
+const NOTIF_KEY = 'h173k_msg_notifications'
+
+export function getMessengerScanLimit() {
+  try {
+    const v = parseInt(localStorage.getItem(SCAN_LIMIT_KEY), 10)
+    if (MESSENGER_SCAN_OPTIONS.includes(v)) return v
+  } catch {}
+  return DEFAULT_MESSENGER_SCAN
+}
+export function setMessengerScanLimit(n) {
+  if (!MESSENGER_SCAN_OPTIONS.includes(n)) return
+  try { localStorage.setItem(SCAN_LIMIT_KEY, String(n)) } catch {}
+}
+export function getNotificationsEnabled() {
+  try { return localStorage.getItem(NOTIF_KEY) === '1' } catch { return false }
+}
+export function setNotificationsEnabled(on) {
+  try { localStorage.setItem(NOTIF_KEY, on ? '1' : '0') } catch {}
+}
+
+const TX_NOTIF_KEY = 'h173k_tx_notifications'
+export function getTxNotificationsEnabled() {
+  try { return localStorage.getItem(TX_NOTIF_KEY) === '1' } catch { return false }
+}
+export function setTxNotificationsEnabled(on) {
+  try { localStorage.setItem(TX_NOTIF_KEY, on ? '1' : '0') } catch {}
+}
 
 const WSOL_ATA_RENT_SP = 0.00204               // rent for creating recipient token ATA
 
@@ -318,7 +350,7 @@ class MessengerStore {
    * items: [{ from, peerPubKey, peerNick, text, ts, sig, type }]
    */
   applyIncoming(items) {
-    let changed = false
+    const added = []
     let activeAddr = null
     try { activeAddr = window.__h173k_active_thread || null } catch {}
     for (const it of items) {
@@ -338,10 +370,15 @@ class MessengerStore {
       // Only count as unread if the thread isn't currently open
       if (activeAddr !== it.from) t.unread = (t.unread || 0) + 1
       this.trim(t)
-      changed = true
+      added.push({
+        from: it.from,
+        name: (t.contactName && t.contactName.trim()) || t.peerNick || it.from,
+        text: it.text,
+        type: it.type || 'msg',
+      })
     }
-    if (changed) this._notify()
-    return changed
+    if (added.length) this._notify()
+    return added
   }
 }
 
@@ -393,7 +430,7 @@ export async function scanIncomingMessages(connection, publicKey) {
 
   let sigs
   try {
-    const opts = { limit: MAX_SCAN_PER_UPDATE }
+    const opts = { limit: getMessengerScanLimit() }
     if (cursor) opts.until = cursor
     sigs = await connection.getSignaturesForAddress(tokenAccount, opts)
   } catch {
@@ -424,10 +461,75 @@ export async function scanIncomingMessages(connection, publicKey) {
     })
   }
 
-  store.applyIncoming(items)
+  const added = store.applyIncoming(items)
+  // Don't fire a burst of notifications on the very first scan (no prior cursor);
+  // only notify for genuinely new messages arriving on subsequent refreshes.
+  if (cursor) notifyNewMessages(added)
 
   try { localStorage.setItem(CURSOR_KEY, newestSig) } catch {}
   return items.length
+}
+
+// ========== LOCAL NOTIFICATIONS ==========
+const NOTIF_ICON = '/icons/icon-192x192.png'
+
+function notifyNewMessages(added) {
+  if (!added || added.length === 0) return
+  if (!getNotificationsEnabled()) return
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+
+  let activeAddr = null
+  try { activeAddr = window.__h173k_active_thread || null } catch {}
+
+  for (const it of added) {
+    if (it.from === activeAddr) continue // don't notify for the conversation you're viewing
+    const title = it.name || it.from
+    const body = it.type === 'req' ? 'Wants to start a conversation' : it.text
+    showNotification(title, body, it.from)
+  }
+}
+
+function showNotification(title, body, from) {
+  showAppNotification(title, body, { tag: 'h173k-msg-' + from, data: { from, url: '/' } })
+}
+
+/**
+ * Display a local OS notification via the service worker (works on desktop and
+ * mobile PWA), falling back to the Notification constructor. Caller is
+ * responsible for checking the relevant enabled-toggle; this only checks that
+ * notifications are permitted by the platform.
+ */
+export function showAppNotification(title, body, { tag, data = {} } = {}) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+  const options = {
+    body,
+    icon: NOTIF_ICON,
+    badge: NOTIF_ICON,
+    data: { url: '/', ...data },
+    renotify: true,
+  }
+  if (tag) options.tag = tag
+  try {
+    if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
+      navigator.serviceWorker.ready
+        .then((reg) => reg.showNotification(title, options))
+        .catch(() => fallbackNotification(title, options))
+      return
+    }
+  } catch {}
+  fallbackNotification(title, options)
+}
+
+function fallbackNotification(title, options) {
+  try {
+    const n = new Notification(title, options)
+    n.onclick = () => {
+      try { window.focus() } catch {}
+      const from = options.data && options.data.from
+      if (from) { try { window.dispatchEvent(new CustomEvent('h173k-open-thread', { detail: from })) } catch {} }
+      n.close()
+    }
+  } catch { /* platform doesn't allow the Notification constructor */ }
 }
 
 // ========== SEND MESSAGE ==========
