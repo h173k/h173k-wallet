@@ -62,6 +62,7 @@ import {
   getTxNotificationsEnabled,
   setTxNotificationsEnabled,
   showAppNotification,
+  scanLockedNotifications,
 } from './messenger/messenger'
 
 // Constants & Utils
@@ -441,6 +442,27 @@ function WalletApp({ connection, onRpcChange }) {
       return () => clearInterval(interval)
     }
   }, [isUnlocked, publicKey, fetchBalances])
+
+  // Cache the public address (not sensitive) so we can scan for message
+  // notifications even on a cold start while the wallet is still locked.
+  useEffect(() => {
+    if (publicKey) {
+      try { localStorage.setItem('h173k_cached_address', publicKey.toString()) } catch {}
+    }
+  }, [publicKey])
+
+  // While LOCKED, run a lightweight scan that only detects new incoming messages
+  // (no decryption) and fires a content-less "new message" notification.
+  useEffect(() => {
+    if (!hasWallet || isUnlocked || !connection) return
+    const address = (publicKey && publicKey.toString()) ||
+      (() => { try { return localStorage.getItem('h173k_cached_address') } catch { return null } })()
+    if (!address) return
+    const run = () => { scanLockedNotifications(connection, address).catch(() => {}) }
+    run()
+    const interval = setInterval(run, 30000)
+    return () => clearInterval(interval)
+  }, [hasWallet, isUnlocked, connection, publicKey])
   
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type })
@@ -539,6 +561,7 @@ function WalletApp({ connection, onRpcChange }) {
             clearReferrer(); // Clear referral data when wallet is deleted
             localStorage.removeItem('h173k_cached_balance');
             localStorage.removeItem('h173k_cached_sol_balance');
+            localStorage.removeItem('h173k_cached_address');
             setHasWallet(false); 
             setIsUnlocked(false); 
             setPublicKey(null);

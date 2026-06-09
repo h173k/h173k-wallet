@@ -89,7 +89,15 @@ const WSOL_ATA_RENT_SP = 0.00204               // rent for creating recipient to
 
 // localStorage keys
 const THREADS_KEY = 'h173k_msg_threads'
-const CURSOR_KEY = 'h173k_msg_cursor'
+const CURSOR_KEY = 'h173k_msg_cursor'           // last decrypted+stored signature
+const NOTIFY_CURSOR_KEY = 'h173k_msg_notify_cursor' // last signature we emitted a notification for
+
+function getNotifyCursor() {
+  try { return localStorage.getItem(NOTIFY_CURSOR_KEY) || null } catch { return null }
+}
+function setNotifyCursor(sig) {
+  try { if (sig) localStorage.setItem(NOTIFY_CURSOR_KEY, sig) } catch {}
+}
 
 const PROTOCOL_VERSION = 1
 
@@ -375,6 +383,7 @@ class MessengerStore {
         name: (t.contactName && t.contactName.trim()) || t.peerNick || it.from,
         text: it.text,
         type: it.type || 'msg',
+        sig: it.sig || null,
       })
     }
     if (added.length) this._notify()
@@ -441,6 +450,16 @@ export async function scanIncomingMessages(connection, publicKey) {
   const newestSig = sigs[0].signature
   const ordered = sigs.slice().reverse() // oldest -> newest
 
+  // Signatures we have NOT yet emitted any notification for (newer than the
+  // notify cursor). Used so we don't re-notify (with content) messages that
+  // were already announced generically while the wallet was locked.
+  const notifyCursor = getNotifyCursor()
+  const newSinceNotify = new Set()
+  for (const s of sigs) { // newest -> oldest
+    if (s.signature === notifyCursor) break
+    newSinceNotify.add(s.signature)
+  }
+
   const items = []
   for (const s of ordered) {
     const memoText = stripMemoPrefix(s.memo)
@@ -462,12 +481,68 @@ export async function scanIncomingMessages(connection, publicKey) {
   }
 
   const added = store.applyIncoming(items)
-  // Don't fire a burst of notifications on the very first scan (no prior cursor);
-  // only notify for genuinely new messages arriving on subsequent refreshes.
-  if (cursor) notifyNewMessages(added)
+  // Notify (with full content) only for messages we haven't notified about yet,
+  // and not on the very first scan (no prior cursor) to avoid a backfill burst.
+  if (cursor) {
+    const toNotify = added.filter(a => a.sig && newSinceNotify.has(a.sig))
+    notifyNewMessages(toNotify)
+  }
 
   try { localStorage.setItem(CURSOR_KEY, newestSig) } catch {}
+  setNotifyCursor(newestSig)
   return items.length
+}
+
+// ========== LOCKED NOTIFICATION SCAN ==========
+/**
+ * Lightweight scan used while the wallet is LOCKED. It cannot decrypt (no key),
+ * so it only detects that new incoming message-bearing memos exist and fires a
+ * content-less "new message" notification. Uses the public token-account
+ * signature history only — no private key required.
+ */
+export async function scanLockedNotifications(connection, address) {
+  if (!connection || !address) return 0
+  if (!getNotificationsEnabled()) return 0
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return 0
+
+  let owner, tokenAccount
+  try {
+    owner = new PublicKey(address)
+    tokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, owner)
+  } catch {
+    return 0
+  }
+
+  const notifyCursor = getNotifyCursor()
+  let sigs
+  try {
+    const opts = { limit: getMessengerScanLimit() }
+    if (notifyCursor) opts.until = notifyCursor
+    sigs = await connection.getSignaturesForAddress(tokenAccount, opts)
+  } catch {
+    return 0
+  }
+  if (!sigs || sigs.length === 0) return 0
+
+  const newestSig = sigs[0].signature
+  let count = 0
+  for (const s of sigs) {
+    const memoText = stripMemoPrefix(s.memo)
+    if (!memoText) continue
+    const env = parseEnvelope(memoText)
+    if (!env) continue
+    if (env.f === address) continue // our own outgoing
+    count++ // incoming message-bearing memo (content stays encrypted/unread)
+  }
+
+  // Only announce on incremental updates, not the first ever backfill.
+  if (notifyCursor && count > 0) {
+    const title = count === 1 ? 'New message' : count + ' new messages'
+    showAppNotification(title, 'Unlock the wallet to read', { tag: 'h173k-msg-locked' })
+  }
+
+  setNotifyCursor(newestSig)
+  return count
 }
 
 // ========== LOCAL NOTIFICATIONS ==========
