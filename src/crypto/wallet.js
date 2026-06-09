@@ -414,6 +414,18 @@ export class SessionWallet {
     return this.keypair
   }
   
+  /**
+   * Get keypair WITHOUT resetting the auto-lock timer.
+   * Used for background tasks (e.g. periodic message scanning) that should
+   * not be treated as user activity and must not keep the wallet unlocked.
+   */
+  getKeypairSilent() {
+    if (!this.isUnlocked()) {
+      throw new Error('Wallet is locked')
+    }
+    return this.keypair
+  }
+  
   getPublicKey() {
     return this.publicKey
   }

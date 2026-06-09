@@ -22,10 +22,11 @@ const Close = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fil
 const Plus = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>)
 const Tg = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor"><path d="M21.94 4.6l-3.3 15.56c-.25 1.1-.9 1.37-1.82.85l-5.03-3.7-2.43 2.34c-.27.27-.5.5-1 .5l.36-5.1L18 6.78c.4-.36-.09-.56-.62-.2L6.9 13.5l-4.95-1.55c-1.08-.34-1.1-1.08.23-1.6L20.5 3.1c.9-.33 1.69.2 1.44 1.5z" /></svg>)
 const Phone = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0122 16.92z" /></svg>)
+const Chat = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" /></svg>)
 
 function loadingMsg() { return 'Loading offers…' }
 
-export default function P2PMarketplace({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast }) {
+export default function P2PMarketplace({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onOpenMessenger }) {
   const [profile, setProfile] = useState(() => getP2PProfile())
   const onboarded = !!profile
 
@@ -40,6 +41,7 @@ export default function P2PMarketplace({ connection, publicKey, balance, solBala
       price={price} toUSD={toUSD} onBack={onBack} showToast={showToast}
       profile={profile}
       onProfileChange={(p) => { saveP2PProfile(p); setProfile(p) }}
+      onOpenMessenger={onOpenMessenger}
     />
   )
 }
@@ -91,7 +93,7 @@ function P2POnboarding({ onDone, onBack, showToast }) {
 // ===========================================================================
 // Main marketplace
 // ===========================================================================
-function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, profile, onProfileChange }) {
+function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, profile, onProfileChange, onOpenMessenger }) {
   const { offers, loading, posting, fetchOffers, postOffer, cancelOffer } = useP2P(connection, publicKey)
 
   const [currency, setCurrency] = useState(profile.currency)
@@ -272,6 +274,7 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
           posting={posting}
           onClose={() => setSelected(null)}
           onCancel={() => handleCancel(selected)}
+          onMessage={(addr, name) => { setSelected(null); onOpenMessenger && onOpenMessenger(addr, name) }}
           showToast={showToast} />
       )}
 
@@ -324,7 +327,7 @@ function OfferCard({ offer, cur, price, isMine, onClick }) {
 // ===========================================================================
 // Offer detail (with gated contact)
 // ===========================================================================
-function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onCancel, showToast }) {
+function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onCancel, onMessage, showToast }) {
   const [revealed, setRevealed] = useState(false)
   const [amount, setAmount] = useState(() => String(offer.minUsd || ''))
 
@@ -369,6 +372,10 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
   }
 
   const openContact = () => {
+    if (offer.contactType === 'wm') {
+      onMessage && onMessage(offer.posterPubkey, offer.nickname)
+      return
+    }
     const link = contactLink(offer.contactType, offer.contact)
     if (!link) return
     if (offer.contactType === 'ph') window.location.href = link
@@ -452,15 +459,33 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
           </>
         ) : revealed ? (
           <div className="p2p-contact-box">
-            <label className="form-label">Contact</label>
-            <div className="p2p-contact-value">
-              <span>{offer.contact}</span>
-              <button className="p2p-icon-btn" onClick={() => { copyToClipboard(offer.contact); showToast('Copied', 'success') }} title="Copy">⧉</button>
+            <label className="form-label">{offer.contactType === 'wm' ? 'Wallet messenger address' : 'Contact'}</label>
+            <div
+              className={`p2p-contact-value ${offer.contactType === 'wm' ? 'p2p-contact-wm' : ''}`}
+              onClick={offer.contactType === 'wm' ? openContact : undefined}
+              title={offer.contactType === 'wm' ? 'Tap to message in wallet' : undefined}
+            >
+              <span>{offer.contactType === 'wm' ? offer.posterPubkey : offer.contact}</span>
+              <button
+                className="p2p-icon-btn"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const val = offer.contactType === 'wm' ? offer.posterPubkey : offer.contact
+                  copyToClipboard(val); showToast('Copied', 'success')
+                }}
+                title="Copy"
+              >⧉</button>
             </div>
             <button className="btn btn-action p2p-tg-btn" onClick={openContact}>
-              {offer.contactType === 'ph' ? <><Phone /> Call</> : <><Tg /> Open in Telegram</>}
+              {offer.contactType === 'ph' ? <><Phone /> Call</>
+                : offer.contactType === 'wm' ? <><Chat /> Open in Messenger</>
+                : <><Tg /> Open in Telegram</>}
             </button>
-            <p className="form-hint">Settle the trade via a MAD contract in direct chat.</p>
+            <p className="form-hint">
+              {offer.contactType === 'wm'
+                ? 'Opens an encrypted chat with the advertiser inside the wallet. Settle via a MAD contract.'
+                : 'Settle the trade via a MAD contract in direct chat.'}
+            </p>
           </div>
         ) : (
           <>
@@ -538,8 +563,8 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
     if (!(mn > 0)) return alertMsg('Enter a valid minimum size')
     if (!(mx >= mn)) return alertMsg('Max size must be ≥ min size')
     if (methods.length === 0) return alertMsg('Add at least one payment method')
-    if (!contact.trim()) return alertMsg('Enter your contact')
-    onSubmit({ nickname: nickname.trim(), type, pricePerUsd: p, minUsd: mn, maxUsd: mx, paymentMethods: methods, contactType, contact: contact.trim() })
+    if (contactType !== 'wm' && !contact.trim()) return alertMsg('Enter your contact')
+    onSubmit({ nickname: nickname.trim(), type, pricePerUsd: p, minUsd: mn, maxUsd: mx, paymentMethods: methods, contactType, contact: contactType === 'wm' ? '' : contact.trim() })
   }
 
   return (
@@ -643,17 +668,27 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
         <div className="form-group">
           <label className="form-label">Contact type</label>
           <div className="p2p-type-toggle">
-            <button className={`p2p-tab ${contactType === 'tg' ? 'active' : ''}`} onClick={() => setContactType('tg')}>Telegram @handle</button>
-            <button className={`p2p-tab ${contactType === 'ph' ? 'active' : ''}`} onClick={() => setContactType('ph')}>Phone number</button>
+            <button className={`p2p-tab ${contactType === 'tg' ? 'active' : ''}`} onClick={() => setContactType('tg')}>Telegram</button>
+            <button className={`p2p-tab ${contactType === 'ph' ? 'active' : ''}`} onClick={() => setContactType('ph')}>Phone</button>
+            <button className={`p2p-tab ${contactType === 'wm' ? 'active' : ''}`} onClick={() => setContactType('wm')}>Messenger</button>
           </div>
         </div>
 
-        <div className="form-group">
-          <label className="form-label">{contactType === 'tg' ? 'Telegram handle' : 'Phone number'}</label>
-          <input className="form-input" value={contact} maxLength={32} onChange={(e) => setContact(e.target.value)}
-            placeholder={contactType === 'tg' ? '@username' : '+001234567'} />
-          <span className="form-hint">⚠ Stored publicly on-chain. Choose what you're comfortable exposing.</span>
-        </div>
+        {contactType === 'wm' ? (
+          <div className="form-group">
+            <label className="form-label">Wallet messenger</label>
+            <div className="escrow-info-card">
+              <p>Takers will see your <strong>wallet address</strong> and can open an encrypted in-wallet chat with you. No handle or phone number is exposed.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="form-group">
+            <label className="form-label">{contactType === 'tg' ? 'Telegram handle' : 'Phone number'}</label>
+            <input className="form-input" value={contact} maxLength={32} onChange={(e) => setContact(e.target.value)}
+              placeholder={contactType === 'tg' ? '@username' : '+001234567'} />
+            <span className="form-hint">⚠ Stored publicly on-chain. Choose what you're comfortable exposing.</span>
+          </div>
+        )}
 
         {err && <div className="escrow-info-card" style={{ borderColor: 'var(--color-error)' }}><p style={{ color: 'var(--color-error)' }}>{err}</p></div>}
 

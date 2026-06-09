@@ -276,7 +276,7 @@ export function useP2P(connection, publicKey) {
               minUsd: Number(parsed.mn) || 0,
               maxUsd: Number(parsed.mx) || 0,
               paymentMethods: Array.isArray(parsed.pm) ? parsed.pm : [],
-              contactType: parsed.ct === 'ph' ? 'ph' : 'tg',
+              contactType: parsed.ct === 'ph' ? 'ph' : (parsed.ct === 'wm' ? 'wm' : 'tg'),
               contact: parsed.co || '',
               posterPubkey: parsed.pk || '',
               createdAt: Number(parsed.t) || (s.blockTime || 0),
@@ -478,6 +478,8 @@ export function requiredH173KToPost(type, minUsd, h173kUsdPrice) {
 /** Build a contact link: a phone call for numbers, a Telegram link for handles. */
 export function contactLink(contactType, contact) {
   const v = (contact || '').trim()
+  // 'wm' (in-wallet messenger) is handled inside the app, not via an external link.
+  if (contactType === 'wm') return null
   if (!v) return null
   if (contactType === 'ph') {
     const digits = v.replace(/[^\d+]/g, '')

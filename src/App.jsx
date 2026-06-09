@@ -49,6 +49,10 @@ import { useEscrowProgram } from './hooks/useEscrow'
 import P2PMarketplace from './p2p/P2PMarketplace'
 import { getP2PProfile, saveP2PProfile, isP2POnboarded } from './p2p/useP2P'
 
+// Messenger (E2E encrypted)
+import MessengerView from './messenger/MessengerView'
+import { store as messengerStore, scanIncomingMessages } from './messenger/messenger'
+
 // Constants & Utils
 import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS } from './constants'
 import { useTokenPrice } from './usePrice'
@@ -290,6 +294,28 @@ function WalletApp({ connection, onRpcChange }) {
   const [currentView, setCurrentView] = useState('main')
   const [toast, setToast] = useState(null)
   const [h173kDecimals, setH173kDecimals] = useState(() => getH173KDecimals())
+  const [messengerUnread, setMessengerUnread] = useState(() => {
+    try { return messengerStore.getTotalUnread() } catch { return 0 }
+  })
+  // When set, the messenger opens directly on this peer's thread (e.g. from P2P).
+  const [messengerTarget, setMessengerTarget] = useState(null)
+
+  // Open the messenger focused on a specific peer, ensuring the thread exists.
+  const openMessengerWith = useCallback((address, suggestedName) => {
+    try {
+      const existing = messengerStore.getThread(address)
+      messengerStore.addContact(address, existing ? null : (suggestedName || ''))
+    } catch {}
+    setMessengerTarget(address)
+    setCurrentView('messenger')
+  }, [])
+
+  // Keep the envelope badge in sync with the messenger store.
+  useEffect(() => {
+    const update = () => setMessengerUnread(messengerStore.getTotalUnread())
+    update()
+    return messengerStore.subscribe(update)
+  }, [])
   
   // Check for referral code in URL on mount
   const [pendingReferral, setPendingReferral] = useState(() => getReferralFromURL())
@@ -362,6 +388,9 @@ function WalletApp({ connection, onRpcChange }) {
       setSolBalance(newSolBalance)
       localStorage.setItem('h173k_cached_sol_balance', newSolBalance.toString())
       if (!rpcError) setRpcError(null)
+
+      // Scan for new encrypted messages alongside the balance refresh.
+      try { await scanIncomingMessages(connection, publicKey) } catch (e) { /* non-fatal */ }
     } catch (err) {
       if (err.message && (err.message.includes('401') || err.message.includes('Unauthorized'))) {
         setRpcError('rpc_limit')
@@ -414,6 +443,8 @@ function WalletApp({ connection, onRpcChange }) {
           onHistory={() => setCurrentView('history')}
           onEscrow={() => setCurrentView('escrow')}
           onSettings={() => setCurrentView('settings')}
+          onMessenger={() => { setMessengerTarget(null); setCurrentView('messenger') }}
+          messengerUnread={messengerUnread}
           onRefresh={fetchBalances} onLock={handleLock}
           showToast={showToast}
           rpcError={rpcError}
@@ -431,6 +462,14 @@ function WalletApp({ connection, onRpcChange }) {
       
       {currentView === 'receive' && (
         <ReceiveView publicKey={publicKey} onBack={() => setCurrentView('main')} showToast={showToast} />
+      )}
+
+      {currentView === 'messenger' && (
+        <MessengerView
+          connection={connection} publicKey={publicKey}
+          initialAddress={messengerTarget}
+          onBack={() => setCurrentView('main')} showToast={showToast}
+        />
       )}
       
       {currentView === 'history' && (
@@ -452,6 +491,7 @@ function WalletApp({ connection, onRpcChange }) {
           connection={connection} publicKey={publicKey} balance={balance}
           solBalance={solBalance} price={price} toUSD={toUSD}
           onBack={() => setCurrentView('escrow')} showToast={showToast}
+          onOpenMessenger={openMessengerWith}
         />
       )}
       
@@ -804,7 +844,7 @@ function LockScreen({ onUnlock, showToast }) {
 }
 
 // ========== MAIN VIEW ==========
-function MainView({ connection, publicKey, balance, solBalance, price, toUSD, onSend, onReceive, onHistory, onEscrow, onSettings, onRefresh, onLock, showToast, rpcError, h173kDecimals }) {
+function MainView({ connection, publicKey, balance, solBalance, price, toUSD, onSend, onReceive, onHistory, onEscrow, onSettings, onMessenger, messengerUnread, onRefresh, onLock, showToast, rpcError, h173kDecimals }) {
   const [refreshing, setRefreshing] = useState(false)
   const [showSolPrompt, setShowSolPrompt] = useState(false)
   const [solPromptDismissed, setSolPromptDismissed] = useState(false)
@@ -1175,7 +1215,15 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       <div className="main-header">
         <button className="icon-btn" onClick={onSettings}><SettingsIcon /></button>
         <div className="header-address" onClick={() => copyToClipboard(publicKey.toString())}>{shortenAddress(publicKey.toString())}</div>
-        <button className="icon-btn" onClick={onLock}><LockIcon /></button>
+        <div className="main-header-right">
+          <button className="icon-btn messenger-icon-btn" onClick={onMessenger} title="Messenger">
+            <EnvelopeIcon />
+            {messengerUnread > 0 && (
+              <span className="messenger-badge">{messengerUnread > 99 ? '99+' : messengerUnread}</span>
+            )}
+          </button>
+          <button className="icon-btn" onClick={onLock}><LockIcon /></button>
+        </div>
       </div>
       
       {/* Logo */}
@@ -3424,7 +3472,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         </div>
       </div>
 
-      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.2.3.3</span></div></div>
+      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.4.3.3</span></div></div>
     </div>
   )
 }
@@ -3436,6 +3484,10 @@ function SettingsIcon() {
 
 function LockIcon() {
   return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+}
+
+function EnvelopeIcon({ size = 24 }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 6L2 7" /></svg>
 }
 
 function SendIcon({ size = 24 }) {
