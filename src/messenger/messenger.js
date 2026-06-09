@@ -37,6 +37,7 @@ import {
 import nacl from 'tweetnacl'
 import ed2curve from 'ed2curve'
 import bs58 from 'bs58'
+import { sha256 } from '@noble/hashes/sha256'
 import { TOKEN_MINT, TOKEN_DECIMALS } from '../constants'
 import { sessionWallet } from '../crypto/wallet'
 import { getP2PProfile, saveP2PProfile } from '../p2p/useP2P'
@@ -55,7 +56,6 @@ export const MAX_SCAN_PER_UPDATE = 100         // signatures fetched per refresh
 const WSOL_ATA_RENT_SP = 0.00204               // rent for creating recipient token ATA
 
 // localStorage keys
-const IDENTITY_KEY = 'h173k_msg_identity'
 const THREADS_KEY = 'h173k_msg_threads'
 const CURSOR_KEY = 'h173k_msg_cursor'
 
@@ -92,24 +92,38 @@ export function saveProfile(nick) {
   const clean = String(nick).trim().slice(0, 32)
   const existing = getP2PProfile() || {}
   saveP2PProfile({ ...existing, nickname: clean, currency: existing.currency || DEFAULT_PROFILE_CURRENCY })
-  // Ensure dedicated messaging identity exists once the user joins.
-  getOrCreateIdentity()
   store._notify()
 }
 
 // ========== DEDICATED MESSAGING IDENTITY (box keypair) ==========
-function getOrCreateIdentity() {
-  let id = readJSON(IDENTITY_KEY, null)
-  if (!id || !id.pub || !id.sec) {
-    const kp = nacl.box.keyPair()
-    id = { pub: bs58.encode(kp.publicKey), sec: bs58.encode(kp.secretKey) }
-    writeJSON(IDENTITY_KEY, id)
-  }
+// Derived DETERMINISTICALLY from the wallet seed (the Solana secret key) with a
+// domain separator. This means:
+//  - it survives clearing localStorage / reinstalling,
+//  - it's identical on any device restored from the same seed,
+//  - it is NOT derivable from the public address alone (depends on the secret +
+//    label), so the key exchange in the first message still carries meaning.
+const IDENTITY_LABEL = 'h173k_messenger_box_v1'
+let _identityCache = { addr: null, id: null }
+sessionWallet.onLock(() => { _identityCache = { addr: null, id: null } })
+
+function getIdentity() {
+  if (!sessionWallet.isUnlocked()) return null
+  const kp = sessionWallet.getKeypairSilent() // does NOT reset auto-lock
+  const addr = kp.publicKey.toBase58()
+  if (_identityCache.addr === addr && _identityCache.id) return _identityCache.id
+
+  const label = new TextEncoder().encode(IDENTITY_LABEL)
+  const material = new Uint8Array(kp.secretKey.length + label.length)
+  material.set(kp.secretKey, 0)
+  material.set(label, kp.secretKey.length)
+  const seed32 = sha256(material) // 32 bytes -> curve25519 box secret seed
+
+  const boxKp = nacl.box.keyPair.fromSecretKey(seed32)
+  const id = { pub: bs58.encode(boxKp.publicKey), sec: bs58.encode(boxKp.secretKey) }
+  _identityCache = { addr, id }
   return id
 }
-function getIdentity() {
-  return readJSON(IDENTITY_KEY, null)
-}
+
 export function getMyDedicatedPublicKey() {
   const id = getIdentity()
   return id ? id.pub : null
@@ -153,7 +167,8 @@ function encryptPayload(payload, { recipientAddress, peerDedicatedPub }) {
 
   if (peerDedicatedPub) {
     // We already exchanged dedicated keys -> use them.
-    const id = getOrCreateIdentity()
+    const id = getIdentity()
+    if (!id) throw new Error('Wallet is locked')
     const mySec = bs58.decode(id.sec)
     const theirPub = bs58.decode(peerDedicatedPub)
     const box = nacl.box(msgBytes, nonce, theirPub, mySec)
