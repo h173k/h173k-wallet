@@ -3624,7 +3624,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
 
       <MessengerSettings showToast={showToast} />
 
-      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.4.4.3</span></div></div>
+      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.4.4.4</span></div></div>
     </div>
   )
 }
