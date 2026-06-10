@@ -565,6 +565,7 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
     if (!(mn > 0)) return alertMsg(t('p2p.errMinSize'))
     if (!(mx >= mn)) return alertMsg(t('p2p.errMaxSize'))
     if (methods.length === 0) return alertMsg(t('p2p.errMethods'))
+    if (enoughForPost === false) return alertMsg(t('p2p.notEnoughFulfil'))
     if (contactType !== 'wm' && !contact.trim()) return alertMsg(t('p2p.errContact'))
     onSubmit({ nickname: nickname.trim(), type, pricePerUsd: p, minUsd: mn, maxUsd: mx, paymentMethods: methods, contactType, contact: contactType === 'wm' ? '' : contact.trim() })
   }
@@ -692,7 +693,7 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
 
         <div className="escrow-info-card"><p>{t('p2p.postingInfo', { fee: POST_FEE_H173K, sol: formatNumber(solBalance, 4) })}</p></div>
 
-        <button className="btn btn-action" disabled={posting || sizeInvalid} onClick={validateAndSubmit}>{posting ? t('p2p.posting') : t('p2p.postOffer')}</button>
+        <button className="btn btn-action" disabled={posting || sizeInvalid || enoughForPost === false} onClick={validateAndSubmit}>{posting ? t('p2p.posting') : t('p2p.postOffer')}</button>
       </div>
     </div>
   )
