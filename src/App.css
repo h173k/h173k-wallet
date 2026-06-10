@@ -3875,3 +3875,15 @@ body {
   color: var(--color-black);
   border-color: var(--color-white);
 }
+
+/* ========== LANGUAGE SELECTOR (i18n) ========== */
+.language-description {
+  font-size: 13px;
+  color: var(--color-white-50);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.language-item.active {
+  background: var(--color-white-10);
+}

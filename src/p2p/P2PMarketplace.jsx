@@ -14,6 +14,7 @@ import {
   MAX_PAYMENT_METHODS, MAX_METHOD_LEN,
 } from './useP2P'
 import { formatH173K, formatNumber, copyToClipboard } from '../utils'
+import { useTranslation, translate } from '../i18n'
 
 // ----- tiny inline icons (kept local to avoid touching App.jsx exports) -----
 const Back = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6" /></svg>)
@@ -24,7 +25,7 @@ const Tg = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="
 const Phone = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0122 16.92z" /></svg>)
 const Chat = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" /></svg>)
 
-function loadingMsg() { return 'Loading offers…' }
+function loadingMsg() { return translate('p2p.loadingOffers') }
 
 export default function P2PMarketplace({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onOpenMessenger }) {
   const [profile, setProfile] = useState(() => getP2PProfile())
@@ -50,42 +51,42 @@ export default function P2PMarketplace({ connection, publicKey, balance, solBala
 // Onboarding
 // ===========================================================================
 function P2POnboarding({ onDone, onBack, showToast }) {
+  const { t } = useTranslation()
   const [nickname, setNickname] = useState('')
   const [currency, setCurrency] = useState('USD')
 
   const submit = () => {
     const n = nickname.trim()
-    if (!n) { showToast('Please enter a nickname', 'error'); return }
-    if (n.length > 32) { showToast('Nickname too long (max 32)', 'error'); return }
+    if (!n) { showToast(t('p2p.enterNickname'), 'error'); return }
+    if (n.length > 32) { showToast(t('p2pSettings.tooLong'), 'error'); return }
     onDone({ nickname: n, currency })
   }
 
   return (
     <div className="escrow-view p2p-view">
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><Back /> Back</button>
-        <h2>P2P Marketplace</h2>
+        <button className="back-btn" onClick={onBack}><Back /> {t('common.back')}</button>
+        <h2>{t('p2p.title')}</h2>
       </div>
 
       <div className="escrow-info-card">
-        <p>Welcome to the <strong>P2P Marketplace</strong>. Pick a display name and the currency
-        you want to trade in. You can change both later in this section.</p>
+        <p>{t('p2p.welcomePre')} <strong>{t('p2p.welcomeBold')}</strong>{t('p2p.welcomePost')}</p>
       </div>
 
       <div className="form-group">
-        <label className="form-label">Nickname</label>
+        <label className="form-label">{t('p2p.nickname')}</label>
         <input className="form-input" value={nickname} maxLength={32}
-          onChange={(e) => setNickname(e.target.value)} placeholder="e.g. satoshi" />
+          onChange={(e) => setNickname(e.target.value)} placeholder={t('p2p.nickPlaceholder')} />
       </div>
 
       <div className="form-group">
-        <label className="form-label">Currency</label>
+        <label className="form-label">{t('p2p.currency')}</label>
         <select className="form-input p2p-select" value={currency} onChange={(e) => setCurrency(e.target.value)}>
           {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
         </select>
       </div>
 
-      <button className="btn btn-action" onClick={submit}>Continue</button>
+      <button className="btn btn-action" onClick={submit}>{t('common.continue')}</button>
     </div>
   )
 }
@@ -94,6 +95,7 @@ function P2POnboarding({ onDone, onBack, showToast }) {
 // Main marketplace
 // ===========================================================================
 function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, profile, onProfileChange, onOpenMessenger }) {
+  const { t } = useTranslation()
   const { offers, loading, posting, fetchOffers, postOffer, cancelOffer } = useP2P(connection, publicKey)
 
   const [currency, setCurrency] = useState(profile.currency)
@@ -165,8 +167,8 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
   const changeLimit = (n) => { setLimit(n); saveP2PFetchLimit(n) }
 
   const onSwap = (info) => {
-    if (info?.status === 'swapping') showToast('Topping up SOL…', 'info')
-    else if (info?.status === 'swapped') showToast(`Swapped ${formatH173K(info.h173kUsed)} h173k for ${info.solReceived.toFixed(4)} SOL`, 'info')
+    if (info?.status === 'swapping') showToast(t('p2p.toppingUp'), 'info')
+    else if (info?.status === 'swapped') showToast(t('main.swappedForSol', { h: formatH173K(info.h173kUsed), s: info.solReceived.toFixed(4) }), 'info')
   }
 
   const handlePost = async (data) => {
@@ -174,70 +176,70 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
       const nick = (data.nickname || profile.nickname || '').trim()
       await postOffer({ ...data, nickname: nick, currency }, onSwap)
       if (nick && nick !== profile.nickname) onProfileChange({ ...profile, nickname: nick })
-      showToast('Offer posted!', 'success')
+      showToast(t('p2p.offerPosted'), 'success')
       setShowCreate(false)
       reload()
     } catch (err) {
       console.error(err)
-      const m = err?.message || 'Failed to post offer'
-      showToast(m.includes('locked') ? 'Session expired — unlock wallet' : 'Post failed: ' + m, 'error')
+      const m = err?.message || 'error'
+      showToast(m.includes('locked') ? t('p2p.sessionExpiredShort') : t('p2p.postFailed', { msg: m }), 'error')
     }
   }
 
   const handleCancel = async (offer) => {
     try {
       await cancelOffer(offer, onSwap)
-      showToast('Offer cancelled', 'success')
+      showToast(t('p2p.offerCancelled'), 'success')
       setSelected(null)
       reload()
     } catch (err) {
-      showToast('Cancel failed: ' + (err?.message || 'error'), 'error')
+      showToast(t('p2p.cancelFailed', { msg: err?.message || 'error' }), 'error')
     }
   }
 
   return (
     <div className="escrow-view p2p-view" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><Back /> Back</button>
-        <h2>P2P Marketplace</h2>
+        <button className="back-btn" onClick={onBack}><Back /> {t('common.back')}</button>
+        <h2>{t('p2p.title')}</h2>
       </div>
 
       {/* ===== Banner ===== */}
       <div className="p2p-banner">
         <div className="p2p-tabs">
-          <button className={`p2p-tab ${side === 'buy' ? 'active' : ''}`} onClick={() => { setSide('buy'); setPmFilter('') }}>Buy Offers</button>
-          <button className={`p2p-tab ${side === 'sell' ? 'active' : ''}`} onClick={() => { setSide('sell'); setPmFilter('') }}>Sell Offers</button>
+          <button className={`p2p-tab ${side === 'buy' ? 'active' : ''}`} onClick={() => { setSide('buy'); setPmFilter('') }}>{t('p2p.buyOffers')}</button>
+          <button className={`p2p-tab ${side === 'sell' ? 'active' : ''}`} onClick={() => { setSide('sell'); setPmFilter('') }}>{t('p2p.sellOffers')}</button>
         </div>
 
         <div className="p2p-controls">
-          <select className="p2p-mini-select" value={currency} onChange={(e) => changeCurrency(e.target.value)} title="Currency">
+          <select className="p2p-mini-select" value={currency} onChange={(e) => changeCurrency(e.target.value)} title={t('p2p.currency')}>
             {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
           </select>
 
-          <select className="p2p-mini-select" value={sort} onChange={(e) => setSort(e.target.value)} title="Order by">
-            <option value="price_desc">Price: High → Low</option>
-            <option value="price_asc">Price: Low → High</option>
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
+          <select className="p2p-mini-select" value={sort} onChange={(e) => setSort(e.target.value)} title={t('p2p.orderBy')}>
+            <option value="price_desc">{t('p2p.sortPriceDesc')}</option>
+            <option value="price_asc">{t('p2p.sortPriceAsc')}</option>
+            <option value="newest">{t('p2p.sortNewest')}</option>
+            <option value="oldest">{t('p2p.sortOldest')}</option>
           </select>
 
-          <select className="p2p-mini-select" value={pmFilter} onChange={(e) => setPmFilter(e.target.value)} title="Payment method">
-            <option value="">All methods</option>
+          <select className="p2p-mini-select" value={pmFilter} onChange={(e) => setPmFilter(e.target.value)} title={t('p2p.paymentMethods')}>
+            <option value="">{t('p2p.allMethods')}</option>
             {pmOptions.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
-          <select className="p2p-mini-select" value={limit} onChange={(e) => changeLimit(Number(e.target.value))} title="Max offers to load">
-            {FETCH_LIMIT_OPTIONS.map(n => <option key={n} value={n}>Last {n}</option>)}
+          <select className="p2p-mini-select" value={limit} onChange={(e) => changeLimit(Number(e.target.value))} title={t('p2p.maxOffersLoad')}>
+            {FETCH_LIMIT_OPTIONS.map(n => <option key={n} value={n}>{t('p2p.lastN', { n })}</option>)}
           </select>
 
-          <button className="p2p-icon-btn" onClick={handleRefresh} disabled={refreshing} title="Refresh">
+          <button className="p2p-icon-btn" onClick={handleRefresh} disabled={refreshing} title={t('history.refresh')}>
             <Refresh />
           </button>
-          <button className="p2p-icon-btn" onClick={() => setShowSettings(true)} title="P2P settings">⚙</button>
+          <button className="p2p-icon-btn" onClick={() => setShowSettings(true)} title={t('p2p.settingsTitle')}>⚙</button>
         </div>
 
         <button className="btn p2p-create-btn" onClick={() => setShowCreate(true)}>
-          <Plus /> Create {side} offer
+          <Plus /> {side === 'buy' ? t('p2p.createBuyOffer') : t('p2p.createSellOffer')}
         </button>
       </div>
 
@@ -245,7 +247,7 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
       {(pullProgress > 0 || refreshing) && (
         <div className="pull-refresh-indicator escrow-pull" style={{ opacity: refreshing ? 1 : pullProgress }}>
           {!refreshing && <Refresh s={20} />}
-          <span>{refreshing ? 'Refreshing…' : (pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh')}</span>
+          <span>{refreshing ? t('main.refreshing') : (pullProgress >= 1 ? t('main.releaseToRefresh') : t('main.pullToRefresh'))}</span>
         </div>
       )}
 
@@ -254,8 +256,8 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
         <div className="loading-spinner-small" />
       ) : visible.length === 0 ? (
         <div className="empty-state">
-          <p>No {side} offers in {cur?.code}</p>
-          <p className="empty-hint">Be the first — create an offer above</p>
+          <p>{side === 'buy' ? t('p2p.emptyBuy', { code: cur?.code }) : t('p2p.emptySell', { code: cur?.code })}</p>
+          <p className="empty-hint">{t('p2p.emptyHint')}</p>
         </div>
       ) : (
         <div className="contracts-list">
@@ -288,7 +290,7 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
       {/* ===== Settings modal ===== */}
       {showSettings && (
         <P2PSettingsModal profile={profile} onClose={() => setShowSettings(false)}
-          onSave={(p) => { onProfileChange(p); if (p.currency !== currency) changeCurrency(p.currency); setShowSettings(false); showToast('P2P settings saved', 'success') }} />
+          onSave={(p) => { onProfileChange(p); if (p.currency !== currency) changeCurrency(p.currency); setShowSettings(false); showToast(t('p2p.settingsSaved'), 'success') }} />
       )}
     </div>
   )
@@ -298,21 +300,22 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
 // Offer card
 // ===========================================================================
 function OfferCard({ offer, cur, price, isMine, onClick }) {
+  const { t } = useTranslation()
   const sym = cur?.symbol || ''
   const date = offer.createdAt ? new Date(offer.createdAt * 1000) : null
   return (
     <div className="contract-item p2p-card" onClick={onClick}>
       <div className="contract-item-header">
-        <span className="contract-name">{offer.nickname || 'anon'} <span className="p2p-card-action">is {offer.type === 'sell' ? 'selling' : 'buying'}</span> {isMine && <span className="p2p-you">you</span>}</span>
+        <span className="contract-name">{offer.nickname || t('p2p.anon')} <span className="p2p-card-action">{offer.type === 'sell' ? t('p2p.isSelling') : t('p2p.isBuying')}</span> {isMine && <span className="p2p-you">{t('p2p.you')}</span>}</span>
         <span className={`contract-status ${offer.type === 'buy' ? 'ongoing' : 'released'}`}>{offer.type.toUpperCase()}</span>
       </div>
       <div className="p2p-card-price">
         <strong>{formatNumber(offer.pricePerUsd, 4)} {cur?.code}</strong>
-        <span className="p2p-card-sub"> per $1 in h173k</span>
+        <span className="p2p-card-sub"> {t('p2p.perUsd')}</span>
       </div>
       <div className="p2p-card-row">
-        <span>Size</span>
-        <span>${formatNumber(offer.minUsd, 2)} – ${formatNumber(offer.maxUsd, 2)} h173k value</span>
+        <span>{t('p2p.size')}</span>
+        <span>{t('p2p.sizeValue', { min: '$' + formatNumber(offer.minUsd, 2), max: '$' + formatNumber(offer.maxUsd, 2) })}</span>
       </div>
       {offer.paymentMethods?.length > 0 && (
         <div className="p2p-chips">
@@ -328,6 +331,7 @@ function OfferCard({ offer, cur, price, isMine, onClick }) {
 // Offer detail (with gated contact)
 // ===========================================================================
 function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onCancel, onMessage, showToast }) {
+  const { t } = useTranslation()
   const [revealed, setRevealed] = useState(false)
   const [amount, setAmount] = useState(() => String(offer.minUsd || ''))
 
@@ -366,9 +370,9 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
 
   const tryReveal = () => {
     if (isMine) return
-    if (required == null) { showToast('Price unavailable right now — try again shortly', 'error'); return }
+    if (required == null) { showToast(t('p2p.priceUnavailable'), 'error'); return }
     if (enough) setRevealed(true)
-    else showToast(`You need ≈ ${formatH173K(required)} h173k to take this offer`, 'error')
+    else showToast(t('p2p.needToTake', { n: formatH173K(required) }), 'error')
   }
 
   const openContact = () => {
@@ -386,42 +390,42 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
     <div className="p2p-modal-overlay" onClick={onClose}>
       <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>
         <div className="p2p-modal-head">
-          <h3>{viewerAction === 'buy' ? 'Buy' : 'Sell'} h173k · {offer.nickname || 'anon'}</h3>
+          <h3>{viewerAction === 'buy' ? t('p2p.buyWord') : t('p2p.sellWord')} h173k · {offer.nickname || t('p2p.anon')}</h3>
           <button className="p2p-icon-btn" onClick={onClose}><Close /></button>
         </div>
 
         <div className="deposit-preview">
-          <div className="deposit-row"><span>Price</span><span>{formatNumber(offer.pricePerUsd, 4)} {cur?.code} / $1 h173k</span></div>
-          <div className="deposit-row"><span>Size range</span><span>${formatNumber(offer.minUsd, 2)} – ${formatNumber(offer.maxUsd, 2)}</span></div>
+          <div className="deposit-row"><span>{t('p2p.price')}</span><span>{formatNumber(offer.pricePerUsd, 4)} {cur?.code} / $1 h173k</span></div>
+          <div className="deposit-row"><span>{t('p2p.sizeRange')}</span><span>${formatNumber(offer.minUsd, 2)} – ${formatNumber(offer.maxUsd, 2)}</span></div>
         </div>
 
         {/* ---- Trade calculator ---- */}
         <div className="form-group" style={{ marginTop: 4 }}>
           <label className="form-label">
-            {viewerAction === 'buy' ? 'How much do you want to buy? ($ value)' : 'How much do you want to sell? ($ value)'}
+            {viewerAction === 'buy' ? t('p2p.howMuchBuy') : t('p2p.howMuchSell')}
           </label>
           <input className="form-input" type="text" inputMode="decimal" value={amount}
             style={amt > 0 && !inRange ? { borderColor: 'var(--color-error)' } : undefined}
             onChange={setAmt} onKeyDown={stepAmt} placeholder={`${formatNumber(offer.minUsd, 2)} – ${formatNumber(offer.maxUsd, 2)}`} />
-          {amt > 0 && !inRange && <span className="form-hint" style={{ color: 'var(--color-error)' }}>Outside the offer range (${formatNumber(offer.minUsd, 2)}–${formatNumber(offer.maxUsd, 2)}).</span>}
+          {amt > 0 && !inRange && <span className="form-hint" style={{ color: 'var(--color-error)' }}>{t('p2p.outsideRange', { min: '$' + formatNumber(offer.minUsd, 2), max: '$' + formatNumber(offer.maxUsd, 2) })}</span>}
         </div>
 
         {calc && (
           <div className="deposit-preview">
             {viewerAction === 'buy' ? (
               <>
-                <div className="deposit-row"><span>You receive</span><span><strong>≈ {formatH173K(calc.h173kAmount)} h173k</strong></span></div>
-                <div className="deposit-row"><span>You pay</span><span>{formatNumber(calc.fiatAmount, 2)} {cur?.code}</span></div>
-                <div className="deposit-row"><span>h173k needed (MAD)</span>
+                <div className="deposit-row"><span>{t('p2p.youReceive')}</span><span><strong>≈ {formatH173K(calc.h173kAmount)} h173k</strong></span></div>
+                <div className="deposit-row"><span>{t('p2p.youPay')}</span><span>{formatNumber(calc.fiatAmount, 2)} {cur?.code}</span></div>
+                <div className="deposit-row"><span>{t('p2p.h173kNeeded')}</span>
                   <span style={{ color: enoughForAmount === false ? 'var(--color-error)' : undefined }}>
                     ≈ {neededForAmount != null ? formatH173K(neededForAmount) : '—'} h173k
                   </span></div>
               </>
             ) : (
               <>
-                <div className="deposit-row"><span>You receive</span><span><strong>{formatNumber(calc.fiatAmount, 2)} {cur?.code}</strong></span></div>
-                <div className="deposit-row"><span>You send</span><span>≈ {formatH173K(calc.h173kAmount)} h173k</span></div>
-                <div className="deposit-row"><span>h173k needed (MAD)</span>
+                <div className="deposit-row"><span>{t('p2p.youReceive')}</span><span><strong>{formatNumber(calc.fiatAmount, 2)} {cur?.code}</strong></span></div>
+                <div className="deposit-row"><span>{t('p2p.youSend')}</span><span>≈ {formatH173K(calc.h173kAmount)} h173k</span></div>
+                <div className="deposit-row"><span>{t('p2p.h173kNeeded')}</span>
                   <span style={{ color: enoughForAmount === false ? 'var(--color-error)' : undefined }}>
                     ≈ {neededForAmount != null ? formatH173K(neededForAmount) : '—'} h173k
                   </span></div>
@@ -433,37 +437,37 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
         {/* ---- Role note ---- */}
         <div className="escrow-info-card">
           {viewerAction === 'sell' ? (
-            <p>You (the <strong>seller</strong>) <strong>create</strong> the MAD contract — there you're called the <em>buyer</em>, because in MAD h173k is the currency. You send h173k and lock 2× the size as deposit.</p>
+            <p>{t('p2p.roleNoteSell')}</p>
           ) : (
-            <p>You (the <strong>buyer</strong>) <strong>accept</strong> the MAD contract — there you're called the <em>seller</em>, because in MAD h173k is the currency. You receive h173k and lock 1× the size as deposit.</p>
+            <p>{t('p2p.roleNoteBuy')}</p>
           )}
         </div>
 
         {neededForAmount != null && enoughForAmount === false && (
           <div className="escrow-info-card" style={{ borderColor: 'var(--color-error)' }}>
-            <p style={{ color: 'var(--color-error)' }}>⚠ You need ≈ {formatH173K(neededForAmount)} h173k for this amount but have {formatH173K(balance)} h173k.</p>
+            <p style={{ color: 'var(--color-error)' }}>{t('p2p.needForAmount', { needed: formatH173K(neededForAmount), have: formatH173K(balance) })}</p>
           </div>
         )}
 
         {offer.paymentMethods?.length > 0 && (
           <div className="form-group">
-            <label className="form-label">Payment methods</label>
+            <label className="form-label">{t('p2p.paymentMethods')}</label>
             <div className="p2p-chips">{offer.paymentMethods.map((m, i) => <span key={i} className="p2p-chip">{m}</span>)}</div>
           </div>
         )}
 
         {isMine ? (
           <>
-            <div className="escrow-info-card"><p>This is your offer. Cancelling burns {CANCEL_FEE_H173K} h173k.</p></div>
-            <button className="btn btn-danger" disabled={posting} onClick={onCancel}>{posting ? 'Cancelling…' : 'Cancel offer'}</button>
+            <div className="escrow-info-card"><p>{t('p2p.yourOfferNote', { n: CANCEL_FEE_H173K })}</p></div>
+            <button className="btn btn-danger" disabled={posting} onClick={onCancel}>{posting ? t('p2p.cancelling') : t('p2p.cancelOffer')}</button>
           </>
         ) : revealed ? (
           <div className="p2p-contact-box">
-            <label className="form-label">{offer.contactType === 'wm' ? 'Wallet messenger address' : 'Contact'}</label>
+            <label className="form-label">{offer.contactType === 'wm' ? t('p2p.wmAddress') : t('p2p.contact')}</label>
             <div
               className={`p2p-contact-value ${offer.contactType === 'wm' ? 'p2p-contact-wm' : ''}`}
               onClick={offer.contactType === 'wm' ? openContact : undefined}
-              title={offer.contactType === 'wm' ? 'Tap to message in wallet' : undefined}
+              title={offer.contactType === 'wm' ? t('p2p.tapToMessage') : undefined}
             >
               <span>{offer.contactType === 'wm' ? offer.posterPubkey : offer.contact}</span>
               <button
@@ -471,32 +475,29 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
                 onClick={(e) => {
                   e.stopPropagation()
                   const val = offer.contactType === 'wm' ? offer.posterPubkey : offer.contact
-                  copyToClipboard(val); showToast('Copied', 'success')
+                  copyToClipboard(val); showToast(t('common.copied'), 'success')
                 }}
-                title="Copy"
+                title={t('p2p.copy')}
               >⧉</button>
             </div>
             <button className="btn btn-action p2p-tg-btn" onClick={openContact}>
-              {offer.contactType === 'ph' ? <><Phone /> Call</>
-                : offer.contactType === 'wm' ? <><Chat /> Open in Messenger</>
-                : <><Tg /> Open in Telegram</>}
+              {offer.contactType === 'ph' ? <><Phone /> {t('p2p.call')}</>
+                : offer.contactType === 'wm' ? <><Chat /> {t('p2p.openInMessenger')}</>
+                : <><Tg /> {t('p2p.openInTelegram')}</>}
             </button>
             <p className="form-hint">
               {offer.contactType === 'wm'
-                ? 'Opens an encrypted chat with the advertiser inside the wallet. Settle via a MAD contract.'
-                : 'Settle the trade via a MAD contract in direct chat.'}
+                ? t('p2p.contactHintWm')
+                : t('p2p.contactHint')}
             </p>
           </div>
         ) : (
           <>
             <div className="escrow-info-card">
-              <p>To take this offer you must be able to open the MAD contract at the min size:
-                you need <strong>≈ {required != null ? formatH173K(required) : '—'} h173k</strong>
-                {' '}({sendsH173k ? '2× the min size, since you send h173k' : '1× the min size'}).
-                Your balance: {formatH173K(balance)} h173k.</p>
+              <p>{t('p2p.takeOfferNote', { n: required != null ? formatH173K(required) : '—', mult: sendsH173k ? t('p2p.mult2x') : t('p2p.mult1x'), balance: formatH173K(balance) })}</p>
             </div>
             <button className="btn btn-action" disabled={!enough} onClick={tryReveal}>
-              {enough ? 'Reveal contact' : 'Not enough h173k'}
+              {enough ? t('p2p.revealContact') : t('p2p.notEnough')}
             </button>
           </>
         )}
@@ -509,6 +510,7 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
 // Create offer
 // ===========================================================================
 function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, nickname: initialNickname, onClose, onSubmit }) {
+  const { t } = useTranslation()
   const [type, setType] = useState(defaultType)
   const [nickname, setNickname] = useState(initialNickname || '')
   const [pricePerUsd, setPrice] = useState('')
@@ -535,7 +537,7 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
     const m = titleCase(pmInput.trim().slice(0, MAX_METHOD_LEN))
     if (!m) return
     if (methods.includes(m)) { setPmInput(''); return }
-    if (methods.length >= MAX_PAYMENT_METHODS) { alertMsg(`Max ${MAX_PAYMENT_METHODS} payment methods`); return }
+    if (methods.length >= MAX_PAYMENT_METHODS) { alertMsg(t('p2p.maxMethods', { n: MAX_PAYMENT_METHODS })); return }
     setMethods([...methods, m]); setPmInput(''); setErr('')
   }
 
@@ -558,12 +560,12 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
     setSubmitted(true)
     const p = parseFloat(pricePerUsd)
     const mx = parseFloat(maxUsd)
-    if (!nickname.trim()) return alertMsg('Enter a nickname')
-    if (!(p > 0)) return alertMsg('Enter a valid price')
-    if (!(mn > 0)) return alertMsg('Enter a valid minimum size')
-    if (!(mx >= mn)) return alertMsg('Max size must be ≥ min size')
-    if (methods.length === 0) return alertMsg('Add at least one payment method')
-    if (contactType !== 'wm' && !contact.trim()) return alertMsg('Enter your contact')
+    if (!nickname.trim()) return alertMsg(t('p2p.errNickname'))
+    if (!(p > 0)) return alertMsg(t('p2p.errPrice'))
+    if (!(mn > 0)) return alertMsg(t('p2p.errMinSize'))
+    if (!(mx >= mn)) return alertMsg(t('p2p.errMaxSize'))
+    if (methods.length === 0) return alertMsg(t('p2p.errMethods'))
+    if (contactType !== 'wm' && !contact.trim()) return alertMsg(t('p2p.errContact'))
     onSubmit({ nickname: nickname.trim(), type, pricePerUsd: p, minUsd: mn, maxUsd: mx, paymentMethods: methods, contactType, contact: contactType === 'wm' ? '' : contact.trim() })
   }
 
@@ -571,91 +573,87 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
     <div className="p2p-modal-overlay" onClick={onClose}>
       <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>
         <div className="p2p-modal-head">
-          <h3>Create offer</h3>
+          <h3>{t('p2p.createTitle')}</h3>
           <button className="p2p-icon-btn" onClick={onClose}><Close /></button>
         </div>
 
         <div className="p2p-type-toggle">
-          <button className={`p2p-tab ${type === 'buy' ? 'active' : ''}`} onClick={() => setType('buy')}>Buy h173k</button>
-          <button className={`p2p-tab ${type === 'sell' ? 'active' : ''}`} onClick={() => setType('sell')}>Sell h173k</button>
+          <button className={`p2p-tab ${type === 'buy' ? 'active' : ''}`} onClick={() => setType('buy')}>{t('p2p.buyH173k')}</button>
+          <button className={`p2p-tab ${type === 'sell' ? 'active' : ''}`} onClick={() => setType('sell')}>{t('p2p.sellH173k')}</button>
         </div>
 
         <div className="form-group">
-          <label className="form-label">Nickname (shown on your offer)</label>
+          <label className="form-label">{t('p2p.nickOfferLabel')}</label>
           <input className="form-input" maxLength={32} value={nickname}
             style={submitted && !nickname.trim() ? { borderColor: 'var(--color-error)' } : undefined}
-            onChange={(e) => setNickname(e.target.value)} placeholder="e.g. satoshi" />
+            onChange={(e) => setNickname(e.target.value)} placeholder={t('p2p.nickPlaceholder')} />
         </div>
 
         <div className="form-group">
-          <label className="form-label">Price — {cur?.code} per $1 of h173k value</label>
+          <label className="form-label">{t('p2p.priceLabel', { code: cur?.code })}</label>
           <input className="form-input" type="number" inputMode="decimal" min="0" step="any" value={pricePerUsd}
             style={errStyle(priceErr)}
-            onKeyDown={blockMinus} onChange={setNum(setPrice)} placeholder={`Price in ${cur?.code}`} />
+            onKeyDown={blockMinus} onChange={setNum(setPrice)} placeholder={t('p2p.pricePlaceholder', { code: cur?.code })} />
           {type === 'sell' ? (
             // creator sends h173k and receives fiat → show fiat received
             <span className="form-hint">
-              You send h173k and receive {cur?.code}: $1 in h173k → {pricePerUsd ? formatNumber(parseFloat(pricePerUsd), 4) : '…'} {cur?.code}
-              {' '}· $10 → {pricePerUsd ? formatNumber(parseFloat(pricePerUsd) * 10, 2) : '…'} {cur?.code}
+              {t('p2p.sellHint', { code: cur?.code, p1: pricePerUsd ? formatNumber(parseFloat(pricePerUsd), 4) : '…', p10: pricePerUsd ? formatNumber(parseFloat(pricePerUsd) * 10, 2) : '…' })}
             </span>
           ) : (
             // creator pays fiat and receives h173k → show h173k received
             <span className="form-hint">
-              You pay {cur?.code} and receive h173k: $1 → ≈ {oneUsdH173k != null ? `${formatH173K(oneUsdH173k)} h173k` : '… h173k'}
-              {' '}· $10 → ≈ {oneUsdH173k != null ? `${formatH173K(oneUsdH173k * 10)} h173k` : '… h173k'}
+              {t('p2p.buyHint', { code: cur?.code, h1: oneUsdH173k != null ? `${formatH173K(oneUsdH173k)} h173k` : '… h173k', h10: oneUsdH173k != null ? `${formatH173K(oneUsdH173k * 10)} h173k` : '… h173k' })}
             </span>
           )}
         </div>
 
         <div className="p2p-row2">
           <div className="form-group">
-            <label className="form-label">Min size ($ value)</label>
+            <label className="form-label">{t('p2p.minSize')}</label>
             <input className="form-input" type="number" inputMode="decimal" min="0" step="any" value={minUsd}
               style={errStyle(minErr)}
-              onKeyDown={blockMinus} onChange={setNum(setMin)} placeholder="e.g. 5" />
+              onKeyDown={blockMinus} onChange={setNum(setMin)} placeholder={t('p2p.minPlaceholder')} />
           </div>
           <div className="form-group">
-            <label className="form-label">Max size ($ value)</label>
+            <label className="form-label">{t('p2p.maxSize')}</label>
             <input className="form-input" type="number" inputMode="decimal" min="0" step="any" value={maxUsd}
               style={errStyle(maxErr)}
-              onKeyDown={blockMinus} onChange={setNum(setMax)} placeholder="e.g. 100" />
+              onKeyDown={blockMinus} onChange={setNum(setMax)} placeholder={t('p2p.maxPlaceholder')} />
           </div>
         </div>
 
         {sizeInvalid && (
           <div className="escrow-info-card" style={{ borderColor: 'var(--color-error)' }}>
-            <p style={{ color: 'var(--color-error)' }}>⚠ Max size must be greater than or equal to min size.</p>
+            <p style={{ color: 'var(--color-error)' }}>{t('p2p.sizeError')}</p>
           </div>
         )}
 
         {/* h173k requirement + balance check for the chosen min size */}
         {mn > 0 && (
           requiredPost == null ? (
-            <div className="escrow-info-card"><p>Pool price unavailable — can't check your h173k requirement right now.</p></div>
+            <div className="escrow-info-card"><p>{t('p2p.poolUnavailable')}</p></div>
           ) : (
             <div className="escrow-info-card" style={{ borderColor: enoughForPost ? 'var(--color-white-10)' : 'var(--color-error)' }}>
               <p style={{ color: enoughForPost ? 'var(--color-white-70)' : 'var(--color-error)' }}>
                 {enoughForPost ? '✓ ' : '⚠ '}
-                To back the min size (${formatNumber(mn, 2)}) you need ≈ <strong>{formatH173K(requiredPost)} h173k</strong>
-                {' '}({type === 'sell' ? '2× — you pay in h173k' : '1× — you receive h173k'}).
-                {' '}You have {formatH173K(balance)} h173k.
-                {!enoughForPost && ' Not enough to fulfil this offer.'}
+                {t('p2p.backMinSize', { min: '$' + formatNumber(mn, 2), n: formatH173K(requiredPost), mult: type === 'sell' ? t('p2p.multPay') : t('p2p.multReceive'), balance: formatH173K(balance) })}
+                {!enoughForPost && ' ' + t('p2p.notEnoughFulfil')}
               </p>
             </div>
           )
         )}
 
         <div className="form-group">
-          <label className="form-label">Payment methods · {methods.length}/{MAX_PAYMENT_METHODS}</label>
+          <label className="form-label">{t('p2p.pmLabel', { n: methods.length, max: MAX_PAYMENT_METHODS })}</label>
           <div className="input-with-action">
             <input className="form-input" value={pmInput} maxLength={MAX_METHOD_LEN}
               disabled={methods.length >= MAX_PAYMENT_METHODS}
               onChange={(e) => setPmInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addMethod() } }}
-              placeholder={methods.length >= MAX_PAYMENT_METHODS ? 'Limit reached' : 'e.g. Revolut, Wise, Skrill'} />
+              placeholder={methods.length >= MAX_PAYMENT_METHODS ? t('p2p.limitReached') : t('p2p.pmPlaceholder')} />
             <button className="input-action-btn" onClick={addMethod} disabled={methods.length >= MAX_PAYMENT_METHODS}><Plus /></button>
           </div>
-          <span className="form-hint">Up to {MAX_PAYMENT_METHODS} methods, {MAX_METHOD_LEN} characters each.</span>
+          <span className="form-hint">{t('p2p.pmHint', { max: MAX_PAYMENT_METHODS, len: MAX_METHOD_LEN })}</span>
           {methods.length > 0 && (
             <div className="p2p-chips" style={{ marginTop: 10 }}>
               {methods.map((m, i) => (
@@ -666,35 +664,35 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
         </div>
 
         <div className="form-group">
-          <label className="form-label">Contact type</label>
+          <label className="form-label">{t('p2p.contactType')}</label>
           <div className="p2p-type-toggle">
-            <button className={`p2p-tab ${contactType === 'tg' ? 'active' : ''}`} onClick={() => setContactType('tg')}>Telegram</button>
-            <button className={`p2p-tab ${contactType === 'ph' ? 'active' : ''}`} onClick={() => setContactType('ph')}>Phone</button>
-            <button className={`p2p-tab ${contactType === 'wm' ? 'active' : ''}`} onClick={() => setContactType('wm')}>Messenger</button>
+            <button className={`p2p-tab ${contactType === 'tg' ? 'active' : ''}`} onClick={() => setContactType('tg')}>{t('p2p.telegram')}</button>
+            <button className={`p2p-tab ${contactType === 'ph' ? 'active' : ''}`} onClick={() => setContactType('ph')}>{t('p2p.phone')}</button>
+            <button className={`p2p-tab ${contactType === 'wm' ? 'active' : ''}`} onClick={() => setContactType('wm')}>{t('p2p.messengerTab')}</button>
           </div>
         </div>
 
         {contactType === 'wm' ? (
           <div className="form-group">
-            <label className="form-label">Wallet messenger</label>
+            <label className="form-label">{t('p2p.walletMessenger')}</label>
             <div className="escrow-info-card">
-              <p>Takers will see your <strong>wallet address</strong> and can open an encrypted in-wallet chat with you. No handle or phone number is exposed.</p>
+              <p>{t('p2p.wmInfo')}</p>
             </div>
           </div>
         ) : (
           <div className="form-group">
-            <label className="form-label">{contactType === 'tg' ? 'Telegram handle' : 'Phone number'}</label>
+            <label className="form-label">{contactType === 'tg' ? t('p2p.tgHandle') : t('p2p.phoneNumber')}</label>
             <input className="form-input" value={contact} maxLength={32} onChange={(e) => setContact(e.target.value)}
               placeholder={contactType === 'tg' ? '@username' : '+001234567'} />
-            <span className="form-hint">⚠ Stored publicly on-chain. Choose what you're comfortable exposing.</span>
+            <span className="form-hint">{t('p2p.contactPublicWarning')}</span>
           </div>
         )}
 
         {err && <div className="escrow-info-card" style={{ borderColor: 'var(--color-error)' }}><p style={{ color: 'var(--color-error)' }}>{err}</p></div>}
 
-        <div className="escrow-info-card"><p>Posting burns {POST_FEE_H173K} h173k + network fee. First offer in a currency also creates its account (~0.002 SOL rent). Your SOL: {formatNumber(solBalance, 4)}.</p></div>
+        <div className="escrow-info-card"><p>{t('p2p.postingInfo', { fee: POST_FEE_H173K, sol: formatNumber(solBalance, 4) })}</p></div>
 
-        <button className="btn btn-action" disabled={posting || sizeInvalid} onClick={validateAndSubmit}>{posting ? 'Posting…' : 'Post offer'}</button>
+        <button className="btn btn-action" disabled={posting || sizeInvalid} onClick={validateAndSubmit}>{posting ? t('p2p.posting') : t('p2p.postOffer')}</button>
       </div>
     </div>
   )
@@ -704,21 +702,22 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
 // In-section P2P settings (nickname + currency)
 // ===========================================================================
 function P2PSettingsModal({ profile, onClose, onSave }) {
+  const { t } = useTranslation()
   const [nickname, setNickname] = useState(profile.nickname)
   const [currency, setCurrency] = useState(profile.currency)
   return (
     <div className="p2p-modal-overlay" onClick={onClose}>
       <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>
         <div className="p2p-modal-head">
-          <h3>P2P settings</h3>
+          <h3>{t('p2p.settingsTitle')}</h3>
           <button className="p2p-icon-btn" onClick={onClose}><Close /></button>
         </div>
         <div className="form-group">
-          <label className="form-label">Nickname</label>
+          <label className="form-label">{t('p2p.nickname')}</label>
           <input className="form-input" maxLength={32} value={nickname} onChange={(e) => setNickname(e.target.value)} />
         </div>
         <div className="form-group">
-          <label className="form-label">Currency</label>
+          <label className="form-label">{t('p2p.currency')}</label>
           <select className="form-input p2p-select" value={currency} onChange={(e) => setCurrency(e.target.value)}>
             {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
           </select>
@@ -726,7 +725,7 @@ function P2PSettingsModal({ profile, onClose, onSave }) {
         <button className="btn btn-action" onClick={() => {
           const n = nickname.trim(); if (!n) return
           onSave({ ...profile, nickname: n, currency })
-        }}>Save</button>
+        }}>{t('common.save')}</button>
       </div>
     </div>
   )

@@ -6,6 +6,7 @@ import { PublicKey } from '@solana/web3.js'
 import { BN } from '@coral-xyz/anchor'
 import { sha256 } from '@noble/hashes/sha256'
 import { TOKEN_DECIMALS, PROGRAM_ID, OfferStatus, getH173KDecimals } from './constants'
+import { translate } from './i18n'
 
 /**
  * Format number with commas
@@ -321,30 +322,30 @@ export function getStatusInfo(status, offer = null, userPubkey = null) {
     const isSeller = sellerStr && sellerStr !== '11111111111111111111111111111111' && sellerStr === userStr
     
     if (statusValue === OfferStatus.BuyerConfirmed && isSeller) {
-      return { label: 'Confirm Release', class: 'pending-release' }
+      return { label: translate('escrow.statusConfirmRelease'), class: 'pending-release' }
     }
     if (statusValue === OfferStatus.BuyerConfirmed && isBuyer) {
-      return { label: 'Awaiting Release', class: 'pending-release' }
+      return { label: translate('escrow.statusAwaitingRelease'), class: 'pending-release' }
     }
     if (statusValue === OfferStatus.SellerConfirmed && isBuyer) {
-      return { label: 'Confirm Release', class: 'pending-release' }
+      return { label: translate('escrow.statusConfirmRelease'), class: 'pending-release' }
     }
     if (statusValue === OfferStatus.SellerConfirmed && isSeller) {
-      return { label: 'Awaiting Release', class: 'pending-release' }
+      return { label: translate('escrow.statusAwaitingRelease'), class: 'pending-release' }
     }
   }
   
   const statusMap = {
-    [OfferStatus.PendingSeller]: { label: 'Pending', class: 'pending' },
-    [OfferStatus.Locked]: { label: 'Ongoing', class: 'ongoing' },
-    [OfferStatus.BuyerConfirmed]: { label: 'Pending Release', class: 'pending-release' },
-    [OfferStatus.SellerConfirmed]: { label: 'Pending Release', class: 'pending-release' },
-    [OfferStatus.Completed]: { label: 'Released', class: 'released' },
-    [OfferStatus.Burned]: { label: 'Burned', class: 'burned' },
-    [OfferStatus.Cancelled]: { label: 'Cancelled', class: 'cancelled' },
+    [OfferStatus.PendingSeller]: { label: translate('escrow.statusPending'), class: 'pending' },
+    [OfferStatus.Locked]: { label: translate('escrow.statusOngoing'), class: 'ongoing' },
+    [OfferStatus.BuyerConfirmed]: { label: translate('escrow.statusPendingRelease'), class: 'pending-release' },
+    [OfferStatus.SellerConfirmed]: { label: translate('escrow.statusPendingRelease'), class: 'pending-release' },
+    [OfferStatus.Completed]: { label: translate('escrow.statusReleased'), class: 'released' },
+    [OfferStatus.Burned]: { label: translate('escrow.statusBurned'), class: 'burned' },
+    [OfferStatus.Cancelled]: { label: translate('escrow.statusCancelled'), class: 'cancelled' },
   }
   
-  return statusMap[statusValue] || { label: 'Unknown', class: 'pending' }
+  return statusMap[statusValue] || { label: translate('escrow.statusUnknown'), class: 'pending' }
 }
 
 /**

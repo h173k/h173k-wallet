@@ -28,6 +28,7 @@ import {
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js'
+import { translate } from '../i18n'
 import {
   getAssociatedTokenAddress,
   getAccount,
@@ -537,8 +538,8 @@ export async function scanLockedNotifications(connection, address) {
 
   // Only announce on incremental updates, not the first ever backfill.
   if (notifyCursor && count > 0) {
-    const title = count === 1 ? 'New message' : count + ' new messages'
-    showAppNotification(title, 'Unlock the wallet to read', { tag: 'h173k-msg-locked' })
+    const title = count === 1 ? translate('messenger.newMessage') : translate('messenger.newMessages', { n: count })
+    showAppNotification(title, translate('messenger.unlockToRead'), { tag: 'h173k-msg-locked' })
   }
 
   setNotifyCursor(newestSig)
@@ -559,7 +560,7 @@ function notifyNewMessages(added) {
   for (const it of added) {
     if (it.from === activeAddr) continue // don't notify for the conversation you're viewing
     const title = it.name || it.from
-    const body = it.type === 'req' ? 'Wants to start a conversation' : it.text
+    const body = it.type === 'req' ? translate('messenger.wantsToStart') : it.text
     showNotification(title, body, it.from)
   }
 }

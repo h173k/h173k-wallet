@@ -89,6 +89,9 @@ import {
 
 import './App.css'
 
+// Internationalization (i18n)
+import { useTranslation } from './i18n'
+
 // Referral System
 import { 
   getReferralFromURL, 
@@ -121,6 +124,7 @@ function isStandaloneMode() {
 
 // ========== INSTALL PROMPT SCREEN ==========
 function InstallPromptScreen() {
+  const { t } = useTranslation()
   const [isIOS, setIsIOS] = useState(false)
   
   useEffect(() => {
@@ -133,9 +137,9 @@ function InstallPromptScreen() {
         <div className="install-logo">
           <img src="/logo.png" alt="H173K" className="logo-img large" />
         </div>
-        <h1 className="install-title">Install H173K Wallet</h1>
+        <h1 className="install-title">{t('install.title')}</h1>
         <p className="install-subtitle">
-          For security and best experience, please add this app to your home screen.
+          {t('install.subtitle')}
         </p>
         
         <div className="install-instructions">
@@ -143,30 +147,30 @@ function InstallPromptScreen() {
             <>
               <div className="install-step">
                 <span className="step-number">1</span>
-                <span>Tap the <strong>Share</strong> button <ShareIcon /></span>
+                <span>{t('install.tapThe')} <strong>{t('install.share')}</strong> <ShareIcon /></span>
               </div>
               <div className="install-step">
                 <span className="step-number">2</span>
-                <span>Scroll and tap <strong>"Add to Home Screen"</strong></span>
+                <span>{t('install.scrollAndTap')} <strong>{t('install.addToHomeScreen')}</strong></span>
               </div>
               <div className="install-step">
                 <span className="step-number">3</span>
-                <span>Tap <strong>"Add"</strong> to confirm</span>
+                <span>{t('install.tap')} <strong>{t('install.add')}</strong> {t('install.toConfirm')}</span>
               </div>
             </>
           ) : (
             <>
               <div className="install-step">
                 <span className="step-number">1</span>
-                <span>Tap the <strong>menu</strong> button <MenuIcon /></span>
+                <span>{t('install.tapThe')} <strong>{t('install.menu')}</strong> <MenuIcon /></span>
               </div>
               <div className="install-step">
                 <span className="step-number">2</span>
-                <span>Select <strong>"Add to Home screen"</strong> or <strong>"Install app"</strong></span>
+                <span>{t('install.select')} <strong>{t('install.addToHomeScreenLower')}</strong> {t('install.or')} <strong>{t('install.installApp')}</strong></span>
               </div>
               <div className="install-step">
                 <span className="step-number">3</span>
-                <span>Tap <strong>"Install"</strong> to confirm</span>
+                <span>{t('install.tap')} <strong>{t('install.install')}</strong> {t('install.toConfirm')}</span>
               </div>
             </>
           )}
@@ -174,7 +178,7 @@ function InstallPromptScreen() {
         
         <div className="install-note">
           <span className="note-icon">🔒</span>
-          <p>Installing as an app ensures your wallet runs in a secure, fullscreen environment without browser controls.</p>
+          <p>{t('install.note')}</p>
         </div>
       </div>
     </div>
@@ -203,6 +207,8 @@ function MenuIcon() {
 
 // ========== MAIN APP ==========
 function App() {
+  // Subscribe to the active language so the app re-renders on language change.
+  const { t } = useTranslation()
   const [connection, setConnection] = useState(null)
   const [rpcVersion, setRpcVersion] = useState(0)
   const [requiresInstall, setRequiresInstall] = useState(false)
@@ -241,12 +247,12 @@ function App() {
       <>
         <div className="landscape-overlay">
           <div className="rotate-icon">📱</div>
-          <h2>Please Rotate Your Device</h2>
-          <p>This app works best in portrait mode</p>
+          <h2>{t('orientation.title')}</h2>
+          <p>{t('orientation.subtitle')}</p>
         </div>
         <div className="app-background"><div className="light-streak" /></div>
         <div className="app-container">
-          <LoadingScreen message="Loading..." />
+          <LoadingScreen message={t('loading.generic')} />
         </div>
       </>
     )
@@ -258,8 +264,8 @@ function App() {
       <>
         <div className="landscape-overlay">
           <div className="rotate-icon">📱</div>
-          <h2>Please Rotate Your Device</h2>
-          <p>This app works best in portrait mode</p>
+          <h2>{t('orientation.title')}</h2>
+          <p>{t('orientation.subtitle')}</p>
         </div>
         <div className="app-background"><div className="light-streak" /></div>
         <div className="app-container">
@@ -273,12 +279,12 @@ function App() {
     <>
       <div className="landscape-overlay">
         <div className="rotate-icon">📱</div>
-        <h2>Please Rotate Your Device</h2>
-        <p>This app works best in portrait mode</p>
+        <h2>{t('orientation.title')}</h2>
+        <p>{t('orientation.subtitle')}</p>
       </div>
       <div className="app-background"><div className="light-streak" /></div>
       <div className="app-container">
-        {!connection ? <LoadingScreen message="Connecting..." /> : <WalletApp connection={connection} onRpcChange={handleRpcChange} />}
+        {!connection ? <LoadingScreen message={t('loading.connecting')} /> : <WalletApp connection={connection} onRpcChange={handleRpcChange} />}
       </div>
     </>
   )
@@ -286,6 +292,7 @@ function App() {
 
 // ========== WALLET APP ==========
 function WalletApp({ connection, onRpcChange }) {
+  const { t } = useTranslation()
   const [initialized, setInitialized] = useState(false)
   const [hasWallet, setHasWallet] = useState(false)
   const [isUnlocked, setIsUnlocked] = useState(false)
@@ -485,7 +492,7 @@ function WalletApp({ connection, onRpcChange }) {
     setIsUnlocked(false)
   }, [])
   
-  if (loading || !initialized) return <LoadingScreen message="Loading wallet..." />
+  if (loading || !initialized) return <LoadingScreen message={t('loading.wallet')} />
   if (!hasWallet) return <OnboardingFlow onComplete={handleWalletCreated} showToast={showToast} pendingReferral={pendingReferral} onRpcChange={onRpcChange} />
   if (!isUnlocked) return <LockScreen onUnlock={handleUnlock} showToast={showToast} />
   
@@ -593,6 +600,7 @@ function LoadingScreen({ message }) {
 
 // ========== ONBOARDING FLOW ==========
 function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange }) {
+  const { t } = useTranslation()
   const [step, setStep] = useState(() => isRpcConfigured() ? 'welcome' : 'rpc')
   const [mnemonic, setMnemonic] = useState('')
   const [importMnemonic, setImportMnemonic] = useState('')
@@ -607,7 +615,7 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
   
   const handleSaveRpc = useCallback(async () => {
     if (!rpcUrl.trim()) {
-      setError('RPC URL is required')
+      setError(t('onboarding.errRpcRequired'))
       return
     }
     
@@ -617,7 +625,7 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
     try {
       const isValid = await validateRpcEndpoint(rpcUrl.trim())
       if (!isValid) {
-        setError('Invalid RPC endpoint. Please check the URL.')
+        setError(t('onboarding.errRpcInvalid'))
         setValidatingRpc(false)
         return
       }
@@ -631,11 +639,11 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
       
       setStep('welcome')
     } catch (err) {
-      setError('Failed to validate RPC: ' + err.message)
+      setError(t('onboarding.errRpcValidate', { msg: err.message }))
     } finally {
       setValidatingRpc(false)
     }
-  }, [rpcUrl, onRpcChange])
+  }, [rpcUrl, onRpcChange, t])
   
   const handleCreateWallet = useCallback(() => {
     const newMnemonic = generateMnemonic()
@@ -647,7 +655,7 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
   
   const handleImport = useCallback(async () => {
     if (!validateMnemonic(importMnemonic)) {
-      setError('Invalid recovery phrase')
+      setError(t('onboarding.errInvalidPhrase'))
       return
     }
     const cleanMnemonic = importMnemonic.trim().toLowerCase()
@@ -660,14 +668,14 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
       setPreviewAddress(keypair.publicKey.toString())
       setStep('confirmImport')
     } catch (err) {
-      setError('Failed to derive wallet: ' + err.message)
+      setError(t('onboarding.errDerive', { msg: err.message }))
     }
-  }, [importMnemonic])
+  }, [importMnemonic, t])
   
   const handleSetupPin = useCallback(async () => {
-    if (pin.length < 4) { setError('PIN must be at least 4 digits'); return }
-    if (pin !== confirmPin) { setError('PINs do not match'); return }
-    if (!/^\d+$/.test(pin)) { setError('PIN must contain only digits'); return }
+    if (pin.length < 4) { setError(t('onboarding.errPinMin')); return }
+    if (pin !== confirmPin) { setError(t('onboarding.errPinMismatch')); return }
+    if (!/^\d+$/.test(pin)) { setError(t('onboarding.errPinDigits')); return }
     
     setLoading(true)
     setError('')
@@ -700,26 +708,26 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
         {step === 'rpc' && (
           <div className="onboarding-step">
             <div className="onboarding-logo"><img src="/logo.png" alt="H173K" className="logo-img large" /></div>
-            <h1 className="onboarding-title">RPC Configuration</h1>
-            <p className="onboarding-subtitle">Enter your Solana RPC endpoint</p>
+            <h1 className="onboarding-title">{t('onboarding.rpcTitle')}</h1>
+            <p className="onboarding-subtitle">{t('onboarding.rpcSubtitle')}</p>
             {error && <div className="error-message">{error}</div>}
             <div className="form-group">
-              <label className="form-label">RPC URL</label>
+              <label className="form-label">{t('onboarding.rpcUrlLabel')}</label>
               <input 
                 type="text" 
                 className="form-input" 
-                placeholder="https://your-rpc-endpoint.com" 
+                placeholder={t('onboarding.rpcPlaceholder')} 
                 value={rpcUrl} 
                 onChange={(e) => { setRpcUrl(e.target.value); setError('') }}
               />
-              <span className="form-hint">Use a reliable Solana RPC provider (Helius, QuickNode, Alchemy, etc.)</span>
+              <span className="form-hint">{t('onboarding.rpcHint')}</span>
             </div>
             <button 
               className="btn btn-primary btn-action" 
               onClick={handleSaveRpc} 
               disabled={validatingRpc || !rpcUrl.trim()}
             >
-              {validatingRpc ? 'Validating...' : 'Continue'}
+              {validatingRpc ? t('onboarding.validating') : t('common.continue')}
             </button>
           </div>
         )}
@@ -727,47 +735,47 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
         {step === 'welcome' && (
           <div className="onboarding-step">
             <div className="onboarding-logo"><img src="/logo.png" alt="H173K" className="logo-img large" /></div>
-            <h1 className="onboarding-title">H173K Wallet</h1>
-            <p className="onboarding-subtitle">Your dedicated wallet for H173K tokens</p>
+            <h1 className="onboarding-title">{t('onboarding.welcomeTitle')}</h1>
+            <p className="onboarding-subtitle">{t('onboarding.welcomeSubtitle')}</p>
             <div className="onboarding-actions">
-              <button className="btn btn-primary btn-action" onClick={handleCreateWallet}>Create New Wallet</button>
-              <button className="btn" onClick={() => setStep('import')}>Import Existing Wallet</button>
+              <button className="btn btn-primary btn-action" onClick={handleCreateWallet}>{t('onboarding.createWallet')}</button>
+              <button className="btn" onClick={() => setStep('import')}>{t('onboarding.importWallet')}</button>
             </div>
           </div>
         )}
         
         {step === 'import' && (
           <div className="onboarding-step">
-            <button className="back-btn" onClick={() => setStep('welcome')}><BackIcon size={16} /> Back</button>
-            <h2 className="onboarding-title">Import Wallet</h2>
-            <p className="onboarding-subtitle">Enter your 12 or 24 word recovery phrase</p>
+            <button className="back-btn" onClick={() => setStep('welcome')}><BackIcon size={16} /> {t('common.back')}</button>
+            <h2 className="onboarding-title">{t('onboarding.importTitle')}</h2>
+            <p className="onboarding-subtitle">{t('onboarding.importSubtitle')}</p>
             <div className="form-group">
-              <textarea className="form-input mnemonic-input" placeholder="word1 word2 word3..." value={importMnemonic}
+              <textarea className="form-input mnemonic-input" placeholder={t('onboarding.importPlaceholder')} value={importMnemonic}
                 onChange={(e) => { setImportMnemonic(e.target.value); setError('') }} rows={4} />
             </div>
             {error && <div className="error-message">{error}</div>}
-            <button className="btn btn-primary btn-action" onClick={handleImport} disabled={!importMnemonic.trim()}>Continue</button>
+            <button className="btn btn-primary btn-action" onClick={handleImport} disabled={!importMnemonic.trim()}>{t('common.continue')}</button>
           </div>
         )}
         
         {step === 'confirmImport' && (
           <div className="onboarding-step">
-            <button className="back-btn" onClick={() => { setStep('import'); setPreviewAddress('') }}><BackIcon size={16} /> Back</button>
-            <h2 className="onboarding-title">Verify Wallet</h2>
-            <p className="onboarding-subtitle">Is this your wallet address?</p>
+            <button className="back-btn" onClick={() => { setStep('import'); setPreviewAddress('') }}><BackIcon size={16} /> {t('common.back')}</button>
+            <h2 className="onboarding-title">{t('onboarding.verifyTitle')}</h2>
+            <p className="onboarding-subtitle">{t('onboarding.verifySubtitle')}</p>
             <div className="address-preview-card">
-              <div className="address-preview-label">Wallet Address</div>
+              <div className="address-preview-label">{t('onboarding.walletAddress')}</div>
               <div className="address-preview-value">{previewAddress}</div>
             </div>
-            <p className="onboarding-hint">If this doesn't look right, go back and check your recovery phrase.</p>
-            <button className="btn btn-primary btn-action" onClick={() => setStep('pin')}>Yes, Continue</button>
+            <p className="onboarding-hint">{t('onboarding.verifyHint')}</p>
+            <button className="btn btn-primary btn-action" onClick={() => setStep('pin')}>{t('onboarding.yesContinue')}</button>
           </div>
         )}
         
         {step === 'backup' && (
           <div className="onboarding-step">
-            <h2 className="onboarding-title">Backup Your Wallet</h2>
-            <p className="onboarding-subtitle">Write down these 12 words in order. This is the only way to recover your wallet!</p>
+            <h2 className="onboarding-title">{t('onboarding.backupTitle')}</h2>
+            <p className="onboarding-subtitle">{t('onboarding.backupSubtitle')}</p>
             <div className="mnemonic-display">
               {showMnemonic ? (
                 <div className="mnemonic-words">
@@ -779,20 +787,20 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
                   ))}
                 </div>
               ) : (
-                <button className="btn btn-reveal" onClick={() => setShowMnemonic(true)}>Tap to reveal recovery phrase</button>
+                <button className="btn btn-reveal" onClick={() => setShowMnemonic(true)}>{t('onboarding.tapToReveal')}</button>
               )}
             </div>
             {showMnemonic && (
               <>
                 <div className="backup-warning">
                   <span className="warning-icon">⚠️</span>
-                  <p>Never share these words with anyone. Anyone with this phrase can access your funds.</p>
+                  <p>{t('onboarding.backupWarning')}</p>
                 </div>
                 <label className="checkbox-label">
                   <input type="checkbox" checked={backupConfirmed} onChange={(e) => setBackupConfirmed(e.target.checked)} />
-                  <span>I have written down my recovery phrase</span>
+                  <span>{t('onboarding.backupConfirm')}</span>
                 </label>
-                <button className="btn btn-primary btn-action" onClick={() => setStep('pin')} disabled={!backupConfirmed}>Continue</button>
+                <button className="btn btn-primary btn-action" onClick={() => setStep('pin')} disabled={!backupConfirmed}>{t('common.continue')}</button>
               </>
             )}
           </div>
@@ -800,21 +808,21 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
         
         {step === 'pin' && (
           <div className="onboarding-step">
-            <h2 className="onboarding-title">Create PIN</h2>
-            <p className="onboarding-subtitle">Create a 6-digit PIN to protect your wallet</p>
+            <h2 className="onboarding-title">{t('onboarding.pinTitle')}</h2>
+            <p className="onboarding-subtitle">{t('onboarding.pinSubtitle')}</p>
             <div className="form-group">
-              <label className="form-label">PIN Code (6 digits)</label>
+              <label className="form-label">{t('onboarding.pinCodeLabel')}</label>
               <input type="password" className="form-input pin-input" placeholder="••••••" value={pin}
                 onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }} inputMode="numeric" maxLength={6} />
             </div>
             <div className="form-group">
-              <label className="form-label">Confirm PIN</label>
+              <label className="form-label">{t('onboarding.confirmPinLabel')}</label>
               <input type="password" className="form-input pin-input" placeholder="••••••" value={confirmPin}
                 onChange={(e) => { setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }} inputMode="numeric" maxLength={6} />
             </div>
             {error && <div className="error-message">{error}</div>}
             <button className="btn btn-primary btn-action" onClick={handleSetupPin} disabled={loading || pin.length !== 6 || confirmPin.length !== 6}>
-              {loading ? 'Creating...' : 'Create Wallet'}
+              {loading ? t('onboarding.creating') : t('onboarding.createWalletBtn')}
             </button>
           </div>
         )}
@@ -825,6 +833,7 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
 
 // ========== LOCK SCREEN ==========
 function LockScreen({ onUnlock, showToast }) {
+  const { t } = useTranslation()
   const [pin, setPin] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -844,7 +853,7 @@ function LockScreen({ onUnlock, showToast }) {
     try {
       const lockout = isLockedOut()
       if (lockout && lockout.locked) {
-        setError(`Too many attempts. Try again in ${Math.ceil(lockout.remainingMs / 1000)}s`)
+        setError(t('lock.tooManyAttempts', { s: Math.ceil(lockout.remainingMs / 1000) }))
         return
       }
       verifyPIN(pin)
@@ -853,7 +862,7 @@ function LockScreen({ onUnlock, showToast }) {
       onUnlock(sessionWallet.getPublicKey())
     } catch (err) { setError(err.message); setPin('') }
     finally { setLoading(false) }
-  }, [pin, onUnlock])
+  }, [pin, onUnlock, t])
   
   const handleBiometricUnlock = useCallback(async () => {
     setLoading(true)
@@ -862,9 +871,9 @@ function LockScreen({ onUnlock, showToast }) {
       const password = await authenticateBiometric()
       sessionWallet.unlock(password)
       onUnlock(sessionWallet.getPublicKey())
-    } catch { setError('Biometric authentication failed') }
+    } catch { setError(t('lock.biometricFailed')) }
     finally { setLoading(false) }
-  }, [onUnlock])
+  }, [onUnlock, t])
   
   // Try to unlock when PIN reaches 6 digits
   useEffect(() => {
@@ -877,7 +886,7 @@ function LockScreen({ onUnlock, showToast }) {
     <div className="lock-screen">
       <div className="lock-content">
         <div className="lock-logo"><img src="/logo.png" alt="H173K" className="logo-img" /></div>
-        <h2 className="lock-title">Unlock Wallet</h2>
+        <h2 className="lock-title">{t('lock.title')}</h2>
         <div className="pin-display">
           {[...Array(6)].map((_, i) => <div key={i} className={`pin-dot ${pin.length > i ? 'filled' : ''}`} />)}
         </div>
@@ -895,7 +904,7 @@ function LockScreen({ onUnlock, showToast }) {
             </button>
           ))}
         </div>
-        {biometricAvailable && <button className="btn biometric-btn" onClick={handleBiometricUnlock} disabled={loading}><LockIcon /> Use Biometric</button>}
+        {biometricAvailable && <button className="btn biometric-btn" onClick={handleBiometricUnlock} disabled={loading}><LockIcon /> {t('lock.useBiometric')}</button>}
       </div>
     </div>
   )
@@ -903,6 +912,7 @@ function LockScreen({ onUnlock, showToast }) {
 
 // ========== MAIN VIEW ==========
 function MainView({ connection, publicKey, balance, solBalance, price, toUSD, onSend, onReceive, onHistory, onEscrow, onSettings, onMessenger, messengerUnread, onRefresh, onLock, showToast, rpcError, h173kDecimals }) {
+  const { t } = useTranslation()
   const [refreshing, setRefreshing] = useState(false)
   const [showSolPrompt, setShowSolPrompt] = useState(false)
   const [solPromptDismissed, setSolPromptDismissed] = useState(false)
@@ -967,7 +977,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   
   const handleEmergencySwap = async () => {
     if (balance <= 0) {
-      showToast('No h173k balance to swap', 'error')
+      showToast(t('main.noH173kToSwap'), 'error')
       return
     }
     
@@ -977,15 +987,15 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       const { h173kNeeded, quote } = await calculateSwapForSOL(targetSOL)
       
       if (h173kNeeded > balance) {
-        showToast(`Need ${h173kNeeded.toFixed(2)} h173k, have ${balance.toFixed(2)}`, 'error')
+        showToast(t('main.needH173k', { needed: h173kNeeded.toFixed(2), have: balance.toFixed(2) }), 'error')
         return
       }
       
       const result = await executeSwap(quote, 'H173KtoSOL')
-      showToast(`Swapped ${result.inputAmount.toFixed(2)} h173k for ${result.outputAmount.toFixed(4)} SOL`, 'success')
+      showToast(t('main.swappedForSol', { h: result.inputAmount.toFixed(2), s: result.outputAmount.toFixed(4) }), 'success')
       onRefresh()
     } catch (err) {
-      showToast('Swap failed: ' + err.message, 'error')
+      showToast(t('main.swapFailed', { msg: err.message }), 'error')
     } finally {
       setEmergencySwapping(false)
     }
@@ -1025,17 +1035,17 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const handleConvert = async () => {
     const numAmount = parseFloat(convertAmount)
     if (!numAmount || numAmount <= 0) {
-      showToast('Enter valid amount', 'error')
+      showToast(t('main.enterValidAmount'), 'error')
       return
     }
     if (numAmount > maxConvertableSOL) {
-      showToast('Amount exceeds available SOL', 'error')
+      showToast(t('main.amountExceedsSol'), 'error')
       return
     }
     
     try {
       const result = await convertSOLtoH173K(numAmount)
-      showToast(`Converted ${numAmount} SOL to ${formatSmartNumber(result.h173kReceived)} h173k`, 'success')
+      showToast(t('main.convertedToH173k', { sol: numAmount, h: formatSmartNumber(result.h173kReceived) }), 'success')
       setShowConvertModal(false)
       setConvertAmount('')
       setConvertQuote(null)
@@ -1043,9 +1053,9 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
     } catch (err) {
       // Check if wallet session expired
       if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
-        showToast('Session expired. Please unlock your wallet again.', 'error')
+        showToast(t('common.sessionExpired'), 'error')
       } else {
-        showToast('Conversion failed: ' + err.message, 'error')
+        showToast(t('main.conversionFailed', { msg: err.message }), 'error')
       }
     }
   }
@@ -1089,22 +1099,22 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
             {isH173KProblem ? (
               <>
                 <div className="sol-prompt-icon">🪙</div>
-                <h2>Add h173k Tokens</h2>
-                <p>Your wallet has SOL for fees, but needs h173k tokens to enable automatic SOL replenishment.</p>
+                <h2>{t('main.addH173kTitle')}</h2>
+                <p>{t('main.addH173kDesc')}</p>
 
                 <div className="sol-prompt-info">
                   <div className="sol-prompt-row">
-                    <span>Current SOL</span>
+                    <span>{t('main.currentSol')}</span>
                     <span className="sol-amount">{formatNumber(solBalance, 4)} SOL</span>
                   </div>
                   <div className="sol-prompt-row">
-                    <span>h173k balance</span>
+                    <span>{t('main.h173kBalance')}</span>
                     <span className="sol-amount">0 h173k</span>
                   </div>
                 </div>
 
                 <div className="sol-prompt-address">
-                  <div className="sol-prompt-label">Receive h173k at this address:</div>
+                  <div className="sol-prompt-label">{t('main.receiveH173kAt')}</div>
                   <QRCodeGenerator data={publicKey.toString()} size={180} />
                   <div className="address-display" onClick={() => copyToClipboard(publicKey.toString())}>
                     <span className="address-text">{publicKey.toString()}</span>
@@ -1113,28 +1123,28 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
                 </div>
 
                 <p className="sol-prompt-note">
-                  💡 Once you have h173k, the wallet will automatically swap small amounts to SOL whenever fees are needed.
+                  {t('main.addH173kNote')}
                 </p>
               </>
             ) : (
               <>
                 <div className="sol-prompt-icon">⚡</div>
-                <h2>Deposit SOL to Get Started</h2>
-                <p>Your wallet needs a small amount of SOL to pay for transaction fees on Solana network.</p>
+                <h2>{t('main.depositSolTitle')}</h2>
+                <p>{t('main.depositSolDesc')}</p>
                 
                 <div className="sol-prompt-info">
                   <div className="sol-prompt-row">
-                    <span>Recommended</span>
+                    <span>{t('main.recommended')}</span>
                     <span className="sol-amount">0.01 - 0.05 SOL</span>
                   </div>
                   <div className="sol-prompt-row">
-                    <span>Approximate cost</span>
+                    <span>{t('main.approxCost')}</span>
                     <span className="sol-amount">~$2 - $10</span>
                   </div>
                 </div>
                 
                 <div className="sol-prompt-address">
-                  <div className="sol-prompt-label">Send SOL to this address:</div>
+                  <div className="sol-prompt-label">{t('main.sendSolAt')}</div>
                   <QRCodeGenerator data={publicKey.toString()} size={180} />
                   <div className="address-display" onClick={() => copyToClipboard(publicKey.toString())}>
                     <span className="address-text">{publicKey.toString()}</span>
@@ -1143,14 +1153,14 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
                 </div>
                 
                 <p className="sol-prompt-note">
-                  💡 Once you have h173k tokens, the wallet can automatically swap small amounts to SOL when needed for fees.
+                  {t('main.depositSolNote')}
                 </p>
               </>
             )}
             
             <div className="sol-prompt-actions">
               <button className="btn btn-primary btn-action" onClick={handleCheckDeposit} disabled={refreshing}>
-                {refreshing ? 'Checking...' : isH173KProblem ? 'I\'ve Added h173k' : 'I\'ve Deposited SOL'}
+                {refreshing ? t('main.checking') : isH173KProblem ? t('main.addedH173k') : t('main.depositedSol')}
               </button>
               {!isH173KProblem && balance > 0 && (
                 <button 
@@ -1159,11 +1169,11 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
                   disabled={emergencySwapping || swapLoading}
                   style={{ backgroundColor: '#f59e0b', borderColor: '#f59e0b' }}
                 >
-                  {emergencySwapping ? 'Swapping...' : `Swap h173k for ${solReplenishTo} SOL`}
+                  {emergencySwapping ? t('main.swapping') : t('main.swapForSol', { n: solReplenishTo })}
                 </button>
               )}
               <button className="btn" onClick={handleDismissSolPrompt}>
-                Skip for Now
+                {t('main.skipForNow')}
               </button>
             </div>
           </div>
@@ -1178,12 +1188,12 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       <div className="main-view">
         <div className="sol-prompt-overlay">
           <div className="sol-prompt-card convert-modal">
-            <h2>Convert SOL to h173k</h2>
-            <p>Convert your excess SOL to h173k tokens.</p>
+            <h2>{t('main.convertTitle')}</h2>
+            <p>{t('main.convertDesc')}</p>
             
             <div className="form-group">
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                <label className="form-label" style={{margin:0}}>Amount (SOL)</label>
+                <label className="form-label" style={{margin:0}}>{t('main.amountSol')}</label>
                 <button
                   className="btn"
                   style={{fontSize:'0.7rem', padding:'2px 8px', height:'auto', marginBottom:'6px'}}
@@ -1201,10 +1211,10 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
               />
               {convertAmountOverLimit
                 ? <div className="input-hint" style={{color:'var(--error, #e05)'}}>
-                    Exceeds max — enter {formatNumber(maxConvertableSOL, 4)} SOL or less
+                    {t('main.exceedsMax', { n: formatNumber(maxConvertableSOL, 4) })}
                   </div>
                 : <div className="input-hint">
-                    Max: {formatNumber(maxConvertableSOL, 4)} SOL · Reserved: {formatNumber(effectiveThreshold + CONVERT_ATA_OVERHEAD + NEXT_SWAP_RESERVE, 4)} SOL
+                    {t('main.maxReserved', { max: formatNumber(maxConvertableSOL, 4), reserved: formatNumber(effectiveThreshold + CONVERT_ATA_OVERHEAD + NEXT_SWAP_RESERVE, 4) })}
 
                   </div>
               }
@@ -1213,12 +1223,12 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
             {convertQuote && (
               <div className="convert-quote">
                 <div className="convert-quote-row">
-                  <span>You'll receive</span>
+                  <span>{t('main.youllReceive')}</span>
                   <span className="convert-quote-amount">~{formatSmartNumber(convertQuote.outputAmount)} h173k</span>
                 </div>
                 {convertQuote.priceImpact > 1 && (
                   <div className="convert-quote-warning">
-                    ⚠️ Price impact: {convertQuote.priceImpact.toFixed(2)}%
+                    {t('main.priceImpact', { n: convertQuote.priceImpact.toFixed(2) })}
                   </div>
                 )}
               </div>
@@ -1230,10 +1240,10 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
                 onClick={handleConvert} 
                 disabled={swapLoading || !convertQuote || parseFloat(convertAmount) <= 0 || convertAmountOverLimit}
               >
-                {swapLoading ? 'Converting...' : 'Convert'}
+                {swapLoading ? t('main.converting') : t('main.convert')}
               </button>
               <button className="btn" onClick={() => { setShowConvertModal(false); setConvertAmount(''); setConvertQuote(null) }}>
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>
@@ -1254,7 +1264,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       {(pullProgress > 0 || refreshing) && (
         <div className="pull-refresh-indicator" style={{ opacity: refreshing ? 1 : pullProgress }}>
           {!refreshing && <RefreshIcon size={24} />}
-          <span>{refreshing ? 'Refreshing...' : (pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh')}</span>
+          <span>{refreshing ? t('main.refreshing') : (pullProgress >= 1 ? t('main.releaseToRefresh') : t('main.pullToRefresh'))}</span>
         </div>
       )}
       
@@ -1263,8 +1273,8 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
         <div className="rpc-error-banner" onClick={onSettings}>
           <div className="rpc-error-icon">⚠️</div>
           <div className="rpc-error-content">
-            <div className="rpc-error-title">RPC Limit Exceeded</div>
-            <div className="rpc-error-message">Default RPC limit reached. Tap here to set your own RPC endpoint in Settings.</div>
+            <div className="rpc-error-title">{t('main.rpcLimitTitle')}</div>
+            <div className="rpc-error-message">{t('main.rpcLimitMsg')}</div>
           </div>
           <div className="rpc-error-arrow"><ChevronRightIcon /></div>
         </div>
@@ -1274,7 +1284,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
         <button className="icon-btn" onClick={onSettings}><SettingsIcon /></button>
         <div className="header-address" onClick={() => copyToClipboard(publicKey.toString())}>{shortenAddress(publicKey.toString())}</div>
         <div className="main-header-right">
-          <button className="icon-btn messenger-icon-btn" onClick={onMessenger} title="Messenger">
+          <button className="icon-btn messenger-icon-btn" onClick={onMessenger} title={t('main.messenger')}>
             <EnvelopeIcon />
             {messengerUnread > 0 && (
               <span className="messenger-badge">{messengerUnread > 99 ? '99+' : messengerUnread}</span>
@@ -1290,31 +1300,31 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       </div>
       
       <div className="balance-card">
-        <div className="balance-label">Balance</div>
+        <div className="balance-label">{t('main.balance')}</div>
         <div className="balance-amount">{formatH173K(balance, h173kDecimals)} <span className="balance-symbol">h173k</span></div>
         {usdValue !== null && <div className="balance-usd">{formatUSD(usdValue)}</div>}
         <div className="balance-sol-row">
           <span className="balance-sol">{formatNumber(solBalance, 4)} SOL</span>
           {solBalance > convertThreshold  && (
             <button className="convert-sol-btn" onClick={() => setShowConvertModal(true)}>
-              Convert
+              {t('main.convert')}
             </button>
           )}
         </div>
         <button className={`refresh-btn ${refreshing ? 'refreshing' : ''}`} onClick={handleRefresh} disabled={refreshing}><RefreshIcon size={18} /></button>
         {needsDeposit && (
           <div className="sol-warning critical" onClick={() => setShowSolPrompt(true)}>
-            Low SOL - Deposit required for transactions
+            {t('main.lowSol')}
           </div>
         )}
       </div>
       
       <div className="action-row">
         <button className="action-btn" onClick={onSend} disabled={needsDeposit}>
-          <div className="action-icon"><SendIcon size={24} /></div><span>Send</span>
+          <div className="action-icon"><SendIcon size={24} /></div><span>{t('main.send')}</span>
         </button>
         <button className="action-btn" onClick={onReceive}>
-          <div className="action-icon"><ReceiveIcon size={24} /></div><span>Receive</span>
+          <div className="action-icon"><ReceiveIcon size={24} /></div><span>{t('main.receive')}</span>
         </button>
         <div className="action-btn-wrapper">
           <button className="action-btn" onClick={onEscrow} disabled={needsDeposit}>
@@ -1328,17 +1338,17 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       {showMADInfo && (
         <div className="mad-info-overlay" onClick={() => setShowMADInfo(false)}>
           <div className="mad-info-card" onClick={(e) => e.stopPropagation()}>
-            <h3>What is MAD?</h3>
-            <p><strong>Mutual Assured Destruction</strong> is an escrow system where both parties deposit collateral.</p>
-            <p>If the transaction goes wrong, either party can "burn" the contract - destroying <em>all</em> deposits permanently.</p>
-            <p>This creates strong incentive for both parties to cooperate and complete the transaction honestly.</p>
-            <button className="btn" onClick={() => setShowMADInfo(false)}>Got it</button>
+            <h3>{t('main.madInfoTitle')}</h3>
+            <p><strong>{t('main.madStrong')}</strong> {t('main.madInfoP1')}</p>
+            <p>{t('main.madInfoP2pre')} <em>{t('main.madInfoP2em')}</em> {t('main.madInfoP2post')}</p>
+            <p>{t('main.madInfoP3')}</p>
+            <button className="btn" onClick={() => setShowMADInfo(false)}>{t('main.gotIt')}</button>
           </div>
         </div>
       )}
       
       <button className="action-btn-secondary" onClick={onHistory}>
-        <HistoryIcon size={18} /><span>Transaction History</span>
+        <HistoryIcon size={18} /><span>{t('main.transactionHistory')}</span>
       </button>
     </div>
   )
@@ -1346,6 +1356,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
 
 // ========== SEND VIEW ==========
 function SendView({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onRefresh }) {
+  const { t } = useTranslation()
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState('')
   const [loading, setLoading] = useState(false)
@@ -1369,10 +1380,10 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   }
   
   const validateAndProceed = async () => {
-    if (!recipient.trim()) { showToast('Enter recipient address', 'error'); return }
-    try { new PublicKey(recipient) } catch { showToast('Invalid Solana address', 'error'); return }
+    if (!recipient.trim()) { showToast(t('send.enterRecipient'), 'error'); return }
+    try { new PublicKey(recipient) } catch { showToast(t('send.invalidAddress'), 'error'); return }
     const sendAmount = parseFloat(amount)
-    if (!sendAmount || sendAmount <= 0) { showToast('Enter valid amount', 'error'); return }
+    if (!sendAmount || sendAmount <= 0) { showToast(t('main.enterValidAmount'), 'error'); return }
     
     // Calculate total needed including referral bonus
     let totalNeeded = sendAmount
@@ -1381,7 +1392,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     }
     
     if (totalNeeded > balance) { 
-      showToast('Insufficient balance' + (referralBonusInfo ? ' (including referral bonus)' : ''), 'error')
+      showToast(referralBonusInfo ? t('send.insufficientBalanceReferral') : t('send.insufficientBalance'), 'error')
       return 
     }
 
@@ -1493,9 +1504,9 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         },
         (swapInfo) => {
           if (swapInfo.status === 'swapping') {
-            showToast('Swapping h173k for SOL...', 'info')
+            showToast(t('send.swappingH173kForSol'), 'info')
           } else if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
+            showToast(t('main.swappedForSol', { h: formatSmartNumber(swapInfo.h173kUsed), s: swapInfo.solReceived.toFixed(4) }), 'info')
             if (onRefresh) onRefresh()
           }
         },
@@ -1503,15 +1514,15 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       )
       
       setTxSignature(signature)
-      showToast('Transaction sent!', 'success')
+      showToast(t('send.txSent'), 'success')
       onRefresh()
     } catch (err) { 
       console.error('Send error:', err)
       // Check if wallet session expired
       if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
-        showToast('Session expired. Please unlock your wallet again.', 'error')
+        showToast(t('common.sessionExpired'), 'error')
       } else {
-        showToast('Transaction failed: ' + err.message, 'error')
+        showToast(t('send.txFailed', { msg: err.message }), 'error')
       }
     }
     finally { setLoading(false) }
@@ -1522,11 +1533,11 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       <div className="send-view">
         <div className="success-card">
           <div className="success-icon">✓</div>
-          <h2>Sent!</h2>
+          <h2>{t('send.successTitle')}</h2>
           <p className="success-amount">{formatH173K(parseFloat(amount))} h173k</p>
-          <p className="success-to">to {shortenAddress(recipient)}</p>
-          <a href={`https://solscan.io/tx/${txSignature}`} target="_blank" rel="noopener noreferrer" className="tx-link">View on Solscan →</a>
-          <button className="btn btn-primary" onClick={onBack}>Done</button>
+          <p className="success-to">{t('send.successTo', { addr: shortenAddress(recipient) })}</p>
+          <a href={`https://solscan.io/tx/${txSignature}`} target="_blank" rel="noopener noreferrer" className="tx-link">{t('send.viewOnSolscan')}</a>
+          <button className="btn btn-primary" onClick={onBack}>{t('common.done')}</button>
         </div>
       </div>
     )
@@ -1535,8 +1546,8 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   if (showScanner) {
     return (
       <div className="send-view">
-        <div className="view-header"><button className="back-btn" onClick={() => setShowScanner(false)}><BackIcon size={16} /> Back</button><h2>Scan QR Code</h2></div>
-        <QRCodeScanner onScan={handleScan} onError={() => showToast('Scanner error', 'error')} />
+        <div className="view-header"><button className="back-btn" onClick={() => setShowScanner(false)}><BackIcon size={16} /> {t('common.back')}</button><h2>{t('send.scanTitle')}</h2></div>
+        <QRCodeScanner onScan={handleScan} onError={() => showToast(t('send.scannerError'), 'error')} />
       </div>
     )
   }
@@ -1544,27 +1555,27 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   if (confirmStep) {
     return (
       <div className="send-view">
-        <div className="view-header"><button className="back-btn" onClick={() => setConfirmStep(false)}><BackIcon size={16} /> Back</button><h2>Confirm Send</h2></div>
+        <div className="view-header"><button className="back-btn" onClick={() => setConfirmStep(false)}><BackIcon size={16} /> {t('common.back')}</button><h2>{t('send.confirmTitle')}</h2></div>
         <div className="confirm-card">
-          <div className="confirm-row"><span className="confirm-label">Amount</span><span className="confirm-value">{formatH173K(parseFloat(amount))} h173k{usdValue && <span className="confirm-usd">({formatUSD(usdValue)})</span>}</span></div>
-          <div className="confirm-row"><span className="confirm-label">To</span><span className="confirm-value address">{shortenAddress(recipient)}</span></div>
+          <div className="confirm-row"><span className="confirm-label">{t('send.amount')}</span><span className="confirm-value">{formatH173K(parseFloat(amount))} h173k{usdValue && <span className="confirm-usd">({formatUSD(usdValue)})</span>}</span></div>
+          <div className="confirm-row"><span className="confirm-label">{t('send.to')}</span><span className="confirm-value address">{shortenAddress(recipient)}</span></div>
           {referrer && referralBonusInfo && referralBonusInfo.tokenAmount && (
             <div className="confirm-row referral-row">
-              <span className="confirm-label">Referral Bonus</span>
+              <span className="confirm-label">{t('send.referralBonus')}</span>
               <span className="confirm-value referral-value">+{formatH173K(referralBonusInfo.tokenAmount)} h173k <span className="confirm-usd">(${referralBonusInfo.usdAmount})</span></span>
             </div>
           )}
-          <div className="confirm-row"><span className="confirm-label">Network Fee</span><span className="confirm-value">~0.000005 SOL</span></div>
+          <div className="confirm-row"><span className="confirm-label">{t('send.networkFee')}</span><span className="confirm-value">~0.000005 SOL</span></div>
           {sponsorAmtState > 0 && (
-            <div className="confirm-row"><span className="confirm-label">Recipient top-up</span><span className="confirm-value">{formatNumber(sponsorAmtState, 6)} SOL</span></div>
+            <div className="confirm-row"><span className="confirm-label">{t('send.recipientTopup')}</span><span className="confirm-value">{formatNumber(sponsorAmtState, 6)} SOL</span></div>
           )}
           {referrer && referralBonusInfo && referralBonusInfo.tokenAmount && (
             <div className="confirm-row total-row">
-              <span className="confirm-label">Total</span>
+              <span className="confirm-label">{t('send.total')}</span>
               <span className="confirm-value">{formatH173K(parseFloat(amount) + referralBonusInfo.tokenAmount)} h173k</span>
             </div>
           )}
-          <button className="btn btn-primary btn-action" onClick={handleSend} disabled={loading || swapLoading}>{loading ? (swapLoading ? 'Swapping SOL...' : 'Sending...') : 'Confirm & Send'}</button>
+          <button className="btn btn-primary btn-action" onClick={handleSend} disabled={loading || swapLoading}>{loading ? (swapLoading ? t('send.swappingSol') : t('send.sendingBtn')) : t('send.confirmAndSend')}</button>
         </div>
       </div>
     )
@@ -1572,56 +1583,58 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   
   return (
     <div className="send-view">
-      <div className="view-header"><button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button><h2>Send h173k</h2></div>
+      <div className="view-header"><button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button><h2>{t('send.title')}</h2></div>
       <div className="form-group">
-        <label className="form-label">Recipient Address</label>
+        <label className="form-label">{t('send.recipientLabel')}</label>
         <div className="input-with-action">
-          <input type="text" className="form-input" placeholder="Solana address..." value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+          <input type="text" className="form-input" placeholder={t('send.recipientPlaceholder')} value={recipient} onChange={(e) => setRecipient(e.target.value)} />
           <button className="input-action-btn" onClick={() => setShowScanner(true)}><ScanIcon size={18} /></button>
         </div>
       </div>
       <div className="form-group">
-        <label className="form-label">Amount</label>
+        <label className="form-label">{t('send.amountLabel')}</label>
         <div className="amount-input-wrapper">
           <input type="number" className="form-input" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} step="0.01" />
           <button className="max-btn" onClick={() => setAmount(balance.toString())}>MAX</button>
         </div>
         <div className="form-hint-row">
-          <span className="form-hint">Available: {formatH173K(balance)} h173k</span>
+          <span className="form-hint">{t('send.available', { n: formatH173K(balance) })}</span>
           {usdValue !== null && <span className="amount-usd-preview">{formatUSD(usdValue)}</span>}
         </div>
       </div>
-      <button className="btn btn-primary btn-action" onClick={validateAndProceed} disabled={!recipient || !amount}>Continue</button>
+      <button className="btn btn-primary btn-action" onClick={validateAndProceed} disabled={!recipient || !amount}>{t('common.continue')}</button>
     </div>
   )
 }
 
 // ========== RECEIVE VIEW ==========
 function ReceiveView({ publicKey, onBack, showToast }) {
+  const { t } = useTranslation()
   const address = publicKey.toString()
   // Use plain address for QR - universal, works for both SOL and any SPL tokens
   // Solana Pay format (solana:address) forces SOL in most wallets
   
   const handleCopy = async () => {
     const success = await copyToClipboard(address)
-    showToast(success ? 'Address copied!' : 'Copy failed', success ? 'success' : 'error')
+    showToast(success ? t('receive.addressCopied') : t('receive.copyFailed'), success ? 'success' : 'error')
   }
   
   return (
     <div className="receive-view">
-      <div className="view-header"><button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button><h2>Receive</h2></div>
+      <div className="view-header"><button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button><h2>{t('receive.title')}</h2></div>
       <div className="receive-card">
         <QRCodeGenerator data={address} size={220} />
         <div className="address-display" onClick={handleCopy}><span className="address-text">{address}</span><span className="copy-icon"><CopyIcon /></span></div>
-        <button className="btn btn-secondary" onClick={handleCopy}>Copy Address</button>
+        <button className="btn btn-secondary" onClick={handleCopy}>{t('receive.copyAddress')}</button>
       </div>
-      <div className="receive-info"><p>This address accepts both <strong>h173k</strong> tokens and <strong>SOL</strong>.</p><p>Share this QR code or address to receive funds.</p></div>
+      <div className="receive-info"><p>{t('receive.info1')}</p><p>{t('receive.info2')}</p></div>
     </div>
   )
 }
 
 // ========== HISTORY VIEW ==========
 function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
+  const { t } = useTranslation()
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -1814,15 +1827,15 @@ function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
   return (
     <div className="history-view">
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
-        <h2>Transaction History</h2>
+        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
+        <h2>{t('history.title')}</h2>
       </div>
       
       {/* Refresh button above transactions */}
       <div className="history-top-actions">
         <button className="history-refresh-btn" onClick={handleRefresh} disabled={refreshing}>
           <RefreshIcon size={18} />
-          <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+          <span>{refreshing ? t('main.refreshing') : t('history.refresh')}</span>
         </button>
       </div>
       
@@ -1830,7 +1843,7 @@ function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
       {(pullProgress > 0 || refreshing) && (
         <div className="pull-refresh-indicator history-pull" style={{ opacity: refreshing ? 1 : pullProgress }}>
           {!refreshing && <RefreshIcon size={20} />}
-          <span>{refreshing ? 'Refreshing...' : (pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh')}</span>
+          <span>{refreshing ? t('main.refreshing') : (pullProgress >= 1 ? t('main.releaseToRefresh') : t('main.pullToRefresh'))}</span>
         </div>
       )}
       
@@ -1842,7 +1855,7 @@ function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <p>No transactions yet</p>
+          <p>{t('history.empty')}</p>
         </div>
       ) : (
         <div 
@@ -1856,8 +1869,8 @@ function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
             <a key={tx.signature} href={`https://solscan.io/tx/${tx.signature}`} target="_blank" rel="noopener noreferrer" className="tx-item">
               <div className={`tx-icon ${tx.type} ${tx.token === 'SOL' ? 'sol' : ''}`}>{tx.type === 'receive' ? <ReceiveIcon size={20} /> : <SendIcon size={20} />}</div>
               <div className="tx-details">
-                <div className="tx-type">{tx.type === 'receive' ? 'Received' : 'Sent'} {tx.token}</div>
-                <div className="tx-date">{tx.blockTime ? new Date(tx.blockTime * 1000).toLocaleDateString() : 'Unknown'}</div>
+                <div className="tx-type">{tx.type === 'receive' ? t('history.received') : t('history.sent')} {tx.token}</div>
+                <div className="tx-date">{tx.blockTime ? new Date(tx.blockTime * 1000).toLocaleDateString() : t('history.unknown')}</div>
               </div>
               <div className={`tx-amount ${tx.type}`}>{tx.type === 'receive' ? '+' : '-'}{tx.token === 'SOL' ? formatNumber(tx.amount, 4) : formatH173K(tx.amount, h173kDecimals)} {tx.token}</div>
             </a>
@@ -1870,6 +1883,7 @@ function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
 
 // ========== ESCROW VIEW ==========
 function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onRefresh, h173kDecimals, onOpenP2P }) {
+  const { t } = useTranslation()
   const [subView, setSubView] = useState('list') // list, new, accept, detail, import
   const [contracts, setContracts] = useState([])
   const [selectedContract, setSelectedContract] = useState(null)
@@ -2011,7 +2025,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
           setContractsMetadata(newMeta)
           contractsMetadataRef.current = newMeta
           localStorage.setItem('h173k_contracts_metadata', JSON.stringify(newMeta))
-          showToast('Contract created!', 'success')
+          showToast(t('escrow.created'), 'success')
           fetchContracts()
           setSubView('list')
         }}
@@ -2032,7 +2046,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
           const newMeta = { ...contractsMetadata, [contractData.offerPDA]: contractData.meta }
           setContractsMetadata(newMeta)
           contractsMetadataRef.current = newMeta
-          showToast('Contract accepted!', 'success')
+          showToast(t('escrow.accepted'), 'success')
           fetchContracts()
           setSubView('list')
         }}
@@ -2061,7 +2075,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
           }
           setContractsMetadata(newMeta)
           localStorage.setItem('h173k_contracts_metadata', JSON.stringify(newMeta))
-          showToast('Contract imported!', 'success')
+          showToast(t('escrow.imported'), 'success')
           fetchContracts()
           setSubView('list')
         }}
@@ -2098,32 +2112,32 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
       onTouchEnd={handleTouchEnd}
     >
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
-        <h2>MAD Contracts</h2>
+        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
+        <h2>{t('escrow.title')}</h2>
       </div>
       
       <div className="escrow-actions">
         <button className="btn btn-action" onClick={() => setSubView('new')}>
-          + New Contract
+          {t('escrow.newContract')}
         </button>
         <button className="btn" onClick={() => setSubView('accept')}>
-          Accept Contract
+          {t('escrow.acceptContract')}
         </button>
       </div>
 
       <button className="btn btn-p2p" onClick={onOpenP2P}>
-        P2P Marketplace
+        {t('escrow.p2pMarketplace')}
       </button>
 
       {/* Action buttons above contracts */}
       <div className="escrow-top-actions">
         <button className="escrow-action-btn refresh-action-btn" onClick={handleRefresh} disabled={refreshing}>
           <RefreshIcon size={18} />
-          <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+          <span>{refreshing ? t('main.refreshing') : t('history.refresh')}</span>
         </button>
         <button className="escrow-action-btn" onClick={() => setSubView('import')}>
           <ImportIcon size={18} />
-          <span>Import Contract</span>
+          <span>{t('escrow.importContract')}</span>
         </button>
       </div>
       
@@ -2131,7 +2145,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
       {(pullProgress > 0 || refreshing) && (
         <div className="pull-refresh-indicator escrow-pull" style={{ opacity: refreshing ? 1 : pullProgress }}>
           {!refreshing && <RefreshIcon size={20} />}
-          <span>{refreshing ? 'Refreshing...' : (pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh')}</span>
+          <span>{refreshing ? t('main.refreshing') : (pullProgress >= 1 ? t('main.releaseToRefresh') : t('main.pullToRefresh'))}</span>
         </div>
       )}
       
@@ -2139,8 +2153,8 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
         <div className="loading-spinner-small" />
       ) : contracts.length === 0 ? (
         <div className="empty-state">
-          <p>No MAD contracts yet</p>
-          <p className="empty-hint">Create a new contract or accept one with a code</p>
+          <p>{t('escrow.empty')}</p>
+          <p className="empty-hint">{t('escrow.emptyHint')}</p>
         </div>
       ) : (
         <div className="contracts-list" ref={contractsListRef}>
@@ -2156,7 +2170,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
                 onClick={() => { setSelectedContract(contract); setSubView('detail') }}
               >
                 <div className="contract-item-header">
-                  <span className="contract-name">{meta.name || 'Unnamed Contract'}</span>
+                  <span className="contract-name">{meta.name || t('escrow.unnamed')}</span>
                   <span className={`contract-status ${status.class}`}>{status.label}</span>
                 </div>
                 <div className="contract-item-amount">
@@ -2174,6 +2188,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
 
 // ========== NEW CONTRACT VIEW ==========
 function NewContractView({ connection, escrow, balance, solBalance, price, toUSD, onBack, showToast, onSuccess, onRefresh, h173kDecimals }) {
+  const { t } = useTranslation()
   const [amount, setAmount] = useState('')
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -2184,13 +2199,13 @@ function NewContractView({ connection, escrow, balance, solBalance, price, toUSD
 const handleCreate = async () => {
   const numAmount = parseFloat(amount)
   if (!numAmount || numAmount <= 0) {
-    showToast('Enter valid amount', 'error')
+    showToast(t('main.enterValidAmount'), 'error')
     return
   }
   const requiredDeposit = numAmount * 2
 
   if (requiredDeposit > balance) {
-    showToast(`Insufficient balance. Need ${formatNumber(requiredDeposit)} h173k (2x amount) as deposit.`, 'error')
+    showToast(t('newContract.errDeposit', { n: formatNumber(requiredDeposit) }), 'error')
     return
   }
 
@@ -2222,9 +2237,9 @@ const handleCreate = async () => {
       () => escrow.createOffer(numAmount, code, name, price),
       (swapInfo) => {
         if (swapInfo.status === 'swapping') {
-          showToast('Swapping h173k for SOL...', 'info')
+          showToast(t('send.swappingH173kForSol'), 'info')
         } else if (swapInfo.status === 'swapped') {
-          showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
+          showToast(t('main.swappedForSol', { h: formatSmartNumber(swapInfo.h173kUsed), s: swapInfo.solReceived.toFixed(4) }), 'info')
           if (onRefresh) onRefresh()
         }
       },
@@ -2233,16 +2248,16 @@ const handleCreate = async () => {
 
     // Save metadata
     const meta = JSON.parse(localStorage.getItem('h173k_contracts_metadata') || '{}')
-    const contractMeta = { name: name || 'New Contract', code, createdAt: Date.now() }
+    const contractMeta = { name: name || t('newContract.defaultName'), code, createdAt: Date.now() }
     meta[result.offerPDA.toString()] = contractMeta
     localStorage.setItem('h173k_contracts_metadata', JSON.stringify(meta))
 
     setCreatedCode({ code, offerPDA: result.offerPDA.toString(), meta: contractMeta })
   } catch (err) {
     if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
-      showToast('Session expired. Please unlock your wallet again.', 'error')
+      showToast(t('common.sessionExpired'), 'error')
     } else {
-      showToast('Failed to create: ' + err.message, 'error')
+      showToast(t('newContract.failedCreate', { msg: err.message }), 'error')
     }
   } finally {
     setLoading(false)
@@ -2252,21 +2267,21 @@ const handleCreate = async () => {
   if (createdCode) {
     const handleCopyCode = async () => {
       const success = await copyToClipboard(createdCode.code)
-      showToast(success ? 'Code copied!' : 'Copy failed', success ? 'success' : 'error')
+      showToast(success ? t('newContract.codeCopied') : t('receive.copyFailed'), success ? 'success' : 'error')
     }
     
     return (
       <div className="new-contract-view">
         <div className="success-card">
           <div className="success-icon">✓</div>
-          <h2>Contract Created!</h2>
-          <p>Share this code with the seller:</p>
+          <h2>{t('newContract.successTitle')}</h2>
+          <p>{t('newContract.shareCode')}</p>
           <div className="code-display" onClick={handleCopyCode}>
             <span className="code-text">{createdCode.code}</span>
-            <span className="copy-hint">Tap to copy</span>
+            <span className="copy-hint">{t('newContract.tapToCopy')}</span>
           </div>
-          <p className="code-warning">⚠️ Keep this code safe! You'll need it to manage this contract.</p>
-          <button className="btn btn-primary" onClick={() => onSuccess(createdCode)}>Done</button>
+          <p className="code-warning">{t('newContract.codeWarning')}</p>
+          <button className="btn btn-primary" onClick={() => onSuccess(createdCode)}>{t('common.done')}</button>
         </div>
       </div>
     )
@@ -2280,24 +2295,24 @@ const handleCreate = async () => {
   return (
     <div className="new-contract-view">
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
-        <h2>New Contract</h2>
+        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
+        <h2>{t('newContract.title')}</h2>
       </div>
       
       <div className="escrow-info-card">
-        <p>Create a MAD contract as a <strong>buyer</strong>. You'll deposit <strong>2x the contract amount</strong> as collateral that will be held until the transaction is complete.</p>
+        <p>{t('newContract.infoPre')} <strong>{t('newContract.infoBuyer')}</strong>{t('newContract.infoMid')} <strong>{t('newContract.infoBold')}</strong> {t('newContract.infoPost')}</p>
       </div>
       
       <div className="form-group">
-        <label className="form-label">Contract Name (optional)</label>
+        <label className="form-label">{t('newContract.nameLabel')}</label>
         <input 
-          type="text" className="form-input" placeholder="e.g. Purchase from Alice"
+          type="text" className="form-input" placeholder={t('newContract.namePlaceholder')}
           value={name} onChange={(e) => setName(e.target.value)} maxLength={50}
         />
       </div>
       
       <div className="form-group">
-        <label className="form-label">Amount (h173k)</label>
+        <label className="form-label">{t('newContract.amountLabel')}</label>
         <div className="amount-input-wrapper">
           <input 
             type="number" className="form-input" placeholder="0.00"
@@ -2306,30 +2321,30 @@ const handleCreate = async () => {
           <button className="max-btn" onClick={() => setAmount((balance / 2).toFixed(2))}>MAX</button>
         </div>
         <div className="form-hint-row">
-          <span className="form-hint">Available: {formatH173K(balance, h173kDecimals)} h173k (max: {formatH173K(balance / 2, h173kDecimals)})</span>
+          <span className="form-hint">{t('newContract.available', { n: formatH173K(balance, h173kDecimals), max: formatH173K(balance / 2, h173kDecimals) })}</span>
           {usdValue && <span className="amount-usd-preview">{formatUSD(usdValue)}</span>}
         </div>
       </div>
       
       <div className={`deposit-preview${insufficientBalance ? ' deposit-preview--error' : ''}`}>
         <div className="deposit-row">
-          <span>Your deposit (2x amount)</span>
+          <span>{t('newContract.yourDeposit')}</span>
           <span>{formatH173K(requiredDeposit, h173kDecimals)} h173k</span>
         </div>
         <div className={`deposit-row total${insufficientBalance ? ' deposit-row--error' : ''}`}>
-          <span>Required balance</span>
+          <span>{t('newContract.requiredBalance')}</span>
           <span>{formatH173K(requiredDeposit, h173kDecimals)} h173k</span>
         </div>
         {insufficientBalance && (
           <div className="deposit-row deposit-row--insufficient">
-            <span>⚠️ Insufficient balance</span>
+            <span>{t('newContract.insufficient')}</span>
             <span className="deposit-shortfall">−{formatH173K(requiredDeposit - balance, h173kDecimals)} h173k</span>
           </div>
         )}
       </div>
       
       <button className="btn btn-primary btn-action" onClick={handleCreate} disabled={loading || swapLoading || !amount || insufficientBalance}>
-        {loading ? (swapLoading ? 'Swapping SOL...' : 'Creating...') : 'Create Contract'}
+        {loading ? (swapLoading ? t('send.swappingSol') : t('newContract.creating')) : t('newContract.createBtn')}
       </button>
     </div>
   )
@@ -2337,6 +2352,7 @@ const handleCreate = async () => {
 
 // ========== ACCEPT CONTRACT VIEW ==========
 function AcceptContractView({ connection, escrow, balance, solBalance, price, toUSD, onBack, showToast, onSuccess, onRefresh, h173kDecimals }) {
+  const { t } = useTranslation()
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -2346,7 +2362,7 @@ function AcceptContractView({ connection, escrow, balance, solBalance, price, to
   
   const handleSearch = async () => {
     if (!code.trim()) {
-      showToast('Enter contract code', 'error')
+      showToast(t('acceptContract.enterCode'), 'error')
       return
     }
     
@@ -2356,10 +2372,10 @@ function AcceptContractView({ connection, escrow, balance, solBalance, price, to
       if (result) {
         setFoundContract(result)
       } else {
-        showToast('Contract not found', 'error')
+        showToast(t('acceptContract.notFound'), 'error')
       }
     } catch (err) {
-      showToast('Search failed: ' + err.message, 'error')
+      showToast(t('acceptContract.searchFailed', { msg: err.message }), 'error')
     } finally {
       setLoading(false)
     }
@@ -2371,7 +2387,7 @@ function AcceptContractView({ connection, escrow, balance, solBalance, price, to
     const amount = fromTokenAmount(foundContract.amount)
     
     if (amount > balance) {
-      showToast(`Insufficient balance. Need ${formatNumber(amount)} h173k as deposit.`, 'error')
+      showToast(t('acceptContract.errDeposit', { n: formatNumber(amount) }), 'error')
       return
     }
     
@@ -2398,9 +2414,9 @@ function AcceptContractView({ connection, escrow, balance, solBalance, price, to
         () => escrow.acceptOffer(foundContract.publicKey, code.trim(), price),
         (swapInfo) => {
           if (swapInfo.status === 'swapping') {
-            showToast('Swapping h173k for SOL...', 'info')
+            showToast(t('send.swappingH173kForSol'), 'info')
           } else if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for ${swapInfo.solReceived.toFixed(4)} SOL`, 'info')
+            showToast(t('main.swappedForSol', { h: formatSmartNumber(swapInfo.h173kUsed), s: swapInfo.solReceived.toFixed(4) }), 'info')
             if (onRefresh) onRefresh()
           }
         },
@@ -2409,7 +2425,7 @@ function AcceptContractView({ connection, escrow, balance, solBalance, price, to
       
       // Save metadata
       const meta = JSON.parse(localStorage.getItem('h173k_contracts_metadata') || '{}')
-      const contractMeta = { name: name || 'Accepted Contract', code: code.trim(), acceptedAt: Date.now() }
+      const contractMeta = { name: name || t('acceptContract.defaultName'), code: code.trim(), acceptedAt: Date.now() }
       meta[foundContract.publicKey.toString()] = contractMeta
       localStorage.setItem('h173k_contracts_metadata', JSON.stringify(meta))
       
@@ -2417,9 +2433,9 @@ function AcceptContractView({ connection, escrow, balance, solBalance, price, to
     } catch (err) {
       // Check if wallet session expired
       if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
-        showToast('Session expired. Please unlock your wallet again.', 'error')
+        showToast(t('common.sessionExpired'), 'error')
       } else {
-        showToast('Failed to accept: ' + err.message, 'error')
+        showToast(t('acceptContract.failedAccept', { msg: err.message }), 'error')
       }
     } finally {
       setLoading(false)
@@ -2429,55 +2445,55 @@ function AcceptContractView({ connection, escrow, balance, solBalance, price, to
   return (
     <div className="accept-contract-view">
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
-        <h2>Accept Contract</h2>
+        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
+        <h2>{t('acceptContract.title')}</h2>
       </div>
       
       <div className="escrow-info-card">
-        <p>Enter the contract code to accept as a <strong>seller</strong>. You'll need to deposit <strong>1x the contract amount</strong> as collateral.</p>
+        <p>{t('acceptContract.infoPre')} <strong>{t('acceptContract.infoSeller')}</strong> {t('acceptContract.infoMid')} <strong>{t('acceptContract.infoBold')}</strong> {t('acceptContract.infoPost')}</p>
       </div>
       
       <div className="form-group">
-        <label className="form-label">Contract Code</label>
+        <label className="form-label">{t('acceptContract.codeLabel')}</label>
         <input 
-          type="text" className="form-input" placeholder="Enter code..."
+          type="text" className="form-input" placeholder={t('acceptContract.codePlaceholder')}
           value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={20}
         />
       </div>
       
       {!foundContract ? (
         <button className="btn btn-primary btn-action" onClick={handleSearch} disabled={loading || !code.trim()}>
-          {loading ? 'Searching...' : 'Find Contract'}
+          {loading ? t('acceptContract.searching') : t('acceptContract.findContract')}
         </button>
       ) : (
         <>
           <div className="found-contract-card">
             <div className="found-row">
-              <span>Amount</span>
+              <span>{t('send.amount')}</span>
               <span>{formatH173K(fromTokenAmount(foundContract.amount), h173kDecimals)} h173k</span>
             </div>
             {toUSD && (
               <div className="found-row">
-                <span>Value</span>
+                <span>{t('acceptContract.value')}</span>
                 <span>{formatUSD(toUSD(fromTokenAmount(foundContract.amount)))}</span>
               </div>
             )}
             <div className="found-row">
-              <span>Your deposit (1x amount)</span>
+              <span>{t('acceptContract.yourDeposit')}</span>
               <span>{formatH173K(fromTokenAmount(foundContract.amount), h173kDecimals)} h173k</span>
             </div>
           </div>
           
           <div className="form-group">
-            <label className="form-label">Contract Name (optional)</label>
+            <label className="form-label">{t('newContract.nameLabel')}</label>
             <input 
-              type="text" className="form-input" placeholder="e.g. Sale to Bob"
+              type="text" className="form-input" placeholder={t('newContract.namePlaceholder')}
               value={name} onChange={(e) => setName(e.target.value)} maxLength={50}
             />
           </div>
           
           <button className="btn btn-primary btn-action" onClick={handleAccept} disabled={loading || swapLoading}>
-            {loading ? (swapLoading ? 'Swapping SOL...' : 'Accepting...') : 'Accept & Deposit'}
+            {loading ? (swapLoading ? t('send.swappingSol') : t('acceptContract.accepting')) : t('acceptContract.acceptDeposit')}
           </button>
         </>
       )}
@@ -2487,6 +2503,7 @@ function AcceptContractView({ connection, escrow, balance, solBalance, price, to
 
 // ========== IMPORT CONTRACT VIEW ==========
 function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimals }) {
+  const { t } = useTranslation()
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -2499,13 +2516,13 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
       setCode(text.trim().toUpperCase())
       setError('')
     } catch (err) {
-      showToast('Could not read clipboard', 'error')
+      showToast(t('importContract.clipboardFail'), 'error')
     }
   }
   
   const handleSearch = async () => {
     if (!code.trim()) {
-      setError('Please enter a contract code')
+      setError(t('importContract.errEnterCode'))
       return
     }
     
@@ -2520,7 +2537,7 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
         await escrow.findOfferByCode(code.trim())
       
       if (!offer) {
-        setError('No contract found with this code')
+        setError(t('importContract.errNotFound'))
         return
       }
       
@@ -2542,11 +2559,11 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
       
       // Auto-generate a name suggestion
       if (!name) {
-        setName(`Imported #${offer.nonce?.toString() || '?'}`)
+        setName(t('importContract.importedName', { n: offer.nonce?.toString() || '?' }))
       }
     } catch (err) {
       console.error('Error searching for contract:', err)
-      setError(err.message || 'Failed to find contract')
+      setError(err.message || t('importContract.errFindFailed'))
     } finally {
       setLoading(false)
     }
@@ -2555,7 +2572,7 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
   const handleImport = () => {
     if (!foundContract) return
     if (!name.trim()) {
-      setError('Please enter a name for this contract')
+      setError(t('importContract.errEnterName'))
       return
     }
     
@@ -2575,21 +2592,21 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
   return (
     <div className="import-contract-view">
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
-        <h2>Import Contract</h2>
+        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
+        <h2>{t('importContract.title')}</h2>
       </div>
       
       <div className="escrow-info-card">
-        <p>Lost a contract from your list? Enter the code to recover it. This works even for completed, cancelled or burned contracts.</p>
+        <p>{t('importContract.info')}</p>
       </div>
       
       <div className="form-group">
-        <label className="form-label">Contract Code</label>
+        <label className="form-label">{t('acceptContract.codeLabel')}</label>
         <div className="input-with-paste">
           <input 
             type="text" 
             className="form-input" 
-            placeholder="Enter code..."
+            placeholder={t('acceptContract.codePlaceholder')}
             value={code} 
             onChange={(e) => {
               setCode(e.target.value.toUpperCase())
@@ -2599,7 +2616,7 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
             maxLength={20}
           />
           <button type="button" className="paste-btn" onClick={handlePaste}>
-            Paste
+            {t('importContract.paste')}
           </button>
         </div>
       </div>
@@ -2608,32 +2625,32 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
       
       {!foundContract ? (
         <button className="btn btn-primary btn-action" onClick={handleSearch} disabled={loading || !code.trim()}>
-          {loading ? 'Searching...' : 'Find Contract'}
+          {loading ? t('acceptContract.searching') : t('acceptContract.findContract')}
         </button>
       ) : (
         <>
           <div className="found-contract-card">
             <div className="found-row">
-              <span>Status</span>
+              <span>{t('importContract.status')}</span>
               <span className={`contract-status ${statusInfo?.class}`}>{statusInfo?.label}</span>
             </div>
             <div className="found-row">
-              <span>Amount</span>
+              <span>{t('send.amount')}</span>
               <span>{formatH173K(amount, h173kDecimals)} h173k</span>
             </div>
             {foundContract.isClosed && (
               <div className="found-row closed-note">
-                <span>This contract is closed but will be added to your history.</span>
+                <span>{t('importContract.closedNote')}</span>
               </div>
             )}
           </div>
           
           <div className="form-group">
-            <label className="form-label">Contract Name</label>
+            <label className="form-label">{t('importContract.nameLabel')}</label>
             <input 
               type="text" 
               className="form-input" 
-              placeholder="e.g. Payment from Alice"
+              placeholder={t('importContract.namePlaceholder')}
               value={name} 
               onChange={(e) => {
                 setName(e.target.value)
@@ -2644,7 +2661,7 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
           </div>
           
           <button className="btn btn-primary btn-action" onClick={handleImport} disabled={!name.trim()}>
-            Import Contract
+            {t('importContract.importBtn')}
           </button>
         </>
       )}
@@ -2654,6 +2671,7 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
 
 // ========== CONTRACT DETAIL VIEW ==========
 function ContractDetailView({ connection, contract, metadata, escrow, publicKey, price, toUSD, onBack, showToast, onRefresh, onSaveMetadata, h173kDecimals }) {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [showBurnConfirm, setShowBurnConfirm] = useState(false)
   const [burnCodeInput, setBurnCodeInput] = useState('')
@@ -2680,19 +2698,19 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         () => escrow.releaseOffer(contract.publicKey, price),
         (swapInfo) => {
           if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for SOL`, 'info')
+            showToast(t('contractDetail.swappedShort', { h: formatSmartNumber(swapInfo.h173kUsed) }), 'info')
           }
         }
       )
-      showToast('Release confirmed!', 'success')
+      showToast(t('contractDetail.releaseToast'), 'success')
       onRefresh()
       onBack()
     } catch (err) {
       // Check if wallet session expired
       if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
-        showToast('Session expired. Please unlock your wallet again.', 'error')
+        showToast(t('common.sessionExpired'), 'error')
       } else {
-        showToast('Release failed: ' + err.message, 'error')
+        showToast(t('contractDetail.releaseFailed', { msg: err.message }), 'error')
       }
     } finally {
       setLoading(false)
@@ -2706,19 +2724,19 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         () => escrow.cancelOffer(contract.publicKey, price),
         (swapInfo) => {
           if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for SOL`, 'info')
+            showToast(t('contractDetail.swappedShort', { h: formatSmartNumber(swapInfo.h173kUsed) }), 'info')
           }
         }
       )
-      showToast('Contract cancelled', 'success')
+      showToast(t('contractDetail.cancelledToast'), 'success')
       onRefresh()
       onBack()
     } catch (err) {
       // Check if wallet session expired
       if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
-        showToast('Session expired. Please unlock your wallet again.', 'error')
+        showToast(t('common.sessionExpired'), 'error')
       } else {
-        showToast('Cancel failed: ' + err.message, 'error')
+        showToast(t('contractDetail.cancelFailed', { msg: err.message }), 'error')
       }
     } finally {
       setLoading(false)
@@ -2732,19 +2750,19 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         () => escrow.burnOffer(contract.publicKey, price),
         (swapInfo) => {
           if (swapInfo.status === 'swapped') {
-            showToast(`Swapped ${formatSmartNumber(swapInfo.h173kUsed)} h173k for SOL`, 'info')
+            showToast(t('contractDetail.swappedShort', { h: formatSmartNumber(swapInfo.h173kUsed) }), 'info')
           }
         }
       )
-      showToast('Deposits burned', 'success')
+      showToast(t('contractDetail.burnedToast'), 'success')
       onRefresh()
       onBack()
     } catch (err) {
       // Check if wallet session expired
       if (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
-        showToast('Session expired. Please unlock your wallet again.', 'error')
+        showToast(t('common.sessionExpired'), 'error')
       } else {
-        showToast('Burn failed: ' + err.message, 'error')
+        showToast(t('contractDetail.burnFailed', { msg: err.message }), 'error')
       }
     } finally {
       setLoading(false)
@@ -2755,7 +2773,7 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
   
   const handleHideContract = () => {
     onSaveMetadata({ hidden: true })
-    showToast('Contract removed from list', 'success')
+    showToast(t('contractDetail.removedToast'), 'success')
     onRefresh() // Refresh the list to apply hidden filter
     onBack()
   }
@@ -2763,8 +2781,8 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
   return (
     <div className="contract-detail-view">
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
-        <h2>{metadata?.name || 'Contract Details'}</h2>
+        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
+        <h2>{metadata?.name || t('contractDetail.titleFallback')}</h2>
       </div>
       
       <div className="detail-card">
@@ -2778,18 +2796,18 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         </div>
         
         <div className="detail-row">
-          <span>Your role</span>
-          <span>{isBuyer ? 'Buyer' : isSeller ? 'Seller' : 'Unknown'}</span>
+          <span>{t('contractDetail.yourRole')}</span>
+          <span>{isBuyer ? t('contractDetail.buyer') : isSeller ? t('contractDetail.seller') : t('contractDetail.unknown')}</span>
         </div>
         
         <div className="detail-row">
-          <span>Buyer deposit <span className="deposit-note">(payment+deposit)</span></span>
+          <span>{t('contractDetail.buyerDeposit')} <span className="deposit-note">{t('contractDetail.paymentDeposit')}</span></span>
           <span>{formatH173K(buyerDeposit, h173kDecimals)} h173k</span>
         </div>
         
         {sellerDeposit > 0 && (
           <div className="detail-row">
-            <span>Seller deposit <span className="deposit-note">(deposit)</span></span>
+            <span>{t('contractDetail.sellerDeposit')} <span className="deposit-note">{t('contractDetail.depositOnly')}</span></span>
             <span>{formatH173K(sellerDeposit, h173kDecimals)} h173k</span>
           </div>
         )}
@@ -2797,13 +2815,13 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         <div className="detail-row code-row" onClick={async () => {
           if (metadata?.code) {
             const success = await copyToClipboard(metadata.code)
-            showToast(success ? 'Code copied!' : 'Copy failed', success ? 'success' : 'error')
+            showToast(success ? t('newContract.codeCopied') : t('receive.copyFailed'), success ? 'success' : 'error')
           } else {
-            showToast('Code not available', 'error')
+            showToast(t('contractDetail.codeNotAvailable'), 'error')
           }
         }}>
-          <span>Code</span>
-          <span className="code-value">{metadata?.code || 'Unavailable'} {metadata?.code && <CopyIcon size={14} />}</span>
+          <span>{t('contractDetail.code')}</span>
+          <span className="code-value">{metadata?.code || t('contractDetail.unavailable')} {metadata?.code && <CopyIcon size={14} />}</span>
         </div>
       </div>
       
@@ -2811,13 +2829,13 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
       <div className="detail-actions">
         {canCancelOffer(contract, publicKey) && (
           <button className="btn btn-secondary" onClick={handleCancel} disabled={loading || swapLoading}>
-            {loading ? (swapLoading ? 'Swapping SOL...' : 'Cancelling...') : 'Cancel Contract'}
+            {loading ? (swapLoading ? t('send.swappingSol') : t('contractDetail.cancelling')) : t('contractDetail.cancelContract')}
           </button>
         )}
         
         {canReleaseOffer(contract, publicKey) && (
           <button className="btn btn-primary btn-action" onClick={handleRelease} disabled={loading || swapLoading}>
-            {loading ? (swapLoading ? 'Swapping SOL...' : 'Processing...') : 'Confirm Release'}
+            {loading ? (swapLoading ? t('send.swappingSol') : t('contractDetail.processing')) : t('contractDetail.confirmRelease')}
           </button>
         )}
         
@@ -2826,8 +2844,8 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
           <div className="release-confirmed-notice">
             <div className="confirmed-icon">✓</div>
             <div className="confirmed-text">
-              <strong>Release Confirmed</strong>
-              <p>You have confirmed the release. Waiting for the other party to confirm.</p>
+              <strong>{t('contractDetail.releaseConfirmedTitle')}</strong>
+              <p>{t('contractDetail.releaseConfirmedText')}</p>
             </div>
           </div>
         )}
@@ -2836,16 +2854,16 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
           <>
             {!showBurnConfirm ? (
               <button className="btn btn-danger" onClick={() => setShowBurnConfirm(true)} disabled={loading || swapLoading}>
-                Burn Deposits
+                {t('contractDetail.burnDeposits')}
               </button>
             ) : (
               <div className="burn-confirm">
-                <p className="warning-text">⚠️ This will permanently destroy ALL deposits. This action cannot be undone!</p>
-                <p className="burn-code-instruction">Type the contract code to confirm:</p>
+                <p className="warning-text">{t('contractDetail.burnWarning')}</p>
+                <p className="burn-code-instruction">{t('contractDetail.burnInstruction')}</p>
                 <input
                   type="text"
                   className="form-input burn-code-input"
-                  placeholder="Enter contract code"
+                  placeholder={t('contractDetail.burnPlaceholder')}
                   value={burnCodeInput}
                   onChange={(e) => setBurnCodeInput(e.target.value.toUpperCase())}
                   autoComplete="off"
@@ -2853,13 +2871,13 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
                   spellCheck="false"
                 />
                 <div className="burn-actions">
-                  <button className="btn" onClick={() => { setShowBurnConfirm(false); setBurnCodeInput('') }}>Cancel</button>
+                  <button className="btn" onClick={() => { setShowBurnConfirm(false); setBurnCodeInput('') }}>{t('common.cancel')}</button>
                   <button 
                     className="btn btn-danger" 
                     onClick={handleBurn} 
                     disabled={loading || swapLoading || !metadata?.code || burnCodeInput !== metadata.code}
                   >
-                    {loading ? (swapLoading ? 'Swapping SOL...' : 'Burning...') : 'Burn All'}
+                    {loading ? (swapLoading ? t('send.swappingSol') : t('contractDetail.burning')) : t('contractDetail.burnAll')}
                   </button>
                 </div>
               </div>
@@ -2869,7 +2887,7 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
         
         {isTerminal && (
           <button className="btn btn-secondary" onClick={handleHideContract}>
-            Remove from List
+            {t('contractDetail.removeFromList')}
           </button>
         )}
       </div>
@@ -2879,6 +2897,7 @@ function ContractDetailView({ connection, contract, metadata, escrow, publicKey,
 
 // ========== REFERRAL SECTION ==========
 function ReferralSection({ publicKey, showToast }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const [showReferralInfo, setShowReferralInfo] = useState(false)
   
@@ -2889,19 +2908,19 @@ function ReferralSection({ publicKey, showToast }) {
     const success = await copyToClipboard(referralLink)
     if (success) {
       setCopied(true)
-      showToast('Referral link copied!', 'success')
+      showToast(t('referral.linkCopied'), 'success')
       setTimeout(() => setCopied(false), 2000)
     } else {
-      showToast('Failed to copy', 'error')
+      showToast(t('referral.copyFail'), 'error')
     }
   }
   
   return (
     <div className="settings-section">
-      <h3>Referral Program</h3>
+      <h3>{t('referral.title')}</h3>
       
       <div className="referral-link-section">
-        <p className="referral-description">Share your referral link to earn $0.01 in h173k on every transaction made by referred users.</p>
+        <p className="referral-description">{t('referral.description')}</p>
         
         <div className="referral-link-box" onClick={handleCopyLink}>
           <span className="referral-link-text">{referralLink}</span>
@@ -2909,32 +2928,32 @@ function ReferralSection({ publicKey, showToast }) {
         </div>
         
         <button className="btn btn-secondary referral-copy-btn" onClick={handleCopyLink}>
-          {copied ? 'Copied!' : 'Copy Referral Link'}
+          {copied ? t('common.copied') : t('referral.copyLink')}
         </button>
       </div>
       
       {referrer && (
         <div className="referral-info">
           <div className="settings-item">
-            <span>Referred by</span>
+            <span>{t('referral.referredBy')}</span>
             <span className="address-small">{shortenAddress(referrer)}</span>
           </div>
-          <p className="referral-note">A small bonus ($0.01 in h173k) is sent to your referrer with each transaction you make.</p>
+          <p className="referral-note">{t('referral.note')}</p>
         </div>
       )}
       
       <button className="referral-info-btn" onClick={() => setShowReferralInfo(!showReferralInfo)}>
-        {showReferralInfo ? 'Hide' : 'Learn more about referrals'}
+        {showReferralInfo ? t('referral.hide') : t('referral.learnMore')}
       </button>
       
       {showReferralInfo && (
         <div className="referral-details">
-          <p><strong>How it works:</strong></p>
+          <p><strong>{t('referral.howItWorks')}</strong></p>
           <ul>
-            <li>Share your referral link with friends</li>
-            <li>When they create or import a wallet using your link, you become their referrer</li>
-            <li>Every time they make a transaction, a small bonus of $0.01 worth of h173k is automatically sent to you</li>
-            <li>The bonus is included in the same transaction for efficiency</li>
+            <li>{t('referral.point1')}</li>
+            <li>{t('referral.point2')}</li>
+            <li>{t('referral.point3')}</li>
+            <li>{t('referral.point4')}</li>
           </ul>
         </div>
       )}
@@ -2944,30 +2963,32 @@ function ReferralSection({ publicKey, showToast }) {
 
 // ========== SPONSOR ACCOUNTS TOGGLE ==========
 function SponsorAccountsToggle({ showToast }) {
+  const { t } = useTranslation()
   const [enabled, setEnabled] = useState(() => getSponsorAccounts())
 
   const handleToggle = () => {
     const next = !enabled
     saveSponsorAccounts(next)
     setEnabled(next)
-    showToast(next ? 'Account sponsoring enabled' : 'Account sponsoring disabled', 'info')
+    showToast(next ? t('sponsor.enabledToast') : t('sponsor.disabledToast'), 'info')
   }
 
   return (
     <div className="settings-item" onClick={handleToggle} style={{ cursor: 'pointer' }}>
       <div>
-        <div>Sponsor recipient accounts</div>
+        <div>{t('sponsor.label')}</div>
         <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '2px' }}>
-          Include Swap Priority Fee SOL with every h173k send so recipients can auto-replenish
+          {t('sponsor.desc')}
         </div>
       </div>
-      <span className={`badge ${enabled ? 'enabled' : ''}`}>{enabled ? 'On' : 'Off'}</span>
+      <span className={`badge ${enabled ? 'enabled' : ''}`}>{enabled ? t('common.on') : t('common.off')}</span>
     </div>
   )
 }
 
 // ========== MESSENGER SETTINGS ==========
 function MessengerSettings({ showToast }) {
+  const { t } = useTranslation()
   const [notif, setNotif] = useState(() => getNotificationsEnabled())
   const [txNotif, setTxNotif] = useState(() => getTxNotificationsEnabled())
   const [limit, setLimit] = useState(() => getMessengerScanLimit())
@@ -2975,7 +2996,7 @@ function MessengerSettings({ showToast }) {
   // Ensure the platform allows notifications, prompting if needed. Returns true if granted.
   const ensurePermission = async () => {
     if (typeof Notification === 'undefined') {
-      showToast('Notifications are not supported on this device', 'error')
+      showToast(t('notifications.notSupported'), 'error')
       return false
     }
     let perm = Notification.permission
@@ -2983,7 +3004,7 @@ function MessengerSettings({ showToast }) {
       try { perm = await Notification.requestPermission() } catch { perm = 'denied' }
     }
     if (perm !== 'granted') {
-      showToast('Notification permission denied', 'error')
+      showToast(t('notifications.permissionDenied'), 'error')
       return false
     }
     return true
@@ -2993,10 +3014,10 @@ function MessengerSettings({ showToast }) {
     if (!notif) {
       if (!(await ensurePermission())) { setNotificationsEnabled(false); setNotif(false); return }
       setNotificationsEnabled(true); setNotif(true)
-      showToast('Message notifications enabled', 'success')
+      showToast(t('notifications.msgEnabled'), 'success')
     } else {
       setNotificationsEnabled(false); setNotif(false)
-      showToast('Message notifications disabled', 'info')
+      showToast(t('notifications.msgDisabled'), 'info')
     }
   }
 
@@ -3004,48 +3025,48 @@ function MessengerSettings({ showToast }) {
     if (!txNotif) {
       if (!(await ensurePermission())) { setTxNotificationsEnabled(false); setTxNotif(false); return }
       setTxNotificationsEnabled(true); setTxNotif(true)
-      showToast('Transaction notifications enabled', 'success')
+      showToast(t('notifications.txEnabled'), 'success')
     } else {
       setTxNotificationsEnabled(false); setTxNotif(false)
-      showToast('Transaction notifications disabled', 'info')
+      showToast(t('notifications.txDisabled'), 'info')
     }
   }
 
   const chooseLimit = (n) => {
     setMessengerScanLimit(n); setLimit(n)
-    showToast('Scanning ' + n + ' entries per refresh', 'success')
+    showToast(t('messengerSettings.scanningToast', { n }), 'success')
   }
 
   return (
     <>
       <div className="settings-section">
-        <h3>Notifications</h3>
+        <h3>{t('notifications.title')}</h3>
         <div className="settings-item" onClick={toggleTxNotif} style={{ cursor: 'pointer' }}>
           <div>
-            <div>Incoming transactions</div>
+            <div>{t('notifications.incomingTx')}</div>
             <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '2px' }}>
-              Notify me when h173k arrives (while the app is open or in the background)
+              {t('notifications.incomingTxDesc')}
             </div>
           </div>
-          <span className={`badge ${txNotif ? 'enabled' : ''}`}>{txNotif ? 'On' : 'Off'}</span>
+          <span className={`badge ${txNotif ? 'enabled' : ''}`}>{txNotif ? t('common.on') : t('common.off')}</span>
         </div>
         <div className="settings-item" onClick={toggleNotif} style={{ cursor: 'pointer' }}>
           <div>
-            <div>New messages</div>
+            <div>{t('notifications.newMessages')}</div>
             <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '2px' }}>
-              Notify me of new messenger messages
+              {t('notifications.newMessagesDesc')}
             </div>
           </div>
-          <span className={`badge ${notif ? 'enabled' : ''}`}>{notif ? 'On' : 'Off'}</span>
+          <span className={`badge ${notif ? 'enabled' : ''}`}>{notif ? t('common.on') : t('common.off')}</span>
         </div>
       </div>
 
       <div className="settings-section">
-        <h3>Messenger</h3>
+        <h3>{t('messengerSettings.title')}</h3>
         <div className="settings-item" style={{ display: 'block' }}>
-          <div>Entries scanned per refresh</div>
+          <div>{t('messengerSettings.entriesPerRefresh')}</div>
           <div style={{ fontSize: '12px', opacity: 0.6, margin: '2px 0 10px' }}>
-            Higher values catch more history but use more RPC
+            {t('messengerSettings.entriesDesc')}
           </div>
           <div className="messenger-scan-options">
             {MESSENGER_SCAN_OPTIONS.map((n) => (
@@ -3061,6 +3082,7 @@ function MessengerSettings({ showToast }) {
 // ========== REPLENISH NOW BUTTON ==========
 // Separate component so it can call useSwap as a hook
 function ReplenishNowButton({ connection, solBalance, showToast }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const { swapForSOL, loading } = useSwap(connection, sessionWallet)
 
@@ -3068,16 +3090,16 @@ function ReplenishNowButton({ connection, solBalance, showToast }) {
     const settings = getReplenishSettings()
     const neededSOL = Math.max(0, settings.replenishTo - solBalance)
     if (neededSOL <= 0) {
-      showToast('SOL balance is already sufficient', 'info')
+      showToast(t('replenish.alreadySufficient'), 'info')
       return
     }
     setBusy(true)
     try {
       const result = await swapForSOL(neededSOL)
-      showToast(`Replenish OK: +${result.solReceived.toFixed(4)} SOL`, 'success')
+      showToast(t('replenish.replenishOk', { n: result.solReceived.toFixed(4) }), 'success')
     } catch (err) {
       const msg = err.message.replace(/^NO_H173K:|^NO_SOL:/, '')
-      showToast('Error: ' + msg, 'error')
+      showToast(t('replenish.replenishError', { msg }), 'error')
     } finally {
       setBusy(false)
     }
@@ -3090,40 +3112,42 @@ function ReplenishNowButton({ connection, solBalance, showToast }) {
       disabled={busy || loading}
       style={{ width: '100%' }}
     >
-      {busy || loading ? 'Swapping h173k→SOL...' : 'Replenish SOL Now'}
+      {busy || loading ? t('replenish.swappingNow') : t('replenish.replenishNow')}
     </button>
   )
 }
 
 // ========== P2P SETTINGS SECTION (only visible once onboarded) ==========
 function P2PSettingsSection({ showToast }) {
+  const { t } = useTranslation()
   const initial = getP2PProfile()
   const [nickname, setNickname] = useState(initial?.nickname || '')
   if (!initial) return null // hidden until the user has used P2P at least once
 
   const save = () => {
     const n = nickname.trim()
-    if (!n) { showToast('Nickname cannot be empty', 'error'); return }
-    if (n.length > 32) { showToast('Nickname too long (max 32)', 'error'); return }
+    if (!n) { showToast(t('p2pSettings.emptyNick'), 'error'); return }
+    if (n.length > 32) { showToast(t('p2pSettings.tooLong'), 'error'); return }
     const current = getP2PProfile() || initial
     saveP2PProfile({ ...current, nickname: n })
-    showToast('P2P nickname saved', 'success')
+    showToast(t('p2pSettings.saved'), 'success')
   }
 
   return (
     <div className="settings-section">
-      <h3>P2P Marketplace</h3>
+      <h3>{t('p2pSettings.title')}</h3>
       <div className="form-group" style={{ marginBottom: 12 }}>
-        <label className="form-label">Nickname</label>
+        <label className="form-label">{t('p2pSettings.nickname')}</label>
         <input className="form-input" maxLength={32} value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </div>
-      <button className="btn btn-secondary" onClick={save}>Save nickname</button>
+      <button className="btn btn-secondary" onClick={save}>{t('p2pSettings.saveNickname')}</button>
     </div>
   )
 }
 
 // ========== SETTINGS VIEW ==========
 function SettingsView({ connection, publicKey, solBalance, onBack, showToast, onDeleteWallet, onRpcChange, onDecimalsChange }) {
+  const { t, language, setLanguage, languages } = useTranslation()
   const [showBackup, setShowBackup] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [showBiometricSetup, setShowBiometricSetup] = useState(false)
@@ -3155,7 +3179,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
   
   const handleSaveRpc = async () => {
     if (!rpcUrl.trim()) {
-      showToast('RPC URL is required', 'error')
+      showToast(t('rpc.urlRequired'), 'error')
       return
     }
     
@@ -3164,13 +3188,13 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
     try {
       const isValid = await validateRpcEndpoint(rpcUrl.trim())
       if (!isValid) {
-        showToast('Invalid RPC endpoint', 'error')
+        showToast(t('rpc.invalidEndpoint'), 'error')
         setValidatingRpc(false)
         return
       }
       
       saveRpcEndpoint(rpcUrl.trim())
-      showToast('RPC updated! Reconnecting...', 'success')
+      showToast(t('rpc.updated'), 'success')
       setShowRpcSettings(false)
       
       // Trigger reconnect
@@ -3178,7 +3202,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         onRpcChange()
       }
     } catch (err) {
-      showToast('Failed to validate RPC', 'error')
+      showToast(t('rpc.validateFail'), 'error')
     } finally {
       setValidatingRpc(false)
     }
@@ -3192,11 +3216,11 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
   
   const handleChangePIN = () => {
     if (newPin.length !== 6) {
-      showToast('New PIN must be 6 digits', 'error')
+      showToast(t('changePin.mustBe6'), 'error')
       return
     }
     if (newPin !== confirmNewPin) {
-      showToast('PINs do not match', 'error')
+      showToast(t('changePin.mismatch'), 'error')
       return
     }
     try {
@@ -3214,7 +3238,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
       if (biometricEnabled) {
         setupBiometric(newPassword)
       }
-      showToast('PIN changed successfully!', 'success')
+      showToast(t('changePin.changed'), 'success')
       setShowChangePIN(false)
       setPin('')
       setNewPin('')
@@ -3229,7 +3253,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
       // Disable biometric
       removeBiometric()
       setBiometricEnabled(false)
-      showToast('Biometric disabled', 'success')
+      showToast(t('biometric.disabledToast'), 'success')
     } else {
       // Need PIN to enable biometric
       setShowBiometricSetup(true)
@@ -3238,7 +3262,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
   
   const handleEnableBiometric = async () => {
     if (pin.length < 4) {
-      showToast('Enter your PIN', 'error')
+      showToast(t('biometric.enterPin'), 'error')
       return
     }
     
@@ -3250,7 +3274,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
       setBiometricEnabled(true)
       setShowBiometricSetup(false)
       setPin('')
-      showToast('Biometric enabled!', 'success')
+      showToast(t('biometric.enabledToast'), 'success')
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -3268,29 +3292,29 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
       const swapFeeSol = parseFloat(replenishForm.swapFeeSol)
       const convertThreshold = parseFloat(replenishForm.convertThreshold)
 
-      if (isNaN(swapFeeSol) || swapFeeSol < MIN_SWAP_PRIORITY_FEE) { showToast(`Minimum swap priority fee is ${MIN_SWAP_PRIORITY_FEE} SOL`, 'error'); return }
-      if (isNaN(threshold) || threshold < MIN_TRIGGER_THRESHOLD) { showToast(`Trigger replenish below must be at least ${MIN_TRIGGER_THRESHOLD} SOL (2× WSOL ATA rent)`, 'error'); return }
-      if (isNaN(replenishTo) || replenishTo < MIN_REPLENISH_TO) { showToast(`Replenish up to must be at least ${MIN_REPLENISH_TO} SOL (3× WSOL ATA rent)`, 'error'); return }
-      if (replenishTo <= threshold) { showToast('Replenish amount must be greater than threshold', 'error'); return }
+      if (isNaN(swapFeeSol) || swapFeeSol < MIN_SWAP_PRIORITY_FEE) { showToast(t('replenish.minSwapFee', { n: MIN_SWAP_PRIORITY_FEE }), 'error'); return }
+      if (isNaN(threshold) || threshold < MIN_TRIGGER_THRESHOLD) { showToast(t('replenish.minTrigger', { n: MIN_TRIGGER_THRESHOLD }), 'error'); return }
+      if (isNaN(replenishTo) || replenishTo < MIN_REPLENISH_TO) { showToast(t('replenish.minReplenishTo', { n: MIN_REPLENISH_TO }), 'error'); return }
+      if (replenishTo <= threshold) { showToast(t('replenish.replenishGtThreshold'), 'error'); return }
       const minConvert = WSOL_ATA_RENT_CONST + swapFeeSol
-      if (isNaN(convertThreshold) || convertThreshold < minConvert) { showToast(`"Show Convert button above" must be at least ${minConvert.toFixed(5)} SOL (WSOL ATA rent + swap fee)`, 'error'); return }
-      if (convertThreshold < threshold) { showToast(`"Show Convert button above" cannot be lower than Trigger Replenish Below (${threshold} SOL)`, 'error'); return }
+      if (isNaN(convertThreshold) || convertThreshold < minConvert) { showToast(t('replenish.minConvert', { n: minConvert.toFixed(5) }), 'error'); return }
+      if (convertThreshold < threshold) { showToast(t('replenish.convertGteThreshold', { n: threshold }), 'error'); return }
 
       saveReplenishSettings({ threshold, replenishTo, swapFeeSol, convertThreshold })
-      showToast('Settings saved!', 'success')
+      showToast(t('replenish.savedToast'), 'success')
     }
 
     return (
       <div className="settings-view">
         <div className="view-header">
-          <button className="back-btn" onClick={() => { setShowReplenishSettings(false); setReplenishForm(getReplenishSettings()) }}><BackIcon size={16} /> Back</button>
-          <h2>Replenish SOL</h2>
+          <button className="back-btn" onClick={() => { setShowReplenishSettings(false); setReplenishForm(getReplenishSettings()) }}><BackIcon size={16} /> {t('common.back')}</button>
+          <h2>{t('replenish.title')}</h2>
         </div>
 
         <div className="settings-section">
-          <h3>Settings</h3>
+          <h3>{t('replenish.settingsTitle')}</h3>
           <div className="form-group">
-            <label className="form-label">Trigger replenish below (SOL)</label>
+            <label className="form-label">{t('replenish.triggerLabel')}</label>
             <input
               type="number"
               className="form-input"
@@ -3299,10 +3323,10 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
               onChange={(e) => setReplenishForm(f => ({ ...f, threshold: e.target.value }))}
               step="0.001" min={MIN_TRIGGER_THRESHOLD}
             />
-            <span className="form-hint">Auto-swap h173k→SOL when balance drops below this level. Minimum: {MIN_TRIGGER_THRESHOLD} SOL (2× WSOL ATA rent)</span>
+            <span className="form-hint">{t('replenish.triggerHint', { min: MIN_TRIGGER_THRESHOLD })}</span>
           </div>
           <div className="form-group">
-            <label className="form-label">Replenish up to (SOL)</label>
+            <label className="form-label">{t('replenish.replenishToLabel')}</label>
             <input
               type="number"
               className="form-input"
@@ -3311,10 +3335,10 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
               onChange={(e) => setReplenishForm(f => ({ ...f, replenishTo: e.target.value }))}
               step="0.001" min={MIN_REPLENISH_TO}
             />
-            <span className="form-hint">Target SOL balance after replenishment. Minimum: {MIN_REPLENISH_TO} SOL (3× WSOL ATA rent)</span>
+            <span className="form-hint">{t('replenish.replenishToHint', { min: MIN_REPLENISH_TO })}</span>
           </div>
           <div className="form-group">
-            <label className="form-label">Swap priority fee (SOL)</label>
+            <label className="form-label">{t('replenish.swapFeeLabel')}</label>
             <input
               type="number"
               className="form-input"
@@ -3323,11 +3347,11 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
               onChange={(e) => setReplenishForm(f => ({ ...f, swapFeeSol: e.target.value }))}
               step="0.0001" min={MIN_SWAP_PRIORITY_FEE} max="0.1"
             />
-            <span className="form-hint">Extra SOL fee for faster swap confirmation. Minimum: {MIN_SWAP_PRIORITY_FEE} SOL.</span>
+            <span className="form-hint">{t('replenish.swapFeeHint', { min: MIN_SWAP_PRIORITY_FEE })}</span>
           </div>
 
           <div className="form-group">
-            <label className="form-label">Show "Convert" button above (SOL)</label>
+            <label className="form-label">{t('replenish.convertLabel')}</label>
             <input
               type="number"
               className="form-input"
@@ -3336,32 +3360,32 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
               onChange={(e) => setReplenishForm(f => ({ ...f, convertThreshold: e.target.value }))}
               step="0.001" min={WSOL_ATA_RENT_CONST + parseFloat(replenishForm.swapFeeSol || 0)}
             />
-            <span className="form-hint">The convert button will appear when SOL balance exceeds this value. Minimum: WSOL ATA rent + swap fee</span>
+            <span className="form-hint">{t('replenish.convertHint')}</span>
           </div>
           <button
             className="btn btn-primary"
             onClick={handleSaveReplenish}
             style={{ marginTop: '16px' }}
           >
-            Save Settings
+            {t('replenish.saveSettings')}
           </button>
           <button
             className="btn btn-secondary"
             onClick={() => setReplenishForm({ ...DEFAULT_REPLENISH_SETTINGS })}
             style={{ marginTop: '12px', width: '100%' }}
           >
-            Reset to Defaults
+            {t('replenish.resetDefaults')}
           </button>
         </div>
 
         <div className="settings-section">
-          <h3>Manual Replenish</h3>
+          <h3>{t('replenish.manualTitle')}</h3>
           <div className="settings-item">
-            <span>Current SOL balance</span>
+            <span>{t('replenish.currentBalance')}</span>
             <span>{formatNumber(solBalance, 4)} SOL</span>
           </div>
           <p style={{ fontSize: '13px', opacity: 0.7, margin: '8px 0 16px' }}>
-            If automatic replenish failed, use the button below to try manually.
+            {t('replenish.manualDesc')}
           </p>
           <ReplenishNowButton
             connection={connection}
@@ -3378,20 +3402,20 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
     return (
       <div className="settings-view">
         <div className="view-header">
-          <button className="back-btn" onClick={() => { setShowRpcSettings(false); setRpcUrl(getRpcEndpoint()) }}><BackIcon size={16} /> Back</button>
-          <h2>RPC Settings</h2>
+          <button className="back-btn" onClick={() => { setShowRpcSettings(false); setRpcUrl(getRpcEndpoint()) }}><BackIcon size={16} /> {t('common.back')}</button>
+          <h2>{t('rpc.title')}</h2>
         </div>
         <div className="settings-section">
           <div className="form-group">
-            <label className="form-label">RPC Endpoint URL</label>
+            <label className="form-label">{t('rpc.urlLabel')}</label>
             <input 
               type="text" 
               className="form-input" 
-              placeholder="https://your-rpc-endpoint.com" 
+              placeholder={t('onboarding.rpcPlaceholder')} 
               value={rpcUrl} 
               onChange={(e) => setRpcUrl(e.target.value)}
             />
-            <span className="form-hint">Use a reliable Solana RPC provider (Helius, QuickNode, Alchemy, etc.)</span>
+            <span className="form-hint">{t('onboarding.rpcHint')}</span>
           </div>
           <button 
             className="btn btn-primary" 
@@ -3399,14 +3423,14 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
             disabled={validatingRpc || !rpcUrl.trim()}
             style={{ marginTop: '16px' }}
           >
-            {validatingRpc ? 'Validating...' : 'Save RPC'}
+            {validatingRpc ? t('onboarding.validating') : t('rpc.saveRpc')}
           </button>
           <button 
             className="btn btn-secondary" 
             onClick={() => setRpcUrl(DEFAULT_RPC_ENDPOINT)}
             style={{ marginTop: '12px', width: '100%' }}
           >
-            Reset to Default
+            {t('rpc.resetDefault')}
           </button>
         </div>
       </div>
@@ -3418,12 +3442,12 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
     return (
       <div className="settings-view">
         <div className="view-header">
-          <button className="back-btn" onClick={() => { setShowChangePIN(false); setPin(''); setNewPin(''); setConfirmNewPin('') }}><BackIcon size={16} /> Back</button>
-          <h2>Change PIN</h2>
+          <button className="back-btn" onClick={() => { setShowChangePIN(false); setPin(''); setNewPin(''); setConfirmNewPin('') }}><BackIcon size={16} /> {t('common.back')}</button>
+          <h2>{t('changePin.title')}</h2>
         </div>
         <div className="settings-section">
           <div className="form-group">
-            <label className="form-label">Current PIN</label>
+            <label className="form-label">{t('changePin.currentPin')}</label>
             <input 
               type="password" 
               className="form-input pin-input" 
@@ -3434,7 +3458,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
             />
           </div>
           <div className="form-group">
-            <label className="form-label">New PIN (6 digits)</label>
+            <label className="form-label">{t('changePin.newPin')}</label>
             <input 
               type="password" 
               className="form-input pin-input" 
@@ -3445,7 +3469,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Confirm New PIN</label>
+            <label className="form-label">{t('changePin.confirmNewPin')}</label>
             <input 
               type="password" 
               className="form-input pin-input" 
@@ -3461,7 +3485,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
             disabled={pin.length !== 6 || newPin.length !== 6 || confirmNewPin.length !== 6}
             style={{ marginTop: '16px' }}
           >
-            Change PIN
+            {t('changePin.title')}
           </button>
         </div>
       </div>
@@ -3473,15 +3497,15 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
     return (
       <div className="settings-view">
         <div className="view-header">
-          <button className="back-btn" onClick={() => { setShowBiometricSetup(false); setPin('') }}><BackIcon size={16} /> Back</button>
-          <h2>Enable Biometric</h2>
+          <button className="back-btn" onClick={() => { setShowBiometricSetup(false); setPin('') }}><BackIcon size={16} /> {t('common.back')}</button>
+          <h2>{t('biometric.title')}</h2>
         </div>
         <div className="settings-section">
-          <p style={{ marginBottom: '16px', opacity: 0.8 }}>Enter your PIN to enable biometric authentication</p>
+          <p style={{ marginBottom: '16px', opacity: 0.8 }}>{t('biometric.enterToEnable')}</p>
           <input 
             type="password" 
             className="form-input pin-input" 
-            placeholder="6-digit PIN" 
+            placeholder={t('common.pinPlaceholder')} 
             value={pin} 
             onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} 
             inputMode="numeric" 
@@ -3492,7 +3516,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
             disabled={loading || pin.length !== 6}
             style={{ marginTop: '16px' }}
           >
-            {loading ? 'Setting up...' : 'Enable Biometric'}
+            {loading ? t('biometric.settingUp') : t('biometric.enableBtn')}
           </button>
         </div>
       </div>
@@ -3501,17 +3525,17 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
   
   return (
     <div className="settings-view">
-      <div className="view-header"><button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button><h2>Settings</h2></div>
+      <div className="view-header"><button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button><h2>{t('settings.title')}</h2></div>
       
       {!showBackup ? (
         <div className="settings-section">
-          <h3>Security</h3>
-          <div className="settings-item" onClick={() => setShowBackup(true)}><span>Backup Recovery Phrase</span><span className="arrow"><ChevronRightIcon /></span></div>
-          <div className="settings-item" onClick={() => setShowChangePIN(true)}><span>Change PIN</span><span className="arrow"><ChevronRightIcon /></span></div>
+          <h3>{t('settings.security')}</h3>
+          <div className="settings-item" onClick={() => setShowBackup(true)}><span>{t('settings.backupPhrase')}</span><span className="arrow"><ChevronRightIcon /></span></div>
+          <div className="settings-item" onClick={() => setShowChangePIN(true)}><span>{t('settings.changePin')}</span><span className="arrow"><ChevronRightIcon /></span></div>
           {biometricAvailable && (
             <div className="settings-item" onClick={handleToggleBiometric}>
-              <span>Biometric Authentication</span>
-              <span className={`badge ${biometricEnabled ? 'enabled' : ''}`}>{biometricEnabled ? 'Enabled' : 'Disabled'}</span>
+              <span>{t('settings.biometric')}</span>
+              <span className={`badge ${biometricEnabled ? 'enabled' : ''}`}>{biometricEnabled ? t('common.enabled') : t('common.disabled')}</span>
             </div>
           )}
         </div>
@@ -3519,23 +3543,23 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         <div className="backup-section">
           {!mnemonic ? (
             <>
-              <p>Enter your PIN to view recovery phrase</p>
-              <input type="password" className="form-input pin-input" placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" />
+              <p>{t('settings.enterPinForPhrase')}</p>
+              <input type="password" className="form-input pin-input" placeholder={t('common.pinPlaceholder')} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" />
               <div className="backup-actions">
-                <button className="btn btn-primary" onClick={handleShowBackup}>Reveal Phrase</button>
-                <button className="btn" onClick={() => setShowBackup(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleShowBackup}>{t('settings.revealPhrase')}</button>
+                <button className="btn" onClick={() => setShowBackup(false)}>{t('common.cancel')}</button>
               </div>
             </>
           ) : (
-            <><div className="mnemonic-words">{mnemonic.split(' ').map((word, i) => <div key={i} className="mnemonic-word"><span className="word-number">{i + 1}</span><span className="word-text">{word}</span></div>)}</div><button className="btn" onClick={() => { setMnemonic(''); setShowBackup(false) }}>Done</button></>
+            <><div className="mnemonic-words">{mnemonic.split(' ').map((word, i) => <div key={i} className="mnemonic-word"><span className="word-number">{i + 1}</span><span className="word-text">{word}</span></div>)}</div><button className="btn" onClick={() => { setMnemonic(''); setShowBackup(false) }}>{t('common.done')}</button></>
           )}
         </div>
       )}
       
       <div className="settings-section">
-        <h3>Wallet</h3>
+        <h3>{t('settings.wallet')}</h3>
         <div className="settings-item">
-          <span>Address</span>
+          <span>{t('settings.address')}</span>
           <span className="address-small">{shortenAddress(publicKey.toString())}</span>
         </div>
       </div>
@@ -3545,31 +3569,31 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
       <P2PSettingsSection showToast={showToast} />
       
       <div className="settings-section">
-        <h3>Network</h3>
+        <h3>{t('settings.network')}</h3>
         <div className="settings-item">
-          <span>Network</span>
-          <span>Solana Mainnet</span>
+          <span>{t('settings.network')}</span>
+          <span>{t('settings.solanaMainnet')}</span>
         </div>
         <div className="settings-item" onClick={() => setShowRpcSettings(true)}>
-          <span>RPC Endpoint</span>
+          <span>{t('settings.rpcEndpoint')}</span>
           <span className="arrow"><ChevronRightIcon /></span>
         </div>
         <div className="settings-item" onClick={() => setShowReplenishSettings(true)}>
-          <span>Replenish SOL</span>
+          <span>{t('settings.replenishSol')}</span>
           <span className="arrow"><ChevronRightIcon /></span>
         </div>
       </div>
 
       <div className="settings-section">
-        <h3>Display</h3>
+        <h3>{t('settings.display')}</h3>
         <div className="settings-item">
-          <span>h173k decimal places</span>
+          <span>{t('settings.decimalPlaces')}</span>
           <div className="decimal-picker">
             {[0, 2, 4, 6, 8, 9].map(d => (
               <button
                 key={d}
                 className={`decimal-btn${h173kDecimals === d ? ' active' : ''}`}
-                onClick={() => { setH173kDecimals(d); saveH173KDecimals(d); if (onDecimalsChange) onDecimalsChange(d); showToast(`Decimal places set to ${d}`, 'success') }}
+                onClick={() => { setH173kDecimals(d); saveH173KDecimals(d); if (onDecimalsChange) onDecimalsChange(d); showToast(t('settings.decimalsSet', { n: d }), 'success') }}
               >{d}</button>
             ))}
           </div>
@@ -3577,25 +3601,43 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
       </div>
 
       <div className="settings-section">
-        <h3>Sending</h3>
+        <h3>{t('settings.language')}</h3>
+        <p className="language-description">{t('settings.languageDescription')}</p>
+        <div className="language-list">
+          {languages.map((lang) => (
+            <div
+              key={lang.code}
+              className={`settings-item language-item${language === lang.code ? ' active' : ''}`}
+              onClick={() => setLanguage(lang.code)}
+              style={{ cursor: 'pointer' }}
+            >
+              <span>{lang.nativeName}</span>
+              {language === lang.code && <span className="badge enabled">✓</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <h3>{t('settings.sending')}</h3>
         <SponsorAccountsToggle showToast={showToast} />
       </div>
       
       <div className="settings-section danger">
-        <h3>Danger Zone</h3>
-        {!showDelete ? <button className="btn btn-danger" onClick={() => setShowDelete(true)}>Delete Wallet</button> : (
+        <h3>{t('settings.dangerZone')}</h3>
+        {!showDelete ? <button className="btn btn-danger" onClick={() => setShowDelete(true)}>{t('settings.deleteWallet')}</button> : (
           <div className="delete-confirm">
-            <p className="warning-text">⚠️ This will permanently delete your wallet. Make sure you have backed up your recovery phrase!</p>
-            <input type="password" className="form-input pin-input" placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" />
-            <div className="delete-actions"><button className="btn" onClick={() => { setShowDelete(false); setPin('') }}>Cancel</button><button className="btn btn-danger" onClick={handleDeleteWallet} disabled={pin.length !== 6}>Delete Forever</button></div>
+            <p className="warning-text">{t('settings.deleteWarning')}</p>
+            <input type="password" className="form-input pin-input" placeholder={t('common.pinPlaceholder')} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" />
+            <div className="delete-actions"><button className="btn" onClick={() => { setShowDelete(false); setPin('') }}>{t('common.cancel')}</button><button className="btn btn-danger" onClick={handleDeleteWallet} disabled={pin.length !== 6}>{t('settings.deleteForever')}</button></div>
           </div>
         )}
       </div>
       
       <div className="settings-section">
-        <h3>Security</h3>
+        <h3>{t('settings.security')}</h3>
         <div className="settings-item autolock-row">
-          <span>Auto-lock after</span>
+          <span>{t('settings.autoLockAfter')}</span>
           <span className="autolock-field">
             <input className="autolock-input" type="text" inputMode="numeric" value={autoLock}
               onChange={(e) => setAutoLock(e.target.value.replace(/[^\d]/g, ''))}
@@ -3615,16 +3657,16 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
                 setAutoLock(String(s))
                 saveAutoLockSeconds(s)
                 sessionWallet.setAutoLockMinutes(s / 60)
-                showToast('Auto-lock updated', 'success')
+                showToast(t('settings.autoLockUpdated'), 'success')
               }} />
-            <span className="autolock-unit">sec</span>
+            <span className="autolock-unit">{t('settings.seconds')}</span>
           </span>
         </div>
       </div>
 
       <MessengerSettings showToast={showToast} />
 
-      <div className="settings-section"><h3>About</h3><div className="settings-item"><span>Version</span><span>1.4.4.4</span></div></div>
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.4.5.0</span></div></div>
     </div>
   )
 }

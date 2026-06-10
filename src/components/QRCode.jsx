@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from '../i18n'
 
 // ========== QR CODE GENERATOR ==========
 
@@ -20,13 +21,14 @@ export function QRCodeGenerator({
   errorCorrectionLevel = 'M',
   className = ''
 }) {
+  const { t } = useTranslation()
   const canvasRef = useRef(null)
   const [error, setError] = useState(null)
   const [ready, setReady] = useState(false)
   
   useEffect(() => {
     if (!data) {
-      setError('No data provided')
+      setError(t('qr.noData'))
       return
     }
     
@@ -73,7 +75,7 @@ export function QRCodeGenerator({
         setReady(true)
       } catch (err) {
         console.error('QR generation error:', err)
-        setError('Failed to generate QR code: ' + err.message)
+        setError(t('qr.generateFailed', { msg: err.message }))
       }
     }
     
@@ -99,6 +101,7 @@ export function QRCodeScanner({
   facingMode = 'environment',
   className = '' 
 }) {
+  const { t } = useTranslation()
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const animationRef = useRef(null)
@@ -123,7 +126,7 @@ export function QRCodeScanner({
     }).catch(err => {
       console.error('Failed to load jsQR:', err)
       if (mountedRef.current) {
-        setError('Failed to load scanner')
+        setError(t('qr.loadScannerFailed'))
       }
     })
     
@@ -215,7 +218,7 @@ export function QRCodeScanner({
             console.error('Video play error:', playErr)
             // On iOS, autoplay might be blocked - try again on user interaction
             if (playErr.name === 'NotAllowedError') {
-              setError('Tap to start camera')
+              setError(t('qr.tapToStart'))
               // Set up click handler to retry
               if (videoRef.current) {
                 videoRef.current.onclick = async () => {
@@ -236,7 +239,7 @@ export function QRCodeScanner({
         
         videoRef.current.onerror = (e) => {
           console.error('Video error:', e)
-          setError('Video error occurred')
+          setError(t('qr.videoError'))
         }
       }
     } catch (err) {
@@ -247,17 +250,17 @@ export function QRCodeScanner({
       setHasCamera(false)
       
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError('Camera access denied. Please allow camera access in your browser settings.')
+        setError(t('qr.cameraDenied'))
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setError('No camera found on this device.')
+        setError(t('qr.noCamera'))
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        setError('Camera is in use by another application.')
+        setError(t('qr.cameraInUse'))
       } else if (err.name === 'OverconstrainedError') {
-        setError('Camera does not meet requirements.')
+        setError(t('qr.cameraRequirements'))
       } else if (err.message?.includes('HTTPS')) {
-        setError('Camera requires HTTPS connection.')
+        setError(t('qr.httpsRequired'))
       } else {
-        setError('Unable to access camera: ' + (err.message || err.name || 'Unknown error'))
+        setError(t('qr.accessFailed', { msg: err.message || err.name || t('qr.unknownError') }))
       }
       
       onError?.(err)
@@ -361,16 +364,16 @@ export function QRCodeScanner({
   }, [scanning, cameraReady, onScan, stopCamera])
   
   // Error/no camera state
-  if (!hasCamera || (error && !error.includes('Tap to start'))) {
+  if (!hasCamera || (error && !error.includes(t('qr.tapToStart')))) {
     return (
       <div className={`qr-scanner-error ${className}`}>
         <div className="scanner-error-icon">📷</div>
-        <p>{error || 'Camera not available'}</p>
+        <p>{error || t('qr.cameraNotAvailable')}</p>
         <p className="scanner-error-hint">
-          Please enable camera access in your device settings
+          {t('qr.enableCameraHint')}
         </p>
         <button className="btn btn-primary" onClick={startCamera} style={{ marginTop: '16px' }}>
-          Try Again
+          {t('qr.tryAgain')}
         </button>
       </div>
     )
@@ -406,18 +409,18 @@ export function QRCodeScanner({
             {error ? (
               <>
                 <p>{error}</p>
-                <p style={{ fontSize: '12px', opacity: 0.7 }}>Tap to retry</p>
+                <p style={{ fontSize: '12px', opacity: 0.7 }}>{t('qr.tapToRetry')}</p>
               </>
             ) : (
               <>
                 <div className="loading-spinner" />
-                <p>Starting camera...</p>
+                <p>{t('qr.startingCamera')}</p>
               </>
             )}
           </div>
         )}
       </div>
-      <p className="scanner-hint">Point camera at a QR code</p>
+      <p className="scanner-hint">{t('qr.pointCamera')}</p>
     </div>
   )
 }

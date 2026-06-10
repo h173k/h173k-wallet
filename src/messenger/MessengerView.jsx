@@ -10,6 +10,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react'
 import { PublicKey } from '@solana/web3.js'
+import { useTranslation } from '../i18n'
 import { useSwap } from '../hooks/useSwap'
 import { sessionWallet } from '../crypto/wallet'
 import {
@@ -133,40 +134,41 @@ export default function MessengerView({ connection, publicKey, onBack, showToast
 
 // ========== NICK SETUP ==========
 function NickSetup({ onDone, onBack, showToast, isEdit }) {
+  const { t } = useTranslation()
   const existing = getProfile()
   const [nick, setNick] = useState(existing ? existing.nick : '')
 
   const save = () => {
     const trimmed = nick.trim()
-    if (!trimmed) { showToast('Enter your nickname', 'error'); return }
+    if (!trimmed) { showToast(t('messenger.enterNick'), 'error'); return }
     saveProfile(trimmed)
-    showToast(isEdit ? 'Nickname updated' : 'Nickname saved', 'success')
+    showToast(isEdit ? t('messenger.nickUpdated') : t('messenger.nickSaved'), 'success')
     onDone()
   }
 
   return (
     <div className="messenger-view">
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
-        <h2>{isEdit ? 'Edit nickname' : 'Messenger'}</h2>
+        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
+        <h2>{isEdit ? t('messenger.editNickTitle') : t('messenger.title')}</h2>
       </div>
       <div className="nick-setup">
         <div className="nick-setup-icon">💬</div>
-        <h3>{isEdit ? 'Change your nickname' : 'Choose your nickname'}</h3>
+        <h3>{isEdit ? t('messenger.changeNick') : t('messenger.chooseNick')}</h3>
         <p className="nick-setup-desc">
-          This is the nickname your contacts see. It's the same name used in the P2P marketplace.
+          {t('messenger.nickDesc')}
         </p>
         <input
           className="messenger-input"
           type="text"
           value={nick}
           maxLength={32}
-          placeholder="e.g. satoshi"
+          placeholder={t('messenger.nickPlaceholder')}
           onChange={(e) => setNick(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') save() }}
           autoFocus
         />
-        <button className="btn btn-primary" onClick={save}>{isEdit ? 'Save nickname' : 'Save nickname'}</button>
+        <button className="btn btn-primary" onClick={save}>{t('messenger.saveNick')}</button>
       </div>
     </div>
   )
@@ -174,6 +176,7 @@ function NickSetup({ onDone, onBack, showToast, isEdit }) {
 
 // ========== CONVERSATION LIST ==========
 function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, showToast }) {
+  const { t } = useTranslation()
   const [refreshing, setRefreshing] = useState(false)
   const myNick = (getProfile() && getProfile().nick) || ''
   const [newAddr, setNewAddr] = useState('')
@@ -216,19 +219,19 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
 
   const addContact = () => {
     const addr = newAddr.trim()
-    if (!addr) { showToast('Enter an address', 'error'); return }
-    try { new PublicKey(addr) } catch { showToast('Invalid Solana address', 'error'); return }
-    if (addr === publicKey.toBase58()) { showToast('You cannot add your own address', 'error'); return }
+    if (!addr) { showToast(t('messenger.enterAddress'), 'error'); return }
+    try { new PublicKey(addr) } catch { showToast(t('send.invalidAddress'), 'error'); return }
+    if (addr === publicKey.toBase58()) { showToast(t('messenger.cannotAddSelf'), 'error'); return }
     store.addContact(addr, newName.trim())
     setNewAddr(''); setNewName(''); setShowAdd(false)
-    showToast('Contact added', 'success')
+    showToast(t('messenger.contactAdded'), 'success')
     onOpen(addr)
   }
 
   const saveEdit = () => {
     store.renameContact(editAddr, editName.trim())
     setEditAddr(null); setEditName('')
-    showToast('Name saved', 'success')
+    showToast(t('messenger.nameSaved'), 'success')
   }
 
   return (
@@ -240,30 +243,30 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
       onTouchEnd={handleTouchEnd}
     >
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
-        <h2>Messenger</h2>
+        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
+        <h2>{t('messenger.title')}</h2>
         <div className="messenger-header-actions">
-          <button className={`messenger-refresh-btn ${refreshing ? 'refreshing' : ''}`} onClick={doRefresh} disabled={refreshing} title="Refresh">
+          <button className={`messenger-refresh-btn ${refreshing ? 'refreshing' : ''}`} onClick={doRefresh} disabled={refreshing} title={t('history.refresh')}>
             <RefreshIcon size={18} />
           </button>
-          <button className="messenger-add-btn" onClick={() => setShowAdd(s => !s)} title="Add contact">
+          <button className="messenger-add-btn" onClick={() => setShowAdd(s => !s)} title={t('messenger.addContact')}>
             <PlusIcon size={20} />
           </button>
         </div>
       </div>
 
       <div className="messenger-nick-bar">
-        <span className="messenger-nick-label">Your nickname</span>
+        <span className="messenger-nick-label">{t('messenger.yourNickname')}</span>
         <span className="messenger-nick-value">{myNick || '—'}</span>
-        <button className="messenger-nick-edit" onClick={onEditNick} title="Edit nickname">
-          <EditIcon size={15} /> Edit
+        <button className="messenger-nick-edit" onClick={onEditNick} title={t('messenger.editNickTitle')}>
+          <EditIcon size={15} /> {t('messenger.edit')}
         </button>
       </div>
 
       {(pullProgress > 0 || refreshing) && (
         <div className="pull-refresh-indicator" style={{ opacity: refreshing ? 1 : pullProgress }}>
           {!refreshing && <RefreshIcon size={24} />}
-          <span>{refreshing ? 'Refreshing...' : (pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh')}</span>
+          <span>{refreshing ? t('main.refreshing') : (pullProgress >= 1 ? t('main.releaseToRefresh') : t('main.pullToRefresh'))}</span>
         </div>
       )}
 
@@ -273,7 +276,7 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
             className="messenger-input"
             type="text"
             value={newAddr}
-            placeholder="Contact's Solana address"
+            placeholder={t('messenger.addrPlaceholder')}
             onChange={(e) => setNewAddr(e.target.value)}
             autoFocus
           />
@@ -282,11 +285,11 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
             type="text"
             value={newName}
             maxLength={40}
-            placeholder="Contact name (optional)"
+            placeholder={t('messenger.namePlaceholder')}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') addContact() }}
           />
-          <button className="btn btn-primary" onClick={addContact}>Add & message</button>
+          <button className="btn btn-primary" onClick={addContact}>{t('messenger.addAndMessage')}</button>
         </div>
       )}
 
@@ -294,36 +297,36 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
         {threads.length === 0 && (
           <div className="messenger-empty">
             <div className="messenger-empty-icon">✉️</div>
-            <p>No conversations</p>
-            <p className="messenger-empty-sub">Add a contact with the + button to start an encrypted conversation.</p>
+            <p>{t('messenger.noConversations')}</p>
+            <p className="messenger-empty-sub">{t('messenger.noConversationsSub')}</p>
           </div>
         )}
 
-        {threads.map((t) => {
-          const last = t.messages[t.messages.length - 1]
+        {threads.map((th) => {
+          const last = th.messages[th.messages.length - 1]
           return (
-            <div key={t.address} className="conversation-item" onClick={() => onOpen(t.address)}>
-              <div className="conversation-avatar">{displayName(t).charAt(0).toUpperCase()}</div>
+            <div key={th.address} className="conversation-item" onClick={() => onOpen(th.address)}>
+              <div className="conversation-avatar">{displayName(th).charAt(0).toUpperCase()}</div>
               <div className="conversation-main">
                 <div className="conversation-top">
-                  <span className="conversation-name">{displayName(t)}</span>
+                  <span className="conversation-name">{displayName(th)}</span>
                   {last && <span className="conversation-time">{fmtTime(last.ts)}</span>}
                 </div>
                 <div className="conversation-bottom">
                   <span className="conversation-preview">
-                    {last ? (last.dir === 'out' ? 'You: ' : '') + last.text : 'No messages yet — send the first one'}
+                    {last ? (last.dir === 'out' ? t('messenger.youPrefix') : '') + last.text : t('messenger.noMessagesPreview')}
                   </span>
-                  {t.unread > 0 && <span className="conversation-unread">{t.unread > 99 ? '99+' : t.unread}</span>}
+                  {th.unread > 0 && <span className="conversation-unread">{th.unread > 99 ? '99+' : th.unread}</span>}
                 </div>
-                {t.peerNick && t.contactName && (
-                  <div className="conversation-nick">@{t.peerNick}</div>
+                {th.peerNick && th.contactName && (
+                  <div className="conversation-nick">@{th.peerNick}</div>
                 )}
               </div>
               <div className="conversation-actions" onClick={(e) => e.stopPropagation()}>
-                <button className="conversation-action" title="Edit name" onClick={() => { setEditAddr(t.address); setEditName(t.contactName || '') }}>
+                <button className="conversation-action" title={t('messenger.editName')} onClick={() => { setEditAddr(th.address); setEditName(th.contactName || '') }}>
                   <EditIcon size={15} />
                 </button>
-                <button className="conversation-action danger" title="Delete conversation" onClick={() => setConfirmDelete(t.address)}>
+                <button className="conversation-action danger" title={t('messenger.deleteConversation')} onClick={() => setConfirmDelete(th.address)}>
                   <TrashIcon size={15} />
                 </button>
               </div>
@@ -335,21 +338,21 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
       {editAddr && (
         <div className="messenger-modal-overlay" onClick={() => setEditAddr(null)}>
           <div className="messenger-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Contact name</h3>
+            <h3>{t('messenger.contactName')}</h3>
             <p className="messenger-modal-sub">{shortAddr(editAddr)}</p>
             <input
               className="messenger-input"
               type="text"
               value={editName}
               maxLength={40}
-              placeholder="Contact name"
+              placeholder={t('messenger.contactName')}
               onChange={(e) => setEditName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }}
               autoFocus
             />
             <div className="messenger-modal-actions">
-              <button className="btn btn-secondary" onClick={() => setEditAddr(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveEdit}>Save</button>
+              <button className="btn btn-secondary" onClick={() => setEditAddr(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={saveEdit}>{t('common.save')}</button>
             </div>
           </div>
         </div>
@@ -357,18 +360,18 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
       {confirmDelete && (
         <div className="messenger-modal-overlay" onClick={() => setConfirmDelete(null)}>
           <div className="messenger-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Delete conversation</h3>
+            <h3>{t('messenger.deleteConversation')}</h3>
             <p className="messenger-modal-sub">{shortAddr(confirmDelete)}</p>
             <p className="messenger-delete-warning">
-              This permanently removes the conversation and all its messages from this device. If this person messages you again, a brand-new thread will be created.
+              {t('messenger.deleteWarning')}
             </p>
             <div className="messenger-modal-actions">
-              <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>{t('common.cancel')}</button>
               <button className="btn btn-danger" onClick={() => {
                 store.deleteThread(confirmDelete)
                 setConfirmDelete(null)
-                showToast('Conversation deleted', 'info')
-              }}>Delete</button>
+                showToast(t('messenger.deleted'), 'info')
+              }}>{t('messenger.delete')}</button>
             </div>
           </div>
         </div>
@@ -377,6 +380,7 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
   )
 }
 function ThreadView({ connection, publicKey, address, onBack, showToast }) {
+  const { t } = useTranslation()
   const [refreshing, setRefreshing] = useState(false)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -420,17 +424,17 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
   const send = async () => {
     const trimmed = text.trim()
     if (!trimmed) return
-    if (trimmed.length > MAX_MESSAGE_LENGTH) { showToast(`Max ${MAX_MESSAGE_LENGTH} characters`, 'error'); return }
+    if (trimmed.length > MAX_MESSAGE_LENGTH) { showToast(t('messenger.maxChars', { n: MAX_MESSAGE_LENGTH }), 'error'); return }
     setSending(true)
     try {
       await sendMessage({ connection, publicKey, peerAddress: address, text: trimmed, withAutoSOL })
       setText('')
-      showToast('Message sent', 'success')
+      showToast(t('messenger.messageSent'), 'success')
     } catch (err) {
       if (err.message && (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked())) {
-        showToast('Session expired. Please unlock your wallet again.', 'error')
+        showToast(t('common.sessionExpired'), 'error')
       } else {
-        showToast('Failed to send: ' + err.message, 'error')
+        showToast(t('messenger.failedSend', { msg: err.message }), 'error')
       }
     } finally {
       setSending(false)
@@ -443,13 +447,13 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
   return (
     <div className="messenger-view thread-view">
       <div className="view-header">
-        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> Back</button>
+        <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
         <div className="thread-title-block">
           <span className="thread-title">{title}</span>
           {thread.peerNick ? <span className="thread-subtitle">@{thread.peerNick} · {shortAddr(address)}</span>
             : <span className="thread-subtitle">{shortAddr(address)}</span>}
         </div>
-        <button className={`messenger-refresh-btn ${refreshing ? 'refreshing' : ''}`} onClick={doRefresh} disabled={refreshing} title="Refresh">
+        <button className={`messenger-refresh-btn ${refreshing ? 'refreshing' : ''}`} onClick={doRefresh} disabled={refreshing} title={t('history.refresh')}>
           <RefreshIcon size={18} />
         </button>
       </div>
@@ -464,20 +468,20 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
         {(pullProgress > 0 || refreshing) && (
           <div className="pull-refresh-indicator thread-pull" style={{ opacity: refreshing ? 1 : pullProgress }}>
             {!refreshing && <RefreshIcon size={24} />}
-            <span>{refreshing ? 'Refreshing...' : (pullProgress >= 1 ? 'Release to refresh' : 'Pull to refresh')}</span>
+            <span>{refreshing ? t('main.refreshing') : (pullProgress >= 1 ? t('main.releaseToRefresh') : t('main.pullToRefresh'))}</span>
           </div>
         )}
 
         {thread.messages.length === 0 && (
           <div className="thread-empty">
-            <p>No messages.</p>
-            <p className="thread-empty-sub">The first message is a request to start the conversation (key exchange). Cost: {MSG_COST} h173k.</p>
+            <p>{t('messenger.noMessages')}</p>
+            <p className="thread-empty-sub">{t('messenger.firstMessageNote', { n: MSG_COST })}</p>
           </div>
         )}
 
         {thread.messages.map((m) => (
           <div key={m.id} className={`message-bubble ${m.dir === 'out' ? 'out' : 'in'}`}>
-            {m.type === 'req' && <div className="message-tag">{m.dir === 'out' ? 'Conversation request sent' : 'Conversation request'}</div>}
+            {m.type === 'req' && <div className="message-tag">{m.dir === 'out' ? t('messenger.requestSent') : t('messenger.request')}</div>}
             <div className="message-text">{m.text}</div>
             <div className="message-meta">{fmtTime(m.ts)}</div>
           </div>
@@ -489,7 +493,7 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
           className="thread-input"
           value={text}
           maxLength={MAX_MESSAGE_LENGTH}
-          placeholder="Type a message…"
+          placeholder={t('messenger.typeMessage')}
           rows={1}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
