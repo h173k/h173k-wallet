@@ -650,7 +650,7 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
               disabled={methods.length >= MAX_PAYMENT_METHODS}
               onChange={(e) => setPmInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addMethod() } }}
-              placeholder={methods.length >= MAX_PAYMENT_METHODS ? t('p2p.limitReached') : t('p2p.pmPlaceholder')} />
+              placeholder={methods.length >= MAX_PAYMENT_METHODS ? t('p2p.limitReached') : (cur?.crypto ? t('p2p.pmPlaceholderCrypto') : t('p2p.pmPlaceholder'))} />
             <button className="input-action-btn" onClick={addMethod} disabled={methods.length >= MAX_PAYMENT_METHODS}><Plus /></button>
           </div>
           <span className="form-hint">{t('p2p.pmHint', { max: MAX_PAYMENT_METHODS, len: MAX_METHOD_LEN })}</span>

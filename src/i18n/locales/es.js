@@ -582,6 +582,7 @@ export default {
     pmLabel: "Métodos de pago · {n}/{max}",
     limitReached: "Límite alcanzado",
     pmPlaceholder: "p. ej. Revolut, Wise, Skrill",
+    pmPlaceholderCrypto: "p. ej. Red SOL, Red ETH, Red TRON",
     pmHint: "Hasta {max} métodos, {len} caracteres cada uno.",
     contactType: "Tipo de contacto",
     telegram: "Telegram",

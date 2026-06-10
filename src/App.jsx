@@ -3623,17 +3623,6 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         <SponsorAccountsToggle showToast={showToast} />
       </div>
       
-      <div className="settings-section danger">
-        <h3>{t('settings.dangerZone')}</h3>
-        {!showDelete ? <button className="btn btn-danger" onClick={() => setShowDelete(true)}>{t('settings.deleteWallet')}</button> : (
-          <div className="delete-confirm">
-            <p className="warning-text">{t('settings.deleteWarning')}</p>
-            <input type="password" className="form-input pin-input" placeholder={t('common.pinPlaceholder')} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" />
-            <div className="delete-actions"><button className="btn" onClick={() => { setShowDelete(false); setPin('') }}>{t('common.cancel')}</button><button className="btn btn-danger" onClick={handleDeleteWallet} disabled={pin.length !== 6}>{t('settings.deleteForever')}</button></div>
-          </div>
-        )}
-      </div>
-      
       <div className="settings-section">
         <h3>{t('settings.security')}</h3>
         <div className="settings-item autolock-row">
@@ -3666,7 +3655,18 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
 
       <MessengerSettings showToast={showToast} />
 
-      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.4.5.0</span></div></div>
+      <div className="settings-section danger">
+        <h3>{t('settings.dangerZone')}</h3>
+        {!showDelete ? <button className="btn btn-danger" onClick={() => setShowDelete(true)}>{t('settings.deleteWallet')}</button> : (
+          <div className="delete-confirm">
+            <p className="warning-text">{t('settings.deleteWarning')}</p>
+            <input type="password" className="form-input pin-input" placeholder={t('common.pinPlaceholder')} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" />
+            <div className="delete-actions"><button className="btn" onClick={() => { setShowDelete(false); setPin('') }}>{t('common.cancel')}</button><button className="btn btn-danger" onClick={handleDeleteWallet} disabled={pin.length !== 6}>{t('settings.deleteForever')}</button></div>
+          </div>
+        )}
+      </div>
+
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.4.6.0</span></div></div>
     </div>
   )
 }

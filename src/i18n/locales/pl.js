@@ -582,6 +582,7 @@ export default {
     pmLabel: "Metody płatności · {n}/{max}",
     limitReached: "Osiągnięto limit",
     pmPlaceholder: "np. Revolut, Wise, Skrill",
+    pmPlaceholderCrypto: "np. Sieć SOL, Sieć ETH, Sieć TRON",
     pmHint: "Do {max} metod, po {len} znaków każda.",
     contactType: "Rodzaj kontaktu",
     telegram: "Telegram",

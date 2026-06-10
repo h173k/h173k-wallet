@@ -144,6 +144,8 @@ export const CURRENCIES = [
   { code: "UAH", name: "Ukrainian Hryvnia", symbol: "₴" },
   { code: "UGX", name: "Ugandan Shilling", symbol: "USh" },
   { code: "USD", name: "US Dollar", symbol: "$" },
+  { code: "USDC", name: "USD Coin", symbol: "$", crypto: true },
+  { code: "USDT", name: "Tether USD", symbol: "₮", crypto: true },
   { code: "UYU", name: "Uruguayan Peso", symbol: "$U" },
   { code: "UZS", name: "Uzbekistani Som", symbol: "лв" },
   { code: "VED", name: "Venezuelan Bolívar (digital)", symbol: "Bs." },
@@ -164,3 +166,7 @@ export const CURRENCIES = [
 export const CURRENCY_MAP = Object.fromEntries(CURRENCIES.map(c => [c.code, c]))
 
 export function getCurrency(code) { return CURRENCY_MAP[code] || null }
+
+// Crypto (stablecoin) currencies are not paid via banks/e-wallets but settled on-chain,
+// so their "payment methods" are blockchain networks (e.g. SOL Network, ETH Network).
+export function isCryptoCurrency(code) { return !!(CURRENCY_MAP[code] && CURRENCY_MAP[code].crypto) }

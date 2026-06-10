@@ -582,6 +582,7 @@ export default {
     pmLabel: "የክፍያ ዘዴዎች · {n}/{max}",
     limitReached: "ገደብ ላይ ደርሷል",
     pmPlaceholder: "ለምሳሌ Revolut, Wise, Skrill",
+    pmPlaceholderCrypto: "ለምሳሌ SOL Network, ETH Network, TRON Network",
     pmHint: "ቢበዛ {max} ዘዴዎች፣ እያንዳንዳቸው {len} ቁምፊዎች።",
     contactType: "የእውቂያ አይነት",
     telegram: "ቴሌግራም",
