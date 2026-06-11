@@ -14,6 +14,7 @@ import {
   MAX_PAYMENT_METHODS, MAX_METHOD_LEN,
 } from './useP2P'
 import { formatH173K, formatNumber, copyToClipboard } from '../utils'
+import { generateOfferLink } from './deeplink'
 import { useTranslation, translate } from '../i18n'
 
 // ----- tiny inline icons (kept local to avoid touching App.jsx exports) -----
@@ -24,10 +25,11 @@ const Plus = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill
 const Tg = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor"><path d="M21.94 4.6l-3.3 15.56c-.25 1.1-.9 1.37-1.82.85l-5.03-3.7-2.43 2.34c-.27.27-.5.5-1 .5l.36-5.1L18 6.78c.4-.36-.09-.56-.62-.2L6.9 13.5l-4.95-1.55c-1.08-.34-1.1-1.08.23-1.6L20.5 3.1c.9-.33 1.69.2 1.44 1.5z" /></svg>)
 const Phone = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0122 16.92z" /></svg>)
 const Chat = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" /></svg>)
+const Link = ({ s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" /></svg>)
 
 function loadingMsg() { return translate('p2p.loadingOffers') }
 
-export default function P2PMarketplace({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onOpenMessenger }) {
+export default function P2PMarketplace({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onOpenMessenger, deepLink, onDeepLinkDone }) {
   const [profile, setProfile] = useState(() => getP2PProfile())
   const onboarded = !!profile
 
@@ -43,6 +45,7 @@ export default function P2PMarketplace({ connection, publicKey, balance, solBala
       profile={profile}
       onProfileChange={(p) => { saveP2PProfile(p); setProfile(p) }}
       onOpenMessenger={onOpenMessenger}
+      deepLink={deepLink} onDeepLinkDone={onDeepLinkDone}
     />
   )
 }
@@ -94,9 +97,9 @@ function P2POnboarding({ onDone, onBack, showToast }) {
 // ===========================================================================
 // Main marketplace
 // ===========================================================================
-function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, profile, onProfileChange, onOpenMessenger }) {
+function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, profile, onProfileChange, onOpenMessenger, deepLink, onDeepLinkDone }) {
   const { t } = useTranslation()
-  const { offers, loading, posting, fetchOffers, postOffer, cancelOffer } = useP2P(connection, publicKey)
+  const { offers, loading, posting, fetchOffers, fetchOfferBySignature, postOffer, cancelOffer } = useP2P(connection, publicKey)
 
   const [currency, setCurrency] = useState(profile.currency)
   const [side, setSide] = useState('buy')          // 'buy' | 'sell'
@@ -165,6 +168,27 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
   }
 
   const changeLimit = (n) => { setLimit(n); saveP2PFetchLimit(n) }
+
+  // Open an offer that arrived via a deep link: switch to its currency (the hint) and
+  // read the offer straight from its transaction signature, then pop the offer card.
+  // One-shot per signature; shows a "not found" toast if the tx can't be loaded.
+  const deepLinkHandled = useRef(null)
+  useEffect(() => {
+    if (!deepLink || !deepLink.signature || !connection) return
+    if (deepLinkHandled.current === deepLink.signature) return
+    deepLinkHandled.current = deepLink.signature
+    let cancelled = false
+    ;(async () => {
+      if (deepLink.currency && deepLink.currency !== currency) changeCurrency(deepLink.currency)
+      const offer = await fetchOfferBySignature(deepLink.signature)
+      if (cancelled) return
+      if (offer) setSelected(offer)
+      else showToast(t('p2p.offerLinkNotFound'), 'error')
+      onDeepLinkDone && onDeepLinkDone()
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLink, connection])
 
   const onSwap = (info) => {
     if (info?.status === 'swapping') showToast(t('p2p.toppingUp'), 'info')
@@ -391,7 +415,15 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
       <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>
         <div className="p2p-modal-head">
           <h3>{viewerAction === 'buy' ? t('p2p.buyWord') : t('p2p.sellWord')} h173k · {offer.nickname || t('p2p.anon')}</h3>
-          <button className="p2p-icon-btn" onClick={onClose}><Close /></button>
+          <div className="p2p-modal-head-actions">
+            {offer.signature && (
+              <button className="p2p-icon-btn" title={t('p2p.shareOffer')}
+                onClick={() => { copyToClipboard(generateOfferLink(offer.signature, offer.currency)); showToast(t('p2p.offerLinkCopied'), 'success') }}>
+                <Link s={16} />
+              </button>
+            )}
+            <button className="p2p-icon-btn" onClick={onClose}><Close /></button>
+          </div>
         </div>
 
         <div className="deposit-preview">

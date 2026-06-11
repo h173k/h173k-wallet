@@ -105,6 +105,9 @@ import {
   getReferralBonusInfo
 } from './referral'
 
+// P2P offer deep links
+import { getOfferLinkFromURL, clearOfferLinkFromURL, isIOS as detectIOS } from './p2p/deeplink'
+
 const MIN_SOL_BALANCE = 0.015
 
 // ========== PWA HELPERS ==========
@@ -355,6 +358,28 @@ function WalletApp({ connection, onRpcChange }) {
   
   // Check for referral code in URL on mount
   const [pendingReferral, setPendingReferral] = useState(() => getReferralFromURL())
+
+  // Check for a P2P offer deep link in the URL on mount.
+  // The link is split in two: a target we act on (non-iOS), and an iOS notice.
+  // iOS can generate/share links but can't open them, so on iOS we explain why and
+  // tell the user to open the marketplace and look in that currency's offers instead.
+  const initialOfferLink = useMemo(() => getOfferLinkFromURL(), [])
+  const isIOSDevice = useMemo(() => detectIOS(), [])
+  const [pendingOfferLink, setPendingOfferLink] = useState(() => (initialOfferLink && !isIOSDevice ? initialOfferLink : null))
+  const [iosOfferNotice, setIosOfferNotice] = useState(() => (initialOfferLink && isIOSDevice ? initialOfferLink : null))
+
+  // Strip the deep-link params from the address bar once, so refreshing won't re-trigger.
+  useEffect(() => {
+    if (initialOfferLink) clearOfferLinkFromURL()
+  }, [initialOfferLink])
+
+  // Once the wallet is usable, open the P2P marketplace so the linked offer can load.
+  // The offer itself is fetched + shown inside P2PMarketplace (via the deepLink prop).
+  useEffect(() => {
+    if (pendingOfferLink && hasWallet && isUnlocked && connection) {
+      setCurrentView('p2p')
+    }
+  }, [pendingOfferLink, hasWallet, isUnlocked, connection])
   
   const { price, toUSD } = useTokenPrice(connection)
   
@@ -556,6 +581,7 @@ function WalletApp({ connection, onRpcChange }) {
           solBalance={solBalance} price={price} toUSD={toUSD}
           onBack={() => setCurrentView('escrow')} showToast={showToast}
           onOpenMessenger={openMessengerWith}
+          deepLink={pendingOfferLink} onDeepLinkDone={() => setPendingOfferLink(null)}
         />
       )}
       
@@ -580,6 +606,23 @@ function WalletApp({ connection, onRpcChange }) {
         />
       )}
       
+      {iosOfferNotice && (
+        <div className="p2p-modal-overlay" onClick={() => setIosOfferNotice(null)}>
+          <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="p2p-modal-head">
+              <h3>{t('p2p.linkIosTitle')}</h3>
+            </div>
+            <div className="escrow-info-card">
+              <p>{iosOfferNotice.currency
+                ? t('p2p.linkIosBody', { code: iosOfferNotice.currency })
+                : t('p2p.linkIosBodyGeneric')}</p>
+            </div>
+            <button className="btn btn-action" onClick={() => { setIosOfferNotice(null); setCurrentView('p2p') }}>{t('p2p.linkIosCta')}</button>
+            <button className="btn" style={{ marginTop: 8 }} onClick={() => setIosOfferNotice(null)}>{t('common.done')}</button>
+          </div>
+        </div>
+      )}
+
       {toast && <div className={`toast toast-${toast.type}`}>{toast.message}</div>}
     </div>
   )

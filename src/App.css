@@ -3236,6 +3236,11 @@ body {
   font-size: 18px;
   font-weight: var(--font-medium);
 }
+.p2p-modal-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .p2p-row2 {
   display: flex;

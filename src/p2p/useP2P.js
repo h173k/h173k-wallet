@@ -311,6 +311,60 @@ export function useP2P(connection, publicKey) {
   }, [connection, getCurrencyAta])
 
   /**
+   * Fetch a single offer directly by its on-chain transaction signature.
+   * Used by offer deep links: reading the one transaction avoids the "recent memos
+   * window" limit, so even an offer scrolled out of the normal listing can be opened.
+   * Returns the offer object (same shape as fetchOffers) or null if it can't be found
+   * (e.g. the transaction is older than the RPC's retention, or isn't a valid offer).
+   * Note: cancellation status is intentionally NOT checked here.
+   */
+  const fetchOfferBySignature = useCallback(async (signature) => {
+    if (!connection || !signature) return null
+    try {
+      const tx = await connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 })
+      if (!tx) return null
+
+      // Find the memo. Prefer the parsed memo instruction; fall back to scanning logs.
+      let memoRaw = null
+      const ixs = tx.transaction?.message?.instructions || []
+      for (const ix of ixs) {
+        const isMemo = ix.program === 'spl-memo' ||
+          (ix.programId && ix.programId.equals && ix.programId.equals(MEMO_PROGRAM_ID))
+        if (isMemo && typeof ix.parsed === 'string') { memoRaw = ix.parsed; break }
+      }
+      if (!memoRaw) {
+        // Our offer memo is flat JSON (no nested braces), so this matches the whole object.
+        const joined = (tx.meta?.logMessages || []).join('\n')
+        const m = joined.match(/\{[^{}]*"m":"h1p2p"[^{}]*\}/)
+        if (m) memoRaw = m[0]
+      }
+      if (!memoRaw) return null
+
+      const parsed = decodeMemo(memoRaw)
+      if (!parsed || parsed.k !== 'o' || !parsed.id) return null
+
+      return {
+        id: parsed.id,
+        nickname: parsed.n || '',
+        currency: parsed.c,
+        type: parsed.ty === 'buy' ? 'buy' : 'sell',
+        pricePerUsd: Number(parsed.p) || 0,
+        minUsd: Number(parsed.mn) || 0,
+        maxUsd: Number(parsed.mx) || 0,
+        paymentMethods: Array.isArray(parsed.pm) ? parsed.pm : [],
+        contactType: parsed.ct === 'ph' ? 'ph' : (parsed.ct === 'wm' ? 'wm' : 'tg'),
+        contact: parsed.co || '',
+        posterPubkey: parsed.pk || '',
+        createdAt: Number(parsed.t) || (tx.blockTime || 0),
+        signature,
+      }
+    } catch (err) {
+      console.error('P2P fetchOfferBySignature error:', err)
+      return null
+    }
+  }, [connection])
+
+  /**
    * Publish a new offer. Builds a transaction that:
    *  1. creates the currency's token account if this is the first offer EVER (payer = user)
    *  2. transfers the POST fee (h173k) to that account (trapped/burned)
@@ -421,7 +475,7 @@ export function useP2P(connection, publicKey) {
     }
   }, [connection, publicKey, withAutoSOL])
 
-  return { offers, loading, posting, fetchOffers, postOffer, cancelOffer, getCurrencyAta }
+  return { offers, loading, posting, fetchOffers, fetchOfferBySignature, postOffer, cancelOffer, getCurrencyAta }
 }
 
 // ---------------------------------------------------------------------------
