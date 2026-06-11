@@ -540,7 +540,7 @@ export default {
     h173kNeeded: "h173k ያስፈልጋል (MAD)",
     roleNoteSell: "እርስዎ (ሻጩ) የ MAD ውሉን ይፈጥራሉ - እዚያ ገዢ ተብለው ይጠራሉ፣ ምክንያቱም በ MAD ውስጥ h173k ምንዛሪ ነው። h173k ይልካሉ እና እንደ ተቀማጭ 2x መጠኑን ይቆልፋሉ።",
     roleNoteBuy: "እርስዎ (ገዢው) የ MAD ውሉን ይቀበላሉ - እዚያ ሻጭ ተብለው ይጠራሉ፣ ምክንያቱም በ MAD ውስጥ h173k ምንዛሪ ነው። h173k ይቀበላሉ እና እንደ ተቀማጭ 1x መጠኑን ይቆልፋሉ።",
-    needForAmount: "⚠ ለዚህ መጠን ≈ {needed} h173k ያስፈልግዎታል ነገር ግን {have} h173k ብቻ ነው ያለዎት።",
+    needForAmount: "⚠ ለዚህ መጠን ≈ {needed} h173k ({neededUsd}) ያስፈልግዎታል ነገር ግን {have} h173k ብቻ ነው ያለዎት።",
     paymentMethods: "የክፍያ ዘዴዎች",
     yourOfferNote: "ይህ የእርስዎ ቅናሽ ነው። መሰረዝ {n} h173k ያቃጥላል።",
     cancelling: "እየሰረዘ ነው...",

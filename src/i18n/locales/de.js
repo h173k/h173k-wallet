@@ -540,7 +540,7 @@ export default {
     h173kNeeded: "Benötigte h173k (MAD)",
     roleNoteSell: "Du (der Verkäufer) erstellst den MAD-Vertrag — dort wirst du Käufer genannt, weil in MAD h173k die Währung ist. Du sendest h173k und sperrst das 2-fache der Größe als Einlage.",
     roleNoteBuy: "Du (der Käufer) nimmst den MAD-Vertrag an — dort wirst du Verkäufer genannt, weil in MAD h173k die Währung ist. Du erhältst h173k und sperrst das 1-fache der Größe als Einlage.",
-    needForAmount: "⚠ Du benötigst ≈ {needed} h173k für diesen Betrag, hast aber {have} h173k.",
+    needForAmount: "⚠ Du benötigst ≈ {needed} h173k ({neededUsd}) für diesen Betrag, hast aber {have} h173k.",
     paymentMethods: "Zahlungsmethoden",
     yourOfferNote: "Das ist dein Angebot. Stornieren verbrennt {n} h173k.",
     cancelling: "Wird storniert…",

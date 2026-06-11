@@ -379,6 +379,10 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
   const neededForAmount = (calc?.h173kAmount != null) ? calc.h173kAmount * multiplier : null
   const enoughForAmount = neededForAmount == null ? null : balance >= neededForAmount
 
+  // USD value of an h173k amount (price = USD per h173k). Used for the small sub-labels
+  // shown under the h173k figures, and the inline USD in the "not enough" message.
+  const usdOf = (h) => (h != null && price > 0) ? h * price : null
+
   const setAmt = (e) => {
     const v = e.target.value.replace(',', '.')
     if (v === '' || /^\d*\.?\d*$/.test(v)) setAmount(v)
@@ -446,20 +450,30 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
           <div className="deposit-preview">
             {viewerAction === 'buy' ? (
               <>
-                <div className="deposit-row"><span>{t('p2p.youReceive')}</span><span><strong>≈ {formatH173K(calc.h173kAmount)} h173k</strong></span></div>
+                <div className="deposit-row"><span>{t('p2p.youReceive')}</span>
+                  <span className="deposit-amount">
+                    <strong>≈ {formatH173K(calc.h173kAmount)} h173k</strong>
+                    {usdOf(calc.h173kAmount) != null && <span className="deposit-usd">≈ ${formatNumber(usdOf(calc.h173kAmount), 2)}</span>}
+                  </span></div>
                 <div className="deposit-row"><span>{t('p2p.youPay')}</span><span>{formatNumber(calc.fiatAmount, 2)} {cur?.code}</span></div>
                 <div className="deposit-row"><span>{t('p2p.h173kNeeded')}</span>
-                  <span style={{ color: enoughForAmount === false ? 'var(--color-error)' : undefined }}>
-                    ≈ {neededForAmount != null ? formatH173K(neededForAmount) : '—'} h173k
+                  <span className="deposit-amount">
+                    <span style={{ color: enoughForAmount === false ? 'var(--color-error)' : undefined }}>≈ {neededForAmount != null ? formatH173K(neededForAmount) : '—'} h173k</span>
+                    {usdOf(neededForAmount) != null && <span className="deposit-usd">≈ ${formatNumber(usdOf(neededForAmount), 2)}</span>}
                   </span></div>
               </>
             ) : (
               <>
                 <div className="deposit-row"><span>{t('p2p.youReceive')}</span><span><strong>{formatNumber(calc.fiatAmount, 2)} {cur?.code}</strong></span></div>
-                <div className="deposit-row"><span>{t('p2p.youSend')}</span><span>≈ {formatH173K(calc.h173kAmount)} h173k</span></div>
+                <div className="deposit-row"><span>{t('p2p.youSend')}</span>
+                  <span className="deposit-amount">
+                    <span>≈ {formatH173K(calc.h173kAmount)} h173k</span>
+                    {usdOf(calc.h173kAmount) != null && <span className="deposit-usd">≈ ${formatNumber(usdOf(calc.h173kAmount), 2)}</span>}
+                  </span></div>
                 <div className="deposit-row"><span>{t('p2p.h173kNeeded')}</span>
-                  <span style={{ color: enoughForAmount === false ? 'var(--color-error)' : undefined }}>
-                    ≈ {neededForAmount != null ? formatH173K(neededForAmount) : '—'} h173k
+                  <span className="deposit-amount">
+                    <span style={{ color: enoughForAmount === false ? 'var(--color-error)' : undefined }}>≈ {neededForAmount != null ? formatH173K(neededForAmount) : '—'} h173k</span>
+                    {usdOf(neededForAmount) != null && <span className="deposit-usd">≈ ${formatNumber(usdOf(neededForAmount), 2)}</span>}
                   </span></div>
               </>
             )}
@@ -477,7 +491,7 @@ function OfferDetail({ offer, cur, price, balance, isMine, posting, onClose, onC
 
         {neededForAmount != null && enoughForAmount === false && (
           <div className="escrow-info-card" style={{ borderColor: 'var(--color-error)' }}>
-            <p style={{ color: 'var(--color-error)' }}>{t('p2p.needForAmount', { needed: formatH173K(neededForAmount), have: formatH173K(balance) })}</p>
+            <p style={{ color: 'var(--color-error)' }}>{t('p2p.needForAmount', { needed: formatH173K(neededForAmount), neededUsd: '$' + formatNumber(usdOf(neededForAmount), 2), have: formatH173K(balance) })}</p>
           </div>
         )}
 

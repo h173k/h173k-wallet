@@ -543,7 +543,7 @@ export default {
     h173kNeeded: "h173k needed (MAD)",
     roleNoteSell: "You (the seller) create the MAD contract — there you're called the buyer, because in MAD h173k is the currency. You send h173k and lock 2× the size as deposit.",
     roleNoteBuy: "You (the buyer) accept the MAD contract — there you're called the seller, because in MAD h173k is the currency. You receive h173k and lock 1× the size as deposit.",
-    needForAmount: "⚠ You need ≈ {needed} h173k for this amount but have {have} h173k.",
+    needForAmount: "⚠ You need ≈ {needed} h173k ({neededUsd}) for this amount but have {have} h173k.",
     paymentMethods: "Payment methods",
     yourOfferNote: "This is your offer. Cancelling burns {n} h173k.",
     cancelling: "Cancelling…",
