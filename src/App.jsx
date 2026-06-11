@@ -243,6 +243,31 @@ function App() {
     setConnection(null)
     setRpcVersion(v => v + 1)
   }, [])
+
+  // P2P offer deep link opened on iOS: link-opening isn't supported there, so we show
+  // an explanatory notice no matter which screen is up (install prompt, lock, app…).
+  // This lives at the top level on purpose — WalletApp isn't mounted on the iOS install
+  // screen, so a notice inside it would never appear.
+  const [iosNotice, setIosNotice] = useState(() => {
+    try { const l = getOfferLinkFromURL(); return (l && detectIOS()) ? l : null } catch { return null }
+  })
+  useEffect(() => {
+    if (iosNotice) clearOfferLinkFromURL()
+  }, [iosNotice])
+
+  const iosNoticeModal = iosNotice ? (
+    <div className="p2p-modal-overlay" onClick={() => setIosNotice(null)}>
+      <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="p2p-modal-head"><h3>{t('p2p.linkIosTitle')}</h3></div>
+        <div className="escrow-info-card">
+          <p>{iosNotice.currency
+            ? t('p2p.linkIosBody', { code: iosNotice.currency })
+            : t('p2p.linkIosBodyGeneric')}</p>
+        </div>
+        <button className="btn btn-action" onClick={() => setIosNotice(null)}>{t('common.done')}</button>
+      </div>
+    </div>
+  ) : null
   
   // Show loading until check is complete
   if (!checkComplete) {
@@ -257,6 +282,7 @@ function App() {
         <div className="app-container">
           <LoadingScreen message={t('loading.generic')} />
         </div>
+        {iosNoticeModal}
       </>
     )
   }
@@ -274,6 +300,7 @@ function App() {
         <div className="app-container">
           <InstallPromptScreen />
         </div>
+        {iosNoticeModal}
       </>
     )
   }
@@ -289,6 +316,7 @@ function App() {
       <div className="app-container">
         {!connection ? <LoadingScreen message={t('loading.connecting')} /> : <WalletApp connection={connection} onRpcChange={handleRpcChange} />}
       </div>
+      {iosNoticeModal}
     </>
   )
 }
@@ -366,7 +394,6 @@ function WalletApp({ connection, onRpcChange }) {
   const initialOfferLink = useMemo(() => getOfferLinkFromURL(), [])
   const isIOSDevice = useMemo(() => detectIOS(), [])
   const [pendingOfferLink, setPendingOfferLink] = useState(() => (initialOfferLink && !isIOSDevice ? initialOfferLink : null))
-  const [iosOfferNotice, setIosOfferNotice] = useState(() => (initialOfferLink && isIOSDevice ? initialOfferLink : null))
 
   // Strip the deep-link params from the address bar once, so refreshing won't re-trigger.
   useEffect(() => {
@@ -606,23 +633,6 @@ function WalletApp({ connection, onRpcChange }) {
         />
       )}
       
-      {iosOfferNotice && (
-        <div className="p2p-modal-overlay" onClick={() => setIosOfferNotice(null)}>
-          <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="p2p-modal-head">
-              <h3>{t('p2p.linkIosTitle')}</h3>
-            </div>
-            <div className="escrow-info-card">
-              <p>{iosOfferNotice.currency
-                ? t('p2p.linkIosBody', { code: iosOfferNotice.currency })
-                : t('p2p.linkIosBodyGeneric')}</p>
-            </div>
-            <button className="btn btn-action" onClick={() => { setIosOfferNotice(null); setCurrentView('p2p') }}>{t('p2p.linkIosCta')}</button>
-            <button className="btn" style={{ marginTop: 8 }} onClick={() => setIosOfferNotice(null)}>{t('common.done')}</button>
-          </div>
-        </div>
-      )}
-
       {toast && <div className={`toast toast-${toast.type}`}>{toast.message}</div>}
     </div>
   )
@@ -3709,7 +3719,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
 
-      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.4.6.1</span></div></div>
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.4.6.3</span></div></div>
     </div>
   )
 }
