@@ -17,6 +17,8 @@ export default {
   install: {
     title: "Zainstaluj portfel H173K",
     subtitle: "Dla bezpieczeństwa i najlepszego działania dodaj tę aplikację do ekranu głównego.",
+    offerLinkNotice: "Ten link prowadzi do oferty P2P ({code}). Zainstaluj i otwórz aplikację, aby ją zobaczyć.",
+    offerLinkNoticeGeneric: "Ten link prowadzi do oferty P2P. Zainstaluj i otwórz aplikację, aby ją zobaczyć.",
     tapThe: "Dotknij przycisku",
     share: "Udostępnij",
     button: "",

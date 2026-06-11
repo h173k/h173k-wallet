@@ -126,7 +126,7 @@ function isStandaloneMode() {
 }
 
 // ========== INSTALL PROMPT SCREEN ==========
-function InstallPromptScreen() {
+function InstallPromptScreen({ offerLink }) {
   const { t } = useTranslation()
   const [isIOS, setIsIOS] = useState(false)
   
@@ -144,6 +144,15 @@ function InstallPromptScreen() {
         <p className="install-subtitle">
           {t('install.subtitle')}
         </p>
+
+        {offerLink && (
+          <div className="install-note">
+            <span className="note-icon">🔗</span>
+            <p>{offerLink.currency
+              ? t('install.offerLinkNotice', { code: offerLink.currency })
+              : t('install.offerLinkNoticeGeneric')}</p>
+          </div>
+        )}
         
         <div className="install-instructions">
           {isIOS ? (
@@ -251,6 +260,9 @@ function App() {
   const [iosNotice, setIosNotice] = useState(() => {
     try { const l = getOfferLinkFromURL(); return (l && detectIOS()) ? l : null } catch { return null }
   })
+  // Offer link present in the URL (any platform) — used to explain on the install
+  // screen that the link points at a P2P offer and the app must be installed/opened.
+  const offerLinkInUrl = useMemo(() => { try { return getOfferLinkFromURL() } catch { return null } }, [])
   useEffect(() => {
     if (iosNotice) clearOfferLinkFromURL()
   }, [iosNotice])
@@ -298,7 +310,7 @@ function App() {
         </div>
         <div className="app-background"><div className="light-streak" /></div>
         <div className="app-container">
-          <InstallPromptScreen />
+          <InstallPromptScreen offerLink={offerLinkInUrl} />
         </div>
         {iosNoticeModal}
       </>
@@ -3719,7 +3731,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
 
-      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.4.6.4</span></div></div>
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.4.6.5</span></div></div>
     </div>
   )
 }

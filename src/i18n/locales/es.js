@@ -17,6 +17,8 @@ export default {
   install: {
     title: "Instalar la cartera H173K",
     subtitle: "Por seguridad y para una mejor experiencia, añade esta app a tu pantalla de inicio.",
+    offerLinkNotice: "Este enlace abre una oferta P2P ({code}). Instala y abre la app para verla.",
+    offerLinkNoticeGeneric: "Este enlace abre una oferta P2P. Instala y abre la app para verla.",
     tapThe: "Toca el botón",
     share: "Compartir",
     button: "",

@@ -17,6 +17,8 @@ export default {
   install: {
     title: "H173K የኪስ ቦርሳን ጫን",
     subtitle: "ለደህንነት እና ለተሻለ ተሞክሮ፣ እባክዎ ይህንን መተግበሪያ በመነሻ ማያ ገጽዎ ላይ ያክሉት።",
+    offerLinkNotice: "ይህ አገናኝ የP2P ቅናሽ ({code}) ይከፍታል። ለማየት መተግበሪያውን ይጫኑ እና ይክፈቱ።",
+    offerLinkNoticeGeneric: "ይህ አገናኝ የP2P ቅናሽ ይከፍታል። ለማየት መተግበሪያውን ይጫኑ እና ይክፈቱ።",
     tapThe: "ይጫኑ",
     share: "ያጋሩ",
     button: "አዝራር",

@@ -17,6 +17,8 @@ export default {
   install: {
     title: "H173K Wallet installieren",
     subtitle: "Für Sicherheit und beste Erfahrung füge diese App zu deinem Startbildschirm hinzu.",
+    offerLinkNotice: "Dieser Link öffnet ein P2P-Angebot ({code}). Installiere und öffne die App, um es anzusehen.",
+    offerLinkNoticeGeneric: "Dieser Link öffnet ein P2P-Angebot. Installiere und öffne die App, um es anzusehen.",
     tapThe: "Tippe auf die Schaltfläche",
     share: "Teilen",
     button: "",

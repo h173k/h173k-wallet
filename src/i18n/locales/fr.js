@@ -17,6 +17,8 @@ export default {
   install: {
     title: "Installer le portefeuille H173K",
     subtitle: "Pour la sécurité et une meilleure expérience, ajoutez cette application à votre écran d'accueil.",
+    offerLinkNotice: "Ce lien ouvre une offre P2P ({code}). Installez et ouvrez l'application pour la voir.",
+    offerLinkNoticeGeneric: "Ce lien ouvre une offre P2P. Installez et ouvrez l'application pour la voir.",
     tapThe: "Appuyez sur le bouton",
     share: "Partager",
     button: "",

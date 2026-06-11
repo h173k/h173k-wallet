@@ -20,6 +20,8 @@ export default {
   install: {
     title: "Install H173K Wallet",
     subtitle: "For security and best experience, please add this app to your home screen.",
+    offerLinkNotice: "This link opens a P2P offer ({code}). Install and open the app to view it.",
+    offerLinkNoticeGeneric: "This link opens a P2P offer. Install and open the app to view it.",
     tapThe: "Tap the",
     share: "Share",
     button: "button",
