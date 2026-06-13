@@ -423,7 +423,11 @@ export function useLottery(connection, wallet) {
       // przy ostatecznym niepowodzeniu zwracamy realny błąd (nie „miękki").
       let revealSig = null
       let revealed = false
+      // Po commit_slot + MAX_SLOTS(150) kontrakt odrzuca reveal (RevealTooLate),
+      // więc po przekroczeniu tego slotu dalsze próby/odpytywanie RPC są bezcelowe.
+      const revealDeadlineSlot = commitSlot + 150
       for (let attempt = 1; attempt <= 3 && !revealed; attempt++) {
+        if ((await connection.getSlot('processed')) > revealDeadlineSlot) break
         try {
           revealSig = await doReveal()
           revealed = true
@@ -439,9 +443,12 @@ export function useLottery(connection, wallet) {
         }
       }
       if (!revealed) {
-        // ostatnia próba: może reveal jednak wszedł późno (wtedy odczytamy wynik niżej,
-        // łącznie z ewentualną wygraną — jej nigdy nie zatajamy).
-        if (await revealLanded(program, ticket, 4)) {
+        // jeśli okno reveal jeszcze trwa, ostatni raz sprawdź, czy nie wszedł późno
+        // (wtedy odczytamy wynik niżej, łącznie z ewentualną wygraną); po terminie
+        // nie odpytujemy już RPC — reveal i tak nie przejdzie.
+        const withinWindow =
+          (await connection.getSlot('processed')) <= revealDeadlineSlot
+        if (withinWindow && (await revealLanded(program, ticket, 4))) {
           revealed = true
         } else {
           // Nie udało się odsłonić w oknie. Opłata — jak przy każdym spinie — już zeszła,

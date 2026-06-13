@@ -1,6 +1,6 @@
 {
   "name": "h173k-wallet",
-  "version": "1.5.0.6",
+  "version": "1.5.0.7",
   "description": "PWA Wallet dedicated to H173K tokens on Solana",
   "type": "module",
   "scripts": {
