@@ -92,6 +92,7 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
   const [spinning, setSpinning] = useState(false)
   const [stage, setStage] = useState(null) // 'commit' | 'waiting' | 'reveal'
   const [win, setWin] = useState(null) // { prize }
+  const [displayPrize, setDisplayPrize] = useState(0) // animowany licznik kwoty w panelu wygranej
   const [reelWin, setReelWin] = useState(false)
   const [lastWinner, setLastWinner] = useState(undefined) // undefined=loading, null=none
   const [solCost, setSolCost] = useState(null) // szacowany koszt spinu w SOL
@@ -103,6 +104,31 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
   const [dontShowCost, setDontShowCost] = useState(false)
 
   const mode = LOTTERY_MODES[modeIdx]
+
+  // Licznik kwoty w panelu wygranej — odlicza od 0 do nagrody, zsynchronizowany
+  // z wejściem panelu (start po pojawieniu się pucharka i tekstu).
+  useEffect(() => {
+    if (!win) return
+    const target = win.prize || 0
+    setDisplayPrize(0)
+    let raf = 0
+    const dur = 1000
+    const startTimer = setTimeout(() => {
+      const begin = performance.now()
+      const tick = (now) => {
+        const p = Math.min(1, (now - begin) / dur)
+        const e = 1 - Math.pow(1 - p, 3)
+        setDisplayPrize(target * e)
+        if (p < 1) raf = requestAnimationFrame(tick)
+        else setDisplayPrize(target)
+      }
+      raf = requestAnimationFrame(tick)
+    }, 450)
+    return () => {
+      clearTimeout(startTimer)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [win])
 
   // ── Reel animation (rAF-driven offset) ──────────────────────────────────────
   const stripRef = useRef(null)
@@ -485,12 +511,21 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
 
       {win && (
         <div className="lottery-modal-overlay" onClick={() => setWin(null)}>
-          <div className="lottery-modal center" onClick={(e) => e.stopPropagation()}>
-            <div className="win-trophy"><TrophyIcon size={42} /></div>
-            <h3>{t('lottery.winTitle')}</h3>
-            <div className="win-amount">+{formatSmartNumber(win.prize)} h173k</div>
-            <div className="win-sub">{t('lottery.winSub')}</div>
-            <div className="modal-actions">
+          <div className="lottery-modal center win" onClick={(e) => e.stopPropagation()}>
+            <div className="win-trophy">
+              <svg viewBox="0 0 64 64" width="56" height="56" fill="#0c0c0c" aria-hidden="true">
+                <path d="M18 12 H46 C46 29 40 35 32 35 C24 35 18 29 18 12 Z" />
+                <path d="M18 15 C10 15 8 24 17 28 L19.5 24 C14 22 15 19 19 19 Z" />
+                <path d="M46 15 C54 15 56 24 47 28 L44.5 24 C50 22 49 19 45 19 Z" />
+                <rect x="29" y="34" width="6" height="9" />
+                <path d="M24 43 H40 L44 52 H20 Z" />
+                <rect x="17" y="51" width="30" height="5" rx="2" />
+              </svg>
+            </div>
+            <h3 className="win-line">{t('lottery.winTitle')}</h3>
+            <div className="win-amount win-line">+{formatSmartNumber(displayPrize)} h173k</div>
+            <div className="win-sub win-line">{t('lottery.winSub')}</div>
+            <div className="modal-actions win-line">
               <button className="btn btn-action" onClick={() => setWin(null)}>{t('common.done')}</button>
             </div>
           </div>

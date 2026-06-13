@@ -478,21 +478,21 @@
 
 /* Win panel */
 .win-trophy {
-  width: 84px;
-  height: 84px;
-  margin: 0 auto 16px;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 18px;
   border-radius: 50%;
-  background: rgba(251, 191, 36, 0.16);
+  background: linear-gradient(90deg, #EA6A4E 0%, #F5A623 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-warning);
 }
 .win-amount {
-  font-size: 30px;
+  font-size: 34px;
   font-weight: var(--font-medium);
   text-align: center;
-  margin: 6px 0 4px;
+  margin: 8px 0 2px;
+  font-variant-numeric: tabular-nums;
 }
 .win-sub {
   text-align: center;
@@ -501,3 +501,35 @@
   margin-bottom: 4px;
 }
 .lottery-modal.center { text-align: center; }
+
+/* Triumfalne wejście — tylko modal wygranej */
+.lottery-modal.win { animation: lw-modal-in 0.62s cubic-bezier(0.2, 0.9, 0.25, 1.15) both; }
+.lottery-modal.win .win-trophy {
+  opacity: 0;
+  transform: scale(0.5);
+  animation: lw-pop 0.7s cubic-bezier(0.2, 0.8, 0.25, 1.4) 0.2s both;
+}
+.lottery-modal.win .win-line { opacity: 0; animation: lw-fade 0.5s ease-out both; }
+.lottery-modal.win h3.win-line { animation-delay: 0.42s; }
+.lottery-modal.win .win-amount.win-line { animation-delay: 0.52s; }
+.lottery-modal.win .win-sub.win-line { animation-delay: 0.64s; }
+.lottery-modal.win .modal-actions.win-line { animation-delay: 0.74s; }
+@keyframes lw-modal-in {
+  0% { transform: scale(0.85) translateY(12px); opacity: 0; }
+  70% { transform: scale(1.02); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+@keyframes lw-pop {
+  0% { transform: scale(0.5) rotate(-10deg); opacity: 0; }
+  60% { transform: scale(1.14) rotate(3deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+@keyframes lw-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lottery-modal.win,
+  .lottery-modal.win .win-trophy,
+  .lottery-modal.win .win-line { animation: none; opacity: 1; transform: none; }
+}
