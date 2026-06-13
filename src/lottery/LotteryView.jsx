@@ -242,12 +242,18 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
       if (onRefresh) onRefresh()
       refreshLastWinner()
     } catch (err) {
-      cancelAnimationFrame(rafRef.current)
-      spinningRef.current = false
       const msg = String(err?.message || err)
-      if (msg.includes('Wallet is locked')) showToast(t('common.sessionExpired'), 'error')
-      else if (msg.includes('LOTTERY_NOT_CONFIGURED')) showToast(t('lottery.notDeployed'), 'error')
-      else showToast(t('lottery.spinFailed', { msg }), 'error')
+      if (msg.includes('SPIN_NOT_PLACED')) {
+        // opłata nie została pobrana — potraktuj jak zwykły brak wygranej
+        await stopReel(false)
+        showToast(t('lottery.noWin'), 'info')
+      } else {
+        cancelAnimationFrame(rafRef.current)
+        spinningRef.current = false
+        if (msg.includes('Wallet is locked')) showToast(t('common.sessionExpired'), 'error')
+        else if (msg.includes('LOTTERY_NOT_CONFIGURED')) showToast(t('lottery.notDeployed'), 'error')
+        else showToast(t('lottery.spinFailed', { msg }), 'error')
+      }
     } finally {
       setSpinning(false)
       setStage(null)

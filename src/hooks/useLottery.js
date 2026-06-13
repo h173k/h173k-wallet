@@ -78,10 +78,12 @@ function isInsufficientSolError(e) {
 // Czytelny komunikat błędu transakcji (zamiast np. web3.js „Unknown action 'undefined'").
 function friendlyTxError(e, phase) {
   let msg = String(e?.message || e || 'unknown error')
-  if (msg.includes('Unknown action') || msg.includes('undefined')) {
+  if (msg.startsWith('TX_FAILED:') || msg.includes('Unknown action') || msg.includes('undefined')) {
     msg = 'network rejected the transaction, please try again'
   } else if (msg.includes('Blockhash not found')) {
     msg = 'network was busy (blockhash), please try again'
+  } else if (msg.includes('not confirmed') || msg.includes('expired')) {
+    msg = 'network was busy, please try again'
   }
   if (msg.length > 180) msg = msg.slice(0, 180) + '…'
   return `${phase}: ${msg}`
@@ -127,11 +129,25 @@ async function revealLanded(program, ticket, tries = 4) {
   return false
 }
 
+// Błędy, których NIE ponawiamy ani nie zmiękczamy — przekazujemy wprost.
+function isFatalError(e) {
+  const m = String(e?.message || e || '')
+  return (
+    m.includes('Wallet is locked') ||
+    m.includes('NO_H173K') ||
+    m.includes('NO_SOL') ||
+    m.includes('LOTTERY_NOT_CONFIGURED')
+  )
+}
+
 /**
  * Wysyła instrukcję Anchora i potwierdza strategią blockhash + lastValidBlockHeight.
  * W przeciwieństwie do .rpc() (sztywny limit 30 s) czeka aż blockhash wygaśnie,
  * więc rzadziej daje fałszywy timeout, a gdy już zwróci błąd wygaśnięcia — tx jest
  * na pewno martwa, więc bezpiecznie ją ponowić (bez ryzyka podwójnej opłaty).
+ * WAŻNE: sprawdzamy też status.err — przy skipPreflight nieudana tx on-chain ląduje
+ * jako „confirmed z błędem"; bez tej kontroli wyglądałaby na sukces, a dopiero
+ * późniejszy fetch konta dawałby mylące „Account does not exist".
  * @returns {Promise<string>} podpis transakcji
  */
 async function sendAndConfirmTx(connection, wallet, methodsBuilder) {
@@ -142,10 +158,15 @@ async function sendAndConfirmTx(connection, wallet, methodsBuilder) {
   tx.feePayer = wallet.publicKey
   wallet.signTransaction(tx)
   const sig = await connection.sendRawTransaction(tx.serialize(), SEND_OPTS)
-  await connection.confirmTransaction(
+  const conf = await connection.confirmTransaction(
     { signature: sig, blockhash, lastValidBlockHeight },
     'confirmed'
   )
+  if (conf?.value?.err) {
+    // tx weszła, ale instrukcja zwróciła błąd → transakcja jest atomowa,
+    // więc żadne środki nie zostały pobrane. Rzucamy, by warstwa wyżej ponowiła.
+    throw new Error('TX_FAILED:' + JSON.stringify(conf.value.err))
+  }
   return sig
 }
 
@@ -338,29 +359,35 @@ export function useLottery(connection, wallet) {
         )
       }
       await ensureSol()
-      try {
-        await doCommit()
-      } catch (e) {
-        if (isInsufficientSolError(e)) {
-          // faktyczny brak SOL → dokup raz i spróbuj ponownie
-          await ensureSol()
+      // Commit można bezpiecznie ponawiać ze świeżym slotem: jeśli się nie powiedzie,
+      // jest atomowy → opłata h173k NIE schodzi. Po wyczerpaniu prób, gdy biletu nadal
+      // nie ma, zwracamy „miękki" sygnał — UI pokaże standardowe „nie tym razem".
+      let committed = false
+      for (let attempt = 1; attempt <= 3 && !committed; attempt++) {
+        try {
           await doCommit()
-        } else if (isConfirmTimeoutError(e)) {
-          // timeout/wygaśnięcie: sprawdź, czy commit jednak wszedł (nie podwajaj opłaty).
-          // Jeśli bilet już istnieje → kontynuuj. Jeśli nie — poprzednia tx jest martwa
-          // (blockhash wygasł), więc ponów raz ze świeżym slotem.
-          if (!(await ticketLanded(program, ticket))) {
-            await doCommit()
+          committed = true
+        } catch (e) {
+          if (isFatalError(e)) throw e
+          // czy bilet jednak wszedł? (timeout = mogła wejść późno → dłuższy polling)
+          const tries = isConfirmTimeoutError(e) ? 4 : 1
+          if (await ticketLanded(program, ticket, tries)) {
+            committed = true
+            break
           }
-        } else {
-          throw new Error(friendlyTxError(e, 'commit'))
+          if (isInsufficientSolError(e)) await ensureSol()
+          if (attempt < 3) await sleep(400)
         }
+      }
+      if (!committed) {
+        // opłata nie pobrana — potraktuj jak zwykły brak wygranej
+        throw new Error('SPIN_NOT_PLACED')
       }
 
       // 3. Odczyt rzeczywistego slotu commitu i odczekanie min. 2 slotów
       onStage?.('waiting')
-      const committed = await program.account.playerTicket.fetch(ticket)
-      const commitSlot = committed.commitSlot.toNumber()
+      const committedTk = await program.account.playerTicket.fetch(ticket)
+      const commitSlot = committedTk.commitSlot.toNumber()
       await waitForSlot(connection, commitSlot + 2)
 
       // 4. REVEAL — idempotentnie (jeśli już odsłonięty, tylko czytamy wynik)
@@ -391,21 +418,28 @@ export function useLottery(connection, wallet) {
         )
       }
       await ensureSol()
+      // Reveal jest idempotentny (doReveal sprawdza isRevealed), więc można go
+      // bezpiecznie ponawiać. Opłata została już pobrana przy commicie, dlatego
+      // przy ostatecznym niepowodzeniu zwracamy realny błąd (nie „miękki").
       let revealSig = null
-      try {
-        revealSig = await doReveal()
-      } catch (e) {
-        if (isInsufficientSolError(e)) {
-          await ensureSol()
+      let revealed = false
+      for (let attempt = 1; attempt <= 3 && !revealed; attempt++) {
+        try {
           revealSig = await doReveal()
-        } else if (isConfirmTimeoutError(e)) {
-          // timeout: jeśli reveal jednak wszedł — czytamy wynik; w innym wypadku ponów raz.
-          if (!(await revealLanded(program, ticket))) {
-            revealSig = await doReveal()
+          revealed = true
+        } catch (e) {
+          if (isFatalError(e)) throw e
+          const tries = isConfirmTimeoutError(e) ? 4 : 1
+          if (await revealLanded(program, ticket, tries)) {
+            revealed = true
+            break
           }
-        } else {
-          throw new Error(friendlyTxError(e, 'reveal'))
+          if (isInsufficientSolError(e)) await ensureSol()
+          if (attempt < 3) await sleep(400)
         }
+      }
+      if (!revealed) {
+        throw new Error(friendlyTxError(new Error('reveal not confirmed'), 'reveal'))
       }
 
       // 5. Wynik
