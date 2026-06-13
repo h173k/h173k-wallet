@@ -243,8 +243,8 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
       refreshLastWinner()
     } catch (err) {
       const msg = String(err?.message || err)
-      if (msg.includes('SPIN_NOT_PLACED')) {
-        // opłata nie została pobrana — potraktuj jak zwykły brak wygranej
+      if (msg.includes('SPIN_NOT_PLACED') || msg.includes('SPIN_UNRESOLVED')) {
+        // opłata nie zeszła (commit) lub spin nierozstrzygnięty — pokaż standardowe „nie tym razem"
         await stopReel(false)
         showToast(t('lottery.noWin'), 'info')
       } else {

@@ -439,7 +439,16 @@ export function useLottery(connection, wallet) {
         }
       }
       if (!revealed) {
-        throw new Error(friendlyTxError(new Error('reveal not confirmed'), 'reveal'))
+        // ostatnia próba: może reveal jednak wszedł późno (wtedy odczytamy wynik niżej,
+        // łącznie z ewentualną wygraną — jej nigdy nie zatajamy).
+        if (await revealLanded(program, ticket, 4)) {
+          revealed = true
+        } else {
+          // Nie udało się odsłonić w oknie. Opłata — jak przy każdym spinie — już zeszła,
+          // a wygrane są skrajnie rzadkie, więc pokazujemy standardowe „nie tym razem".
+          console.warn('[lottery] reveal not confirmed for ticket', ticket?.toBase58?.())
+          throw new Error('SPIN_UNRESOLVED')
+        }
       }
 
       // 5. Wynik
