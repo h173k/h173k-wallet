@@ -210,6 +210,7 @@ export default {
     spinFailed: "El giro falló: {msg}",
     costTitle: "Confirma el coste",
     costBody: "Este giro cuesta {amount} h173k ({mode}). ¿Continuar?",
+    costSol: "Más unos {sol} SOL en comisiones de red y de cuenta (cubiertas automáticamente con tus h173k si te queda poco SOL).",
     dontShowAgain: "No volver a mostrar",
     iAgree: "Acepto",
     winTitle: "¡Enhorabuena! ¡Has ganado!",

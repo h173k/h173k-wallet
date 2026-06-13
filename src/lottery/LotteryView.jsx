@@ -94,6 +94,7 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
   const [win, setWin] = useState(null) // { prize }
   const [reelWin, setReelWin] = useState(false)
   const [lastWinner, setLastWinner] = useState(undefined) // undefined=loading, null=none
+  const [solCost, setSolCost] = useState(null) // szacowany koszt spinu w SOL
 
   const [showIntro, setShowIntro] = useState(!getLotteryIntroAck())
   const [introAck, setIntroAck] = useState(false)
@@ -186,6 +187,14 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
   }, [lotteryConfigured, getLastWinner])
 
   useEffect(() => { refreshLastWinner() }, [refreshLastWinner])
+
+  // ── Szacowany koszt spinu w SOL (rent biletu + opłaty) ──────────────────────
+  const { estimateSpinSolCost } = lottery
+  useEffect(() => {
+    let alive = true
+    estimateSpinSolCost().then((v) => { if (alive) setSolCost(v) }).catch(() => {})
+    return () => { alive = false }
+  }, [estimateSpinSolCost])
 
   // ── Mode swipe ──────────────────────────────────────────────────────────────
   const touchX = useRef(null)
@@ -455,6 +464,7 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
           <div className="lottery-modal center">
             <h3>{t('lottery.costTitle')}</h3>
             <p>{t('lottery.costBody', { amount: formatSmartNumber(mode.feeH173k), mode: t(`lottery.mode_${mode.key}`) })}</p>
+            <p className="muted">{t('lottery.costSol', { sol: solCost != null ? solCost.toFixed(4) : '~0.0019' })}</p>
             <label className="modal-check" style={{ justifyContent: 'center' }}>
               <input type="checkbox" checked={dontShowCost} onChange={(e) => setDontShowCost(e.target.checked)} />
               {t('lottery.dontShowAgain')}

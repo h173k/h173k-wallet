@@ -184,7 +184,7 @@ export default {
     copyFailed: "Kopiowanie nie powiodło się",
   },
   lottery: {
-    title: "Wygraj h173k",
+    title: "Win h173k",
     chanceLabel: "Szansa",
     // Prompt powitalny
     introTitle: "Zanim zagrasz",
@@ -215,6 +215,7 @@ export default {
     // Potwierdzenie kosztu
     costTitle: "Potwierdź koszt",
     costBody: "Ten spin kosztuje {amount} h173k ({mode}). Kontynuować?",
+    costSol: "Plus około {sol} SOL na opłaty sieciowe i konto (pokrywane automatycznie z Twoich h173k, jeśli zabraknie SOL).",
     dontShowAgain: "Nie pokazuj mi tego więcej",
     iAgree: "Zgadzam się",
     // Wygrana

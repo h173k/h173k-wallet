@@ -210,6 +210,7 @@ export default {
     spinFailed: "Drehung fehlgeschlagen: {msg}",
     costTitle: "Kosten bestätigen",
     costBody: "Diese Drehung kostet {amount} h173k ({mode}). Fortfahren?",
+    costSol: "Plus etwa {sol} SOL an Netzwerk- und Kontogebühren (bei wenig SOL automatisch aus deinen h173k gedeckt).",
     dontShowAgain: "Nicht mehr anzeigen",
     iAgree: "Ich stimme zu",
     winTitle: "Glückwunsch! Du hast gewonnen!",

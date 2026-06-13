@@ -218,6 +218,7 @@ export default {
     // Cost confirm
     costTitle: "Confirm the cost",
     costBody: "This spin costs {amount} h173k ({mode}). Proceed?",
+    costSol: "Plus about {sol} SOL in network and account fees (auto-covered from your h173k if your SOL runs low).",
     dontShowAgain: "Don't show this again",
     iAgree: "I Agree",
     // Win

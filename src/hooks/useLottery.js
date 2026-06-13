@@ -15,6 +15,7 @@ import {
   SYSVAR_SLOT_HASHES_PUBKEY,
   SYSVAR_RENT_PUBKEY,
   SystemProgram,
+  LAMPORTS_PER_SOL,
 } from '@solana/web3.js'
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor'
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token'
@@ -32,6 +33,11 @@ import { useSwap } from './useSwap'
 
 const RAW = Math.pow(10, TOKEN_DECIMALS)
 const MAX_PRIZE_RAW = Math.round(LOTTERY_MAX_PRIZE_H173K * RAW)
+
+// Rozmiar danych konta biletu (PlayerTicket::LEN z lib.rs) — do wyceny rentu.
+const TICKET_ACCOUNT_LEN = 128
+// Przybliżona opłata sieciowa za 2 transakcje (commit + reveal), w lamportach.
+const SPIN_TX_FEES_LAMPORTS = 10000
 
 // u64 → 8-bajtowy bufor little-endian (do seedów PDA i commitmentu).
 function u64le(n) {
@@ -155,6 +161,20 @@ export function useLottery(connection, wallet) {
     }
     return null
   }, [configured, connection, vaultPDA])
+
+  /**
+   * Szacowany koszt spinu w SOL: rent za konto biletu (PDA tworzone przy commit
+   * i nie zamykane przez kontrakt → SOL faktycznie wydany) + opłaty sieciowe za
+   * dwie transakcje. Zwraca wartość w SOL.
+   */
+  const estimateSpinSolCost = useCallback(async () => {
+    try {
+      const rent = await connection.getMinimumBalanceForRentExemption(TICKET_ACCOUNT_LEN)
+      return (rent + SPIN_TX_FEES_LAMPORTS) / LAMPORTS_PER_SOL
+    } catch {
+      return 0.0019 // ostrożny fallback (rent ~128 B + opłaty)
+    }
+  }, [connection])
 
   // ── Rozgrywka: commit → wait → reveal ──────────────────────────────────────
   /**
@@ -284,9 +304,10 @@ export function useLottery(connection, wallet) {
       play,
       getLastWinner,
       estimatePrizeH173k,
+      estimateSpinSolCost,
       getVaultBalanceRaw,
     }),
-    [configured, play, getLastWinner, estimatePrizeH173k, getVaultBalanceRaw]
+    [configured, play, getLastWinner, estimatePrizeH173k, estimateSpinSolCost, getVaultBalanceRaw]
   )
 }
 

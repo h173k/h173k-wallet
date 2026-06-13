@@ -210,6 +210,7 @@ export default {
     spinFailed: "Échec du tour : {msg}",
     costTitle: "Confirmez le coût",
     costBody: "Ce tour coûte {amount} h173k ({mode}). Continuer ?",
+    costSol: "Plus environ {sol} SOL de frais de réseau et de compte (couverts automatiquement par vos h173k si votre SOL est bas).",
     dontShowAgain: "Ne plus afficher",
     iAgree: "J'accepte",
     winTitle: "Félicitations ! Vous avez gagné !",

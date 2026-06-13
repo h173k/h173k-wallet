@@ -210,6 +210,7 @@ export default {
     spinFailed: "ማሽከርከር አልተሳካም፦ {msg}",
     costTitle: "ወጪውን ያረጋግጡ",
     costBody: "ይህ ማሽከርከር {amount} h173k ({mode}) ያስከፍላል። ይቀጥሉ?",
+    costSol: "በተጨማሪ ወደ {sol} SOL የኔትወርክ እና የመለያ ክፍያ (SOL ካነሰ ከ h173k በራስ-ሰር ይሸፈናል)።",
     dontShowAgain: "ይህን ዳግመኛ አታሳይ",
     iAgree: "እስማማለሁ",
     winTitle: "እንኳን ደስ አለዎት! አሸንፈዋል!",
