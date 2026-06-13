@@ -87,6 +87,68 @@ function friendlyTxError(e, phase) {
   return `${phase}: ${msg}`
 }
 
+// Czy to błąd przekroczenia czasu potwierdzenia (tx mogła wejść lub nie).
+function isConfirmTimeoutError(e) {
+  const m = String(e?.message || e || '')
+  return (
+    m.includes('was not confirmed') ||
+    m.includes('block height exceeded') ||
+    m.includes('Timed out') ||
+    m.includes('TransactionExpired') ||
+    m.includes('expired')
+  )
+}
+
+// Czy bilet już istnieje na łańcuchu (commit wszedł)? Krótki polling.
+async function ticketLanded(program, ticket, tries = 4) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      await program.account.playerTicket.fetch(ticket)
+      return true
+    } catch {
+      /* jeszcze nie ma */
+    }
+    if (i < tries - 1) await sleep(1200)
+  }
+  return false
+}
+
+// Czy bilet jest już odsłonięty (reveal wszedł)? Krótki polling.
+async function revealLanded(program, ticket, tries = 4) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const tk = await program.account.playerTicket.fetch(ticket)
+      if (tk.isRevealed) return true
+    } catch {
+      /* brak konta */
+    }
+    if (i < tries - 1) await sleep(1200)
+  }
+  return false
+}
+
+/**
+ * Wysyła instrukcję Anchora i potwierdza strategią blockhash + lastValidBlockHeight.
+ * W przeciwieństwie do .rpc() (sztywny limit 30 s) czeka aż blockhash wygaśnie,
+ * więc rzadziej daje fałszywy timeout, a gdy już zwróci błąd wygaśnięcia — tx jest
+ * na pewno martwa, więc bezpiecznie ją ponowić (bez ryzyka podwójnej opłaty).
+ * @returns {Promise<string>} podpis transakcji
+ */
+async function sendAndConfirmTx(connection, wallet, methodsBuilder) {
+  const tx = await methodsBuilder.transaction()
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+  tx.recentBlockhash = blockhash
+  tx.lastValidBlockHeight = lastValidBlockHeight
+  tx.feePayer = wallet.publicKey
+  wallet.signTransaction(tx)
+  const sig = await connection.sendRawTransaction(tx.serialize(), SEND_OPTS)
+  await connection.confirmTransaction(
+    { signature: sig, blockhash, lastValidBlockHeight },
+    'confirmed'
+  )
+  return sig
+}
+
 export function useLottery(connection, wallet) {
   const { withAutoSOL } = useSwap(connection, wallet)
 
@@ -252,34 +314,44 @@ export function useLottery(connection, wallet) {
         const cur = await connection.getSlot('processed')
         slotHint = Math.max(0, cur - 2)
         ;[ticket] = ticketPDA(player, slotHint)
-        return program.methods
-          .commitGuess(
-            modeObj.mode,
-            new BN(guess),
-            Buffer.from(commitment),
-            new BN(slotHint)
-          )
-          .accounts({
-            config,
-            vault,
-            ticket,
-            playerTokenAccount: ata,
-            h173kMint: TOKEN_MINT,
-            player,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-            rent: SYSVAR_RENT_PUBKEY,
-          })
-          .rpc(SEND_OPTS)
+        return sendAndConfirmTx(
+          connection,
+          wallet,
+          program.methods
+            .commitGuess(
+              modeObj.mode,
+              new BN(guess),
+              Buffer.from(commitment),
+              new BN(slotHint)
+            )
+            .accounts({
+              config,
+              vault,
+              ticket,
+              playerTokenAccount: ata,
+              h173kMint: TOKEN_MINT,
+              player,
+              tokenProgram: TOKEN_PROGRAM_ID,
+              systemProgram: SystemProgram.programId,
+              rent: SYSVAR_RENT_PUBKEY,
+            })
+        )
       }
       await ensureSol()
       try {
         await doCommit()
       } catch (e) {
         if (isInsufficientSolError(e)) {
-          // jedyny przypadek wart ponowienia: faktycznie zabrakło SOL → dokup raz i spróbuj ponownie
+          // faktyczny brak SOL → dokup raz i spróbuj ponownie
           await ensureSol()
           await doCommit()
+        } else if (isConfirmTimeoutError(e)) {
+          // timeout/wygaśnięcie: sprawdź, czy commit jednak wszedł (nie podwajaj opłaty).
+          // Jeśli bilet już istnieje → kontynuuj. Jeśli nie — poprzednia tx jest martwa
+          // (blockhash wygasł), więc ponów raz ze świeżym slotem.
+          if (!(await ticketLanded(program, ticket))) {
+            await doCommit()
+          }
         } else {
           throw new Error(friendlyTxError(e, 'commit'))
         }
@@ -301,28 +373,36 @@ export function useLottery(connection, wallet) {
         } catch {
           /* brak konta? spróbuj odsłonić */
         }
-        return program.methods
-          .revealResult(Buffer.from(secretSalt), new BN(slotHint))
-          .accounts({
-            config,
-            vault,
-            ticket,
-            winnerTokenAccount: ata,
-            h173kMint: TOKEN_MINT,
-            slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,
-            player,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .rpc(SEND_OPTS)
+        return sendAndConfirmTx(
+          connection,
+          wallet,
+          program.methods
+            .revealResult(Buffer.from(secretSalt), new BN(slotHint))
+            .accounts({
+              config,
+              vault,
+              ticket,
+              winnerTokenAccount: ata,
+              h173kMint: TOKEN_MINT,
+              slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,
+              player,
+              tokenProgram: TOKEN_PROGRAM_ID,
+            })
+        )
       }
       await ensureSol()
-      let revealSig
+      let revealSig = null
       try {
         revealSig = await doReveal()
       } catch (e) {
         if (isInsufficientSolError(e)) {
           await ensureSol()
           revealSig = await doReveal()
+        } else if (isConfirmTimeoutError(e)) {
+          // timeout: jeśli reveal jednak wszedł — czytamy wynik; w innym wypadku ponów raz.
+          if (!(await revealLanded(program, ticket))) {
+            revealSig = await doReveal()
+          }
         } else {
           throw new Error(friendlyTxError(e, 'reveal'))
         }
@@ -335,7 +415,8 @@ export function useLottery(connection, wallet) {
 
       let prize = 0
       if (won) {
-        prize = await readPrizeFromTx(connection, revealSig, ata)
+        // revealSig może być null, jeśli odzyskaliśmy się po timeout — wtedy fallback szacuje.
+        if (revealSig) prize = await readPrizeFromTx(connection, revealSig, ata)
         if (!prize) prize = await estimatePrizeH173k() // fallback
       }
 
