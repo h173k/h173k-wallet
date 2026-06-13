@@ -45,6 +45,10 @@ import { QRCodeGenerator, QRCodeScanner } from './components/QRCode'
 import { useSwap } from './hooks/useSwap'
 import { useEscrowProgram } from './hooks/useEscrow'
 
+// Lottery (Win h173k)
+import LotteryView from './lottery/LotteryView'
+import './lottery/lottery.css'
+
 // P2P Marketplace
 import P2PMarketplace from './p2p/P2PMarketplace'
 import { getP2PProfile, saveP2PProfile, isP2POnboarded } from './p2p/useP2P'
@@ -589,7 +593,15 @@ function WalletApp({ connection, onRpcChange }) {
       )}
       
       {currentView === 'receive' && (
-        <ReceiveView publicKey={publicKey} onBack={() => setCurrentView('main')} showToast={showToast} />
+        <ReceiveView publicKey={publicKey} onBack={() => setCurrentView('main')} showToast={showToast} onWin={() => setCurrentView('lottery')} />
+      )}
+
+      {currentView === 'lottery' && (
+        <LotteryView
+          connection={connection} publicKey={publicKey}
+          onBack={() => setCurrentView('receive')} showToast={showToast}
+          onRefresh={fetchBalances} h173kDecimals={h173kDecimals}
+        />
       )}
 
       {currentView === 'messenger' && (
@@ -1673,7 +1685,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
 }
 
 // ========== RECEIVE VIEW ==========
-function ReceiveView({ publicKey, onBack, showToast }) {
+function ReceiveView({ publicKey, onBack, showToast, onWin }) {
   const { t } = useTranslation()
   const address = publicKey.toString()
   // Use plain address for QR - universal, works for both SOL and any SPL tokens
@@ -1690,7 +1702,10 @@ function ReceiveView({ publicKey, onBack, showToast }) {
       <div className="receive-card">
         <QRCodeGenerator data={address} size={220} />
         <div className="address-display" onClick={handleCopy}><span className="address-text">{address}</span><span className="copy-icon"><CopyIcon /></span></div>
-        <button className="btn btn-secondary" onClick={handleCopy}>{t('receive.copyAddress')}</button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={handleCopy}>{t('receive.copyAddress')}</button>
+          <button className="btn btn-action" style={{ flex: 1 }} onClick={onWin}>{t('receive.winH173k')}</button>
+        </div>
       </div>
       <div className="receive-info"><p>{t('receive.info1')}</p><p>{t('receive.info2')}</p></div>
     </div>
@@ -3731,7 +3746,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
 
-      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.4.6.5</span></div></div>
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.0.0</span></div></div>
     </div>
   )
 }

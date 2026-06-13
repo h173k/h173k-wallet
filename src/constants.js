@@ -175,6 +175,69 @@ export function saveH173KDecimals(decimals) {
   }
 }
 
+// ========== LOTTERY (Win h173k) ==========
+//
+// ⚠️  PRZED UŻYCIEM: wklej tu adres wdrożonego programu loterii (declare_id! z lib.rs).
+//     Dopóki pole jest puste, ekran loterii działa w trybie „podglądu" —
+//     pokazuje pełny interfejs, ale spin zwraca komunikat „loteria niewdrożona".
+//     Dzięki temu reszta portfela jest całkowicie bezpieczna.
+export const LOTTERY_PROGRAM_ID_STR = 'Go148cND1CrZC7hYShNsLEYHUHwnZEJRgqtVaNMGTVRy'
+
+export function getLotteryProgramId() {
+  try {
+    if (LOTTERY_PROGRAM_ID_STR && LOTTERY_PROGRAM_ID_STR.trim()) {
+      return new PublicKey(LOTTERY_PROGRAM_ID_STR.trim())
+    }
+  } catch {
+    /* nieprawidłowy adres → traktuj jako niewdrożone */
+  }
+  return null
+}
+
+export function isLotteryConfigured() {
+  return getLotteryProgramId() !== null
+}
+
+// Tryby loterii. Skala raw = wartość × 10^TOKEN_DECIMALS.
+// Mapowanie zgodne z lib.rs:
+//   mode 1 → 1:10   (fee 0.2),   mode 2 → 1:100 (fee 0.02),  mode 3 → 1:1000 (fee 0.002)
+// Kolejność swipe w UI: [Ultra High] ← [Very High] → [High]
+export const LOTTERY_MODES = [
+  { mode: 1, key: 'ultra', oneIn: 10,   feeH173k: 0.2 },
+  { mode: 2, key: 'very',  oneIn: 100,  feeH173k: 0.02 },
+  { mode: 3, key: 'high',  oneIn: 1000, feeH173k: 0.002 },
+]
+
+// Indeks domyślnego trybu w LOTTERY_MODES → „Very High" (1:100), środkowy.
+export const LOTTERY_DEFAULT_MODE_INDEX = 1
+
+// Maksymalna nagroda (MAX_PRIZE w lib.rs): 1 h173k. Realna wygrana = min(vault/2, 1 h173k).
+export const LOTTERY_MAX_PRIZE_H173K = 1
+
+// Stała przewaga domu (token-sink, lib.rs: „przewaga domu = 50 % zawsze").
+export const LOTTERY_HOUSE_EDGE = 0.5
+
+// Limit odczytów RPC przy wyszukiwaniu ostatniego zwycięzcy (nie szukaj zbyt agresywnie).
+export const LOTTERY_LAST_WINNER_READ_BUDGET = 100
+
+// „Nie pokazuj mi tego więcej" dla potwierdzenia kosztu spinu.
+const LOTTERY_SKIP_COST_KEY = 'h173k_lottery_skip_cost_confirm'
+export function getLotterySkipCostConfirm() {
+  try { return localStorage.getItem(LOTTERY_SKIP_COST_KEY) === 'true' } catch { return false }
+}
+export function saveLotterySkipCostConfirm(value) {
+  try { localStorage.setItem(LOTTERY_SKIP_COST_KEY, value ? 'true' : 'false') } catch {}
+}
+
+// Czy gracz potwierdził prompt powitalny (zrozumienie zasady token-sink) w tej przeglądarce.
+const LOTTERY_INTRO_KEY = 'h173k_lottery_intro_ack'
+export function getLotteryIntroAck() {
+  try { return localStorage.getItem(LOTTERY_INTRO_KEY) === 'true' } catch { return false }
+}
+export function saveLotteryIntroAck(value) {
+  try { localStorage.setItem(LOTTERY_INTRO_KEY, value ? 'true' : 'false') } catch {}
+}
+
 // Offer status enum
 export const OfferStatus = {
   PendingSeller: 0,

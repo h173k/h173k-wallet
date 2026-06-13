@@ -1,0 +1,503 @@
+/* ============================================================================
+   Lottery (Win h173k) — styles
+   Spójne z App.css: biel na ciemnym tle, te same zmienne (--color-white-*),
+   promienie (--border-radius-*) i czcionka (--font-*).
+   ============================================================================ */
+
+.lottery-view {
+  padding-top: 16px;
+  padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 40px);
+}
+
+/* Logo h173k (wyżej, nad nazwą trybu) */
+.lottery-logo {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+}
+.lottery-logo img {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--border-radius-full);
+  object-fit: cover;
+}
+
+/* Środkowa sekcja: rozłożona od góry (logo wyżej), z odstępami */
+.lottery-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 26px;
+  padding-top: 40px;
+}
+
+/* Grupa: duża nazwa trybu + bęben (niżej o ~połowę wysokości logo) */
+.reel-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 32px;
+}
+
+/* Mały label nad nazwą trybu — doprecyzowuje, że tryby to wysokość szansy */
+.chance-label {
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--color-white-50);
+  margin-bottom: 6px;
+}
+
+/* Duża nazwa trybu nad bębnem — przesuwa się jak picker pod bębnem */
+.mode-name-window {
+  width: 100%;
+  overflow: hidden;
+  margin-bottom: 18px;
+  touch-action: pan-y;
+}
+.mode-name-track {
+  display: flex;
+  transition: transform 0.32s cubic-bezier(.2,.7,.2,1);
+}
+.mode-name-slide {
+  flex: 0 0 100%;
+  text-align: center;
+  font-size: 40px;
+  font-weight: var(--font-medium);
+  letter-spacing: 0.5px;
+  line-height: 1.05;
+  opacity: 0.4;
+  transform: scale(0.92);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.mode-name-slide.active {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Grupa wyboru trybu (dots + picker + info trzymają się razem) */
+.mode-section {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Pole spinu przyklejone do dołu ekranu */
+.spin-zone {
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+/* Nagłówek z przyciskiem back (jak w innych widokach) */
+.lottery-view .view-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+/* ── Bęben (poziomy) ─────────────────────────────────────────────────────────── */
+.reel-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0;
+}
+
+.reel-window {
+  --cell: 72px;
+  --visible: 5;            /* widoczne przegródki (nieparzysta liczba → środek = wynik) */
+  position: relative;
+  width: calc(var(--cell) * var(--visible));
+  max-width: 100%;
+  height: calc(var(--cell) + 16px);
+  overflow: hidden;
+  border: 1px solid var(--color-white-20);
+  border-radius: var(--border-radius-lg);
+  background: var(--color-white-05);
+}
+
+.reel-strip {
+  display: flex;
+  height: 100%;
+  will-change: transform;
+}
+
+.reel-cell {
+  flex: 0 0 var(--cell);
+  width: var(--cell);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reel-emoji {
+  font-size: 38px;
+  line-height: 1;
+}
+
+.reel-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--border-radius-full);
+  object-fit: cover;
+}
+
+/* Krawędziowy blur: wlot/wylot — najsilniejszy przy brzegu, zanika ku środkowi.
+   Symbol wjeżdżający z brzegu „wyostrza się" (blur in), wyjeżdżający „rozmywa się" (blur out). */
+.reel-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--cell) * 1.6);
+  pointer-events: none;
+  z-index: 2;
+  backdrop-filter: blur(3.5px);
+  -webkit-backdrop-filter: blur(3.5px);
+}
+.reel-fade.left {
+  left: 0;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 22%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 0%, #000 22%, transparent 100%);
+}
+.reel-fade.right {
+  right: 0;
+  -webkit-mask-image: linear-gradient(to left, #000 0%, #000 22%, transparent 100%);
+  mask-image: linear-gradient(to left, #000 0%, #000 22%, transparent 100%);
+}
+
+/* Lekki cień przy brzegach (głębia bębna) */
+.reel-window::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow:
+    inset 22px 0 22px -18px rgba(0,0,0,0.7),
+    inset -22px 0 22px -18px rgba(0,0,0,0.7);
+  border-radius: inherit;
+}
+
+/* Ramka centralnej przegródki (linia wyniku) */
+.reel-center {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 50%;
+  width: var(--cell);
+  transform: translateX(-50%);
+  border-left: 1px solid var(--color-white-20);
+  border-right: 1px solid var(--color-white-20);
+  z-index: 4;
+  pointer-events: none;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.reel-window.win {
+  border-color: var(--color-success);
+}
+.reel-window.win .reel-center {
+  border-color: var(--color-success);
+  box-shadow: 0 0 18px rgba(74, 222, 128, 0.35);
+}
+
+/* ── Ostatni zwycięzca ──────────────────────────────────────────────────────── */
+.last-winner {
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-white-50);
+  line-height: 1.6;
+  min-height: 36px;
+  margin-bottom: 0;
+}
+.last-winner .lw-addr {
+  font-family: monospace;
+  color: var(--color-white-70);
+}
+.last-winner .lw-amt {
+  color: var(--color-white);
+}
+.last-winner .lw-empty {
+  color: var(--color-gray-faded);
+}
+
+/* ── Wybór trybu (swipe label) ──────────────────────────────────────────────── */
+.mode-picker {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 8px;
+  touch-action: pan-y;
+}
+.mode-track {
+  display: flex;
+  align-items: stretch;
+  transition: transform 0.32s cubic-bezier(.2,.7,.2,1);
+}
+.mode-slide {
+  flex: 0 0 100%;
+  text-align: center;
+  padding: 10px 8px;
+  opacity: 0.45;
+  transform: scale(0.9);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.mode-slide.active {
+  opacity: 1;
+  transform: scale(1);
+}
+.mode-name {
+  font-size: 26px;
+  font-weight: var(--font-medium);
+  letter-spacing: 0.5px;
+}
+.mode-odds {
+  font-size: 26px;
+  font-weight: var(--font-medium);
+  color: var(--color-white-70);
+  margin-top: 2px;
+}
+.mode-cost {
+  font-size: 17px;
+  color: var(--color-white-50);
+  margin-top: 8px;
+}
+
+.mode-dots {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+.mode-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-white-20);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.mode-dot.on {
+  background: var(--color-white);
+  transform: scale(1.15);
+}
+
+.mode-arrows {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.mode-arrow {
+  pointer-events: auto;
+  background: none;
+  border: none;
+  color: var(--color-white-50);
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+}
+.mode-arrow:hover { color: var(--color-white); }
+.mode-arrow:disabled { opacity: 0.25; cursor: default; }
+
+/* „więcej informacji" mały przycisk */
+.mode-info-btn {
+  display: block;
+  margin: 14px auto 0;
+  background: none;
+  border: none;
+  color: var(--color-white-50);
+  font-size: 15px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mode-info-btn:hover { color: var(--color-white); }
+
+/* ── Swipe to spin ──────────────────────────────────────────────────────────── */
+.spin-track {
+  position: relative;
+  height: 60px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--color-white-20);
+  background: var(--color-white-05);
+  overflow: hidden;
+  user-select: none;
+  margin-bottom: 8px;
+}
+.spin-track.disabled { opacity: 0.5; }
+.spin-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 56px;
+  background: var(--color-white-10);
+}
+.spin-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--color-white-50);
+  pointer-events: none;
+}
+.spin-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--border-radius-sm);
+  background: var(--color-white);
+  color: var(--color-black);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+}
+.spin-thumb:active { cursor: grabbing; }
+.spin-thumb.snap { transition: left 0.25s ease; }
+
+.spin-hint {
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-gray-faded);
+  min-height: 18px;
+}
+
+/* ── Modale / paneliki ──────────────────────────────────────────────────────── */
+.lottery-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1000;
+}
+.lottery-modal {
+  width: 100%;
+  max-width: 420px;
+  max-height: 86vh;
+  overflow-y: auto;
+  background: #0c0c0c;
+  border: 1px solid var(--color-white-10);
+  border-radius: var(--border-radius-lg);
+  padding: 24px;
+}
+.lottery-modal h3 {
+  font-size: 20px;
+  font-weight: var(--font-medium);
+  margin-bottom: 14px;
+}
+.lottery-modal p {
+  font-size: 14px;
+  color: var(--color-white-70);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+.lottery-modal .muted {
+  color: var(--color-white-50);
+  font-size: 13px;
+}
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+.modal-actions .btn { flex: 1; }
+
+.modal-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-white-70);
+  margin-top: 14px;
+  cursor: pointer;
+}
+.modal-check input { width: 16px; height: 16px; accent-color: #fff; }
+
+/* Tabela porównania szans (info panel) */
+.odds-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin: 10px 0 4px;
+}
+.odds-table th,
+.odds-table td {
+  text-align: left;
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--color-white-10);
+}
+.odds-table th {
+  color: var(--color-white-50);
+  font-weight: var(--font-regular);
+}
+.odds-table td.num { font-variant-numeric: tabular-nums; }
+
+.fact-block {
+  background: var(--color-white-05);
+  border: 1px solid var(--color-white-10);
+  border-radius: var(--border-radius-md);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.fact-block .fact-mode {
+  font-weight: var(--font-medium);
+  margin-bottom: 6px;
+}
+.fact-block ul { list-style: none; }
+.fact-block li {
+  font-size: 12.5px;
+  color: var(--color-white-70);
+  padding: 2px 0;
+}
+
+.honest-note {
+  border-left: 2px solid var(--color-warning);
+  padding-left: 12px;
+  font-size: 12.5px;
+  color: var(--color-white-70);
+  line-height: 1.6;
+  margin-top: 10px;
+}
+
+/* Win panel */
+.win-trophy {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  background: rgba(251, 191, 36, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-warning);
+}
+.win-amount {
+  font-size: 30px;
+  font-weight: var(--font-medium);
+  text-align: center;
+  margin: 6px 0 4px;
+}
+.win-sub {
+  text-align: center;
+  color: var(--color-white-50);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.lottery-modal.center { text-align: center; }
