@@ -39,6 +39,13 @@ const TICKET_ACCOUNT_LEN = 128
 // Przybliżona opłata sieciowa za 2 transakcje (commit + reveal), w lamportach.
 const SPIN_TX_FEES_LAMPORTS = 10000
 
+// Opcje wysyłki transakcji. skipPreflight pomija symulację, która przy
+// load-balancingu węzłów RPC (Helius) bywa wykonywana na węźle nieznającym
+// jeszcze świeżego blockhasha → fałszywy "Blockhash not found". Sama transakcja
+// jest poprawna; lider i tak zweryfikuje blockhash. maxRetries pozwala RPC
+// ponownie rozesłać transakcję.
+const SEND_OPTS = { skipPreflight: true, commitment: 'confirmed', maxRetries: 5 }
+
 // u64 → 8-bajtowy bufor little-endian (do seedów PDA i commitmentu).
 function u64le(n) {
   const bn = BN.isBN(n) ? n : new BN(n)
@@ -236,7 +243,7 @@ export function useLottery(connection, wallet) {
               systemProgram: SystemProgram.programId,
               rent: SYSVAR_RENT_PUBKEY,
             })
-            .rpc()
+            .rpc(SEND_OPTS)
         },
         onSwap
       )
@@ -269,7 +276,7 @@ export function useLottery(connection, wallet) {
             player,
             tokenProgram: TOKEN_PROGRAM_ID,
           })
-          .rpc()
+          .rpc(SEND_OPTS)
       }, onSwap)
 
       // 5. Wynik
