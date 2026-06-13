@@ -65,6 +65,28 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
+// Czy błąd transakcji wynika z braku SOL (wtedy warto dokupić SOL i ponowić)?
+function isInsufficientSolError(e) {
+  const m = String(e?.message || e || '').toLowerCase()
+  return (
+    m.includes('insufficient') ||
+    m.includes('no record of a prior credit') ||
+    m.includes('debit an account')
+  )
+}
+
+// Czytelny komunikat błędu transakcji (zamiast np. web3.js „Unknown action 'undefined'").
+function friendlyTxError(e, phase) {
+  let msg = String(e?.message || e || 'unknown error')
+  if (msg.includes('Unknown action') || msg.includes('undefined')) {
+    msg = 'network rejected the transaction, please try again'
+  } else if (msg.includes('Blockhash not found')) {
+    msg = 'network was busy (blockhash), please try again'
+  }
+  if (msg.length > 180) msg = msg.slice(0, 180) + '…'
+  return `${phase}: ${msg}`
+}
+
 export function useLottery(connection, wallet) {
   const { withAutoSOL } = useSwap(connection, wallet)
 
@@ -216,37 +238,52 @@ export function useLottery(connection, wallet) {
       let slotHint = null
       let ticket = null
 
-      // 2. COMMIT — opłata trafia do vaultu (withAutoSOL dba o SOL + bufor na reveal)
+      // Koszt SOL całego spinu (rent biletu + opłaty). Uzupełniamy SOL PROAKTYWNIE
+      // z tym marginesem — withAutoSOL z operacją-no-op robi tylko top-up, NIE wchodzi
+      // w pętlę swap+retry. Dzięki temu nieudana transakcja nie wywoła kilku swapów.
+      const spinSolCost = await estimateSpinSolCost()
+      const ensureSol = () => withAutoSOL(async () => true, onSwap, spinSolCost)
+
+      // 2. COMMIT — opłata trafia do vaultu
       onStage?.('commit')
-      await withAutoSOL(
-        async () => {
-          // świeży slot tuż przed wysłaniem; 'processed' = najnowszy, minus mały
-          // margines, by hint nigdy nie wyprzedził clock.slot walidatora.
-          const cur = await connection.getSlot('processed')
-          slotHint = Math.max(0, cur - 2)
-          ;[ticket] = ticketPDA(player, slotHint)
-          return program.methods
-            .commitGuess(
-              modeObj.mode,
-              new BN(guess),
-              Buffer.from(commitment),
-              new BN(slotHint)
-            )
-            .accounts({
-              config,
-              vault,
-              ticket,
-              playerTokenAccount: ata,
-              h173kMint: TOKEN_MINT,
-              player,
-              tokenProgram: TOKEN_PROGRAM_ID,
-              systemProgram: SystemProgram.programId,
-              rent: SYSVAR_RENT_PUBKEY,
-            })
-            .rpc(SEND_OPTS)
-        },
-        onSwap
-      )
+      const doCommit = async () => {
+        // świeży slot tuż przed wysłaniem; 'processed' = najnowszy, minus mały
+        // margines, by hint nigdy nie wyprzedził clock.slot walidatora.
+        const cur = await connection.getSlot('processed')
+        slotHint = Math.max(0, cur - 2)
+        ;[ticket] = ticketPDA(player, slotHint)
+        return program.methods
+          .commitGuess(
+            modeObj.mode,
+            new BN(guess),
+            Buffer.from(commitment),
+            new BN(slotHint)
+          )
+          .accounts({
+            config,
+            vault,
+            ticket,
+            playerTokenAccount: ata,
+            h173kMint: TOKEN_MINT,
+            player,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+            rent: SYSVAR_RENT_PUBKEY,
+          })
+          .rpc(SEND_OPTS)
+      }
+      await ensureSol()
+      try {
+        await doCommit()
+      } catch (e) {
+        if (isInsufficientSolError(e)) {
+          // jedyny przypadek wart ponowienia: faktycznie zabrakło SOL → dokup raz i spróbuj ponownie
+          await ensureSol()
+          await doCommit()
+        } else {
+          throw new Error(friendlyTxError(e, 'commit'))
+        }
+      }
 
       // 3. Odczyt rzeczywistego slotu commitu i odczekanie min. 2 slotów
       onStage?.('waiting')
@@ -256,8 +293,8 @@ export function useLottery(connection, wallet) {
 
       // 4. REVEAL — idempotentnie (jeśli już odsłonięty, tylko czytamy wynik)
       onStage?.('reveal')
-      const revealSig = await withAutoSOL(async () => {
-        // strażnik idempotencji — bezpieczne retry withAutoSOL
+      const doReveal = async () => {
+        // strażnik idempotencji — bezpieczny przy ewentualnym ponowieniu
         try {
           const tk = await program.account.playerTicket.fetch(ticket)
           if (tk.isRevealed) return null
@@ -277,7 +314,19 @@ export function useLottery(connection, wallet) {
             tokenProgram: TOKEN_PROGRAM_ID,
           })
           .rpc(SEND_OPTS)
-      }, onSwap)
+      }
+      await ensureSol()
+      let revealSig
+      try {
+        revealSig = await doReveal()
+      } catch (e) {
+        if (isInsufficientSolError(e)) {
+          await ensureSol()
+          revealSig = await doReveal()
+        } else {
+          throw new Error(friendlyTxError(e, 'reveal'))
+        }
+      }
 
       // 5. Wynik
       const finalTk = await program.account.playerTicket.fetch(ticket)
@@ -302,6 +351,7 @@ export function useLottery(connection, wallet) {
       ticketPDA,
       withAutoSOL,
       estimatePrizeH173k,
+      estimateSpinSolCost,
     ]
   )
 
