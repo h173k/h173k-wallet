@@ -655,21 +655,20 @@ export function useSwap(connection, wallet) {
       const currentLamports = await connection.getBalance(wallet.publicKey)
       const currentSOL = currentLamports / LAMPORTS_PER_SOL
 
-      // Replenish proactively if:
-      //   a) below user-configured threshold, OR
-      //   b) current SOL won't cover the operation's extra cost (e.g. account creation rent)
-      //      — even if above the threshold, we need enough for swapTxCost + extraSOLNeeded.
+      // Replenish proactively only when SOL would not safely cover this operation.
       // Floor guard: must have at least swapTxCost to pay for the replenish swap itself.
       const WSOL_ATA_RENT = 0.00204
       const actualSwapFloor = WSOL_ATA_RENT + swapTxCost  // 0.002145 — min do kolejnego swapa
 
+      // Minimum SOL needed to (a) wykonać tę operację (extraSOLNeeded, np. rent biletu)
+      // ORAZ (b) wciąż móc opłacić przyszły swap. Poniżej tego progu — dokup SOL.
+      // Próg jest mniejszy od TARGET, więc po jednym top-upie NIE wpadamy w pętlę
+      // ciągłych swapów (nie marnujemy h173k), a jednocześnie nigdy nie zabraknie SOL.
+      const operationFloor = extraSOLNeeded + actualSwapFloor
+
       const needsReplenish =
-      (
-        currentSOL < settings.threshold ||
-        (extraSOLNeeded > 0 && currentSOL < totalNeeded) ||
-        (currentSOL - extraSOLNeeded < settings.replenishTo + actualSwapFloor)  // ← NOWY WARUNEK
-      ) &&
-      currentSOL >= swapTxCost
+        (currentSOL < settings.threshold || currentSOL < operationFloor) &&
+        currentSOL >= swapTxCost
 
       if (needsReplenish) {
         // How much to buy: enough to reach TARGET from current balance,
