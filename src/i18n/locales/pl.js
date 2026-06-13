@@ -184,7 +184,7 @@ export default {
     copyFailed: "Kopiowanie nie powiodło się",
   },
   lottery: {
-    title: "Win h173k",
+    title: "Wygraj h173k",
     chanceLabel: "Szansa",
     // Prompt powitalny
     introTitle: "Zanim zagrasz",
