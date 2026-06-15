@@ -714,7 +714,7 @@ export function useEscrowProgram(connection, wallet) {
    * Read offer by code - for import functionality
    * This is the ONLY case where we search all offers including closed ones
    */
-  const readOfferByCode = useCallback(async (code, forceBlockchainCheck = false) => {
+  const readOfferByCode = useCallback(async (code, forceBlockchainCheck = false, persistToCache = true) => {
     const program = getProgram()
     if (!program) throw new Error('Wallet not connected')
 
@@ -762,13 +762,17 @@ export function useEscrowProgram(connection, wallet) {
         }
       }
 
-      // Cache this offer
-      const serialized = serializeOffer(account, publicKey)
-      if (isTerminalStatus(account.status)) {
-        serialized.isTerminal = true
-        serialized.terminalAt = Date.now()
+      // Cache this offer — only when persisting. Searching alone must NOT add the
+      // contract to the list; it is persisted later, on explicit import confirmation
+      // (see cacheOffer / handleImport).
+      if (persistToCache) {
+        const serialized = serializeOffer(account, publicKey)
+        if (isTerminalStatus(account.status)) {
+          serialized.isTerminal = true
+          serialized.terminalAt = Date.now()
+        }
+        updateCachedOffer(walletKey, publicKey.toString(), serialized)
       }
-      updateCachedOffer(walletKey, publicKey.toString(), serialized)
 
       console.log('✅ Found on blockchain:', publicKey.toString())
       return { publicKey, ...account }
@@ -807,6 +811,21 @@ export function useEscrowProgram(connection, wallet) {
       throw err
     }
   }, [getProgram, wallet?.publicKey])
+
+  /**
+   * Persist a found offer to the local cache so it appears on the contract list.
+   * Called on explicit import confirmation (NOT during search).
+   */
+  const cacheOffer = useCallback((offer) => {
+    if (!wallet?.publicKey || !offer?.publicKey) return
+    const walletKey = wallet.publicKey.toString()
+    const serialized = serializeOffer(offer, offer.publicKey)
+    if (isTerminalStatus(offer.status)) {
+      serialized.isTerminal = true
+      serialized.terminalAt = Date.now()
+    }
+    updateCachedOffer(walletKey, offer.publicKey.toString(), serialized)
+  }, [wallet?.publicKey])
 
   /**
    * Create a new offer
@@ -1212,6 +1231,7 @@ export function useEscrowProgram(connection, wallet) {
     fetchAllUserOffers,
     findOfferByCode,
     readOfferByCode,
+    cacheOffer,
     fetchOfferStatus,
     createOffer,
     acceptOffer,

@@ -2677,9 +2677,10 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
     setFoundContract(null)
     
     try {
-      // Use readOfferByCode if available, otherwise findOfferByCode
+      // Use readOfferByCode if available, otherwise findOfferByCode.
+      // persistToCache=false: searching must NOT add the contract to the list.
       const offer = await escrow.readOfferByCode ? 
-        await escrow.readOfferByCode(code.trim()) : 
+        await escrow.readOfferByCode(code.trim(), false, false) : 
         await escrow.findOfferByCode(code.trim())
       
       if (!offer) {
@@ -2721,6 +2722,9 @@ function ImportContractView({ escrow, onBack, showToast, onSuccess, h173kDecimal
       setError(t('importContract.errEnterName'))
       return
     }
+    
+    // Persist to cache now (on confirmation) so it appears on the list.
+    if (escrow.cacheOffer) escrow.cacheOffer(foundContract)
     
     onSuccess({
       publicKey: foundContract.publicKey,
