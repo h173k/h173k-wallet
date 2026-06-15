@@ -11,6 +11,7 @@ import {
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor'
 import { PROGRAM_ID, TOKEN_MINT, TOKEN_DECIMALS, OfferStatus } from '../constants'
 import { IDL } from '../idl'
+import { translate } from '../i18n'
 import { 
   getBuyerIndexPDA, 
   getSellerIndexPDA,
@@ -79,6 +80,37 @@ async function getReferralPrice(connection, providedPrice) {
 const OFFERS_CACHE_KEY = 'h173k_offers_cache'
 const LAST_SYNC_KEY = 'h173k_last_sync'
 
+// Limits
+const MAX_OPEN_CONTRACTS = 50   // max simultaneously open (active) contracts per user
+const MAX_ONCHAIN_FETCH = 100   // max contracts verified against the blockchain per list load
+const MAX_CACHE_HISTORY = 200   // max offers kept in localStorage per wallet (oldest evicted)
+const MULTI_FETCH_CHUNK = 100   // getMultipleAccounts hard limit per request
+
+// Rotating cursor for paginated verification of suspected-stale offers (per wallet)
+const VERIFY_CURSOR_KEY = 'h173k_verify_cursor'
+
+function loadVerifyCursor(walletPubkey) {
+  try {
+    const raw = localStorage.getItem(VERIFY_CURSOR_KEY)
+    if (!raw) return 0
+    const data = JSON.parse(raw)
+    return Number(data[walletPubkey]) || 0
+  } catch {
+    return 0
+  }
+}
+
+function saveVerifyCursor(walletPubkey, cursor) {
+  try {
+    const raw = localStorage.getItem(VERIFY_CURSOR_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    data[walletPubkey] = cursor
+    localStorage.setItem(VERIFY_CURSOR_KEY, JSON.stringify(data))
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Load cached offers from localStorage
  */
@@ -96,13 +128,42 @@ function loadCachedOffers(walletPubkey) {
 }
 
 /**
- * Save offers to localStorage cache
+ * Recency key used for cache eviction (most recent activity first)
+ */
+function offerRecency(o) {
+  return (o && (o.terminalAt || o.lastUpdated)) || 0
+}
+
+/**
+ * Keep cache within MAX_CACHE_HISTORY entries per wallet.
+ * Open (non-terminal) offers are always kept; the oldest terminal offers are
+ * evicted first, so adding a new offer pushes out the oldest one at the limit.
+ */
+function pruneOffers(offers) {
+  const keys = Object.keys(offers)
+  if (keys.length <= MAX_CACHE_HISTORY) return offers
+
+  const open = keys.filter(k => !offers[k].isTerminal)
+  const terminal = keys
+    .filter(k => offers[k].isTerminal)
+    .sort((a, b) => offerRecency(offers[b]) - offerRecency(offers[a])) // newest first
+
+  const keepTerminal = terminal.slice(0, Math.max(0, MAX_CACHE_HISTORY - open.length))
+  const keep = new Set([...open, ...keepTerminal])
+
+  const pruned = {}
+  for (const k of keep) pruned[k] = offers[k]
+  return pruned
+}
+
+/**
+ * Save offers to localStorage cache (pruned to MAX_CACHE_HISTORY per wallet)
  */
 function saveCachedOffers(walletPubkey, offers) {
   try {
     const cached = localStorage.getItem(OFFERS_CACHE_KEY)
     const data = cached ? JSON.parse(cached) : {}
-    data[walletPubkey] = offers
+    data[walletPubkey] = pruneOffers(offers)
     localStorage.setItem(OFFERS_CACHE_KEY, JSON.stringify(data))
   } catch (err) {
     console.error('Error saving cached offers:', err)
@@ -341,6 +402,26 @@ export function useEscrowProgram(connection, wallet) {
   }, [getProgram, wallet?.publicKey])
 
   /**
+   * Count the user's currently open (active) contracts across both roles.
+   * Source of truth = on-chain indexes (they only ever contain active offers).
+   */
+  const countOpenContracts = useCallback(async () => {
+    const open = new Set()
+
+    const buyerIndex = await getOrCreateBuyerIndex()
+    if (buyerIndex.exists && buyerIndex.account) {
+      for (const pk of buyerIndex.account.activeOffers) open.add(pk.toString())
+    }
+
+    const sellerIndex = await getSellerIndex()
+    if (sellerIndex.exists && sellerIndex.account) {
+      for (const pk of sellerIndex.account.activeOffers) open.add(pk.toString())
+    }
+
+    return open.size
+  }, [getOrCreateBuyerIndex, getSellerIndex])
+
+  /**
    * Initialize buyer index if needed
    */
   const initializeBuyerIndex = useCallback(async () => {
@@ -426,113 +507,157 @@ export function useEscrowProgram(connection, wallet) {
 
     const walletKey = wallet.publicKey.toString()
     const cachedOffers = loadCachedOffers(walletKey)
-    
+
     console.log(`📦 Cached offers: ${Object.keys(cachedOffers).length}`)
 
     try {
-      // 1. Get active offer keys from both indexes (efficient - just 2 account fetches)
+      // 1. Active offer keys from both on-chain indexes (2 account reads)
       const activeOfferKeys = new Set()
-      
-      // Buyer index
+
       const buyerIndex = await getOrCreateBuyerIndex()
       if (buyerIndex.exists && buyerIndex.account) {
-        for (const pk of buyerIndex.account.activeOffers) {
-          activeOfferKeys.add(pk.toString())
-        }
+        for (const pk of buyerIndex.account.activeOffers) activeOfferKeys.add(pk.toString())
         console.log(`📋 Buyer index: ${buyerIndex.account.activeOffers.length} active`)
       }
 
-      // Seller index (may not exist)
       const sellerIndex = await getSellerIndex()
       if (sellerIndex.exists && sellerIndex.account) {
-        for (const pk of sellerIndex.account.activeOffers) {
-          activeOfferKeys.add(pk.toString())
-        }
+        for (const pk of sellerIndex.account.activeOffers) activeOfferKeys.add(pk.toString())
         console.log(`📋 Seller index: ${sellerIndex.account.activeOffers.length} active`)
       }
 
       console.log(`📊 Total unique active offers in indexes: ${activeOfferKeys.size}`)
 
-      // 2. Fetch active offers from blockchain
-      const offers = []
-      const updatedCache = { ...cachedOffers }
+      // 2. Suspected-stale candidates: cached, owned, left the index, not terminal yet.
+      //    These have either been closed by the counterparty (and we missed the sync)
+      //    or are mid-transition. Most-recent first (stable tie-break on key).
+      const candidateKeys = []
+      for (const [pkStr, cached] of Object.entries(cachedOffers)) {
+        if (cached.buyer !== walletKey && cached.seller !== walletKey) continue
+        if (activeOfferKeys.has(pkStr)) continue
+        if (!cached.isTerminal) candidateKeys.push(pkStr)
+      }
+      candidateKeys.sort((a, b) => {
+        const d = offerRecency(cachedOffers[b]) - offerRecency(cachedOffers[a])
+        return d !== 0 ? d : (a < b ? -1 : 1)
+      })
 
-      for (const pkStr of activeOfferKeys) {
+      // 3a. Verification budget: all active (mandatory) + a rotating window of candidates,
+      //     capped at MAX_ONCHAIN_FETCH. Candidates outside the window are shown as
+      //     "syncing" (neutral) instead of their possibly-stale open status, and are
+      //     picked up on the next refresh (paginated verification over successive loads).
+      const remaining = Math.max(0, MAX_ONCHAIN_FETCH - activeOfferKeys.size)
+      let windowKeys = candidateKeys
+      const syncingKeys = []
+
+      if (candidateKeys.length > remaining) {
+        let cursor = loadVerifyCursor(walletKey)
+        if (cursor >= candidateKeys.length || cursor < 0) cursor = 0
+        windowKeys = []
+        for (let i = 0; i < remaining; i++) {
+          windowKeys.push(candidateKeys[(cursor + i) % candidateKeys.length])
+        }
+        const windowSet = new Set(windowKeys)
+        for (const k of candidateKeys) {
+          if (!windowSet.has(k)) syncingKeys.push(k)
+        }
+        // Advance the cursor so the next refresh verifies the following slice.
+        saveVerifyCursor(walletKey, remaining > 0 ? (cursor + remaining) % candidateKeys.length : 0)
+      } else {
+        // Everything fits this round — nothing left in limbo, reset the cursor.
+        saveVerifyCursor(walletKey, 0)
+      }
+
+      const syncingSet = new Set(syncingKeys)
+      const verifyKeys = [...activeOfferKeys, ...windowKeys]
+
+      // 3. Batch-read with getMultipleAccounts (fetchMultiple), chunked to 100 per request.
+      //    null  -> account does not exist (definitively closed / terminal)
+      //    undefined -> the RPC request itself failed (429/network): DO NOT poison cache.
+      const pubkeys = verifyKeys.map(k => new PublicKey(k))
+      const accounts = new Array(pubkeys.length).fill(undefined)
+      for (let i = 0; i < pubkeys.length; i += MULTI_FETCH_CHUNK) {
+        const chunk = pubkeys.slice(i, i + MULTI_FETCH_CHUNK)
         try {
-          const offerPubkey = new PublicKey(pkStr)
-          const offer = await program.account.offer.fetch(offerPubkey)
-          
-          // Serialize and cache
-          const serialized = serializeOffer(offer, offerPubkey)
-          updatedCache[pkStr] = serialized
-          
-          offers.push({
-            publicKey: offerPubkey,
-            ...offer,
-            _fromBlockchain: true
-          })
-          
-          console.log(`  ✅ Fetched active offer ${pkStr.slice(0, 8)}...`)
+          const fetched = await program.account.offer.fetchMultiple(chunk)
+          for (let j = 0; j < fetched.length; j++) accounts[i + j] = fetched[j]
         } catch (err) {
-          console.warn(`  ❌ Failed to fetch ${pkStr.slice(0, 8)}:`, err.message)
+          // Transient failure: leave this chunk as `undefined` so we keep last known status.
+          console.warn(`  ❌ fetchMultiple chunk [${i}] failed:`, err.message)
         }
       }
 
-      // 3. Handle cached offers that are NOT in active indexes
-      for (const [pkStr, cached] of Object.entries(cachedOffers)) {
-        if (activeOfferKeys.has(pkStr)) continue // Already fetched above
+      // 4. Reconcile results with the cache.
+      const offers = []
+      const updatedCache = { ...cachedOffers }
+      const handled = new Set()
 
-        // Check if this offer belongs to this wallet
-        if (cached.buyer !== walletKey && cached.seller !== walletKey) continue
+      for (let i = 0; i < verifyKeys.length; i++) {
+        const pkStr = verifyKeys[i]
+        const pubkey = pubkeys[i]
+        const account = accounts[i]
+        handled.add(pkStr)
 
-        // If already marked as terminal, just use cache - NO RPC!
-        if (cached.isTerminal) {
-          console.log(`  📄 Using cached terminal offer ${pkStr.slice(0, 8)}: ${cached.status}`)
-          offers.push(deserializeOffer(cached))
+        if (account === undefined) {
+          // RPC gave no definitive answer → keep last known cache, never mark terminal.
+          // For a non-terminal contract that left the index, surface it as "syncing"
+          // rather than its possibly-stale open status.
+          const cached = cachedOffers[pkStr]
+          if (cached) {
+            offers.push(cached.isTerminal
+              ? deserializeOffer(cached)
+              : { ...deserializeOffer(cached), _syncing: true })
+          }
           continue
         }
 
-        // If offer disappeared from index but not marked terminal, verify once
-        try {
-          const offerPubkey = new PublicKey(pkStr)
-          const offer = await program.account.offer.fetch(offerPubkey)
-          const status = parseOfferStatus(offer.status)
-          
-          // Update cache with fresh status
-          const serialized = serializeOffer(offer, offerPubkey)
-          
-          if (isTerminalStatus(status)) {
-            serialized.isTerminal = true
-            serialized.terminalAt = Date.now()
-            console.log(`  ✅ Offer ${pkStr.slice(0, 8)} now terminal: ${status}`)
+        if (account === null) {
+          // Account definitively does not exist → contract is closed/terminal.
+          const cached = cachedOffers[pkStr]
+          if (cached) {
+            if (!cached.isTerminal) {
+              const inferredStatus = cached.buyerConfirmed && cached.sellerConfirmed
+                ? OfferStatus.Completed
+                : cached.status
+              cached.isTerminal = true
+              cached.terminalAt = Date.now()
+              cached.status = inferredStatus
+              updatedCache[pkStr] = cached
+            }
+            offers.push(deserializeOffer(cached))
           }
-          
-          updatedCache[pkStr] = serialized
-          offers.push({
-            publicKey: offerPubkey,
-            ...offer,
-            _fromBlockchain: true
-          })
-        } catch (err) {
-          // Account may be closed - mark as terminal in cache based on last known status
-          console.log(`  ⚠️ Could not fetch ${pkStr.slice(0, 8)}, using cached status`)
-          
-          // Infer terminal status if offer was in progress
-          if (!cached.isTerminal) {
-            const inferredStatus = cached.buyerConfirmed && cached.sellerConfirmed 
-              ? OfferStatus.Completed 
-              : cached.status
-            cached.isTerminal = true
-            cached.terminalAt = Date.now()
-            cached.status = inferredStatus
-            updatedCache[pkStr] = cached
-          }
-          
+          continue
+        }
+
+        // Account exists → fresh on-chain data wins.
+        const serialized = serializeOffer(account, pubkey)
+        if (isTerminalStatus(parseOfferStatus(account.status))) {
+          serialized.isTerminal = true
+          serialized.terminalAt = Date.now()
+        }
+        updatedCache[pkStr] = serialized
+        offers.push({
+          publicKey: pubkey,
+          ...account,
+          _fromBlockchain: true
+        })
+      }
+
+      // 5. Everything else from cache:
+      //    - terminal history → trust cache.
+      //    - suspected-stale candidates not verified this round → neutral "syncing"
+      //      (their stale open status is not shown); verified on a later refresh.
+      for (const [pkStr, cached] of Object.entries(cachedOffers)) {
+        if (handled.has(pkStr)) continue
+        if (cached.buyer !== walletKey && cached.seller !== walletKey) continue
+        if (syncingSet.has(pkStr)) {
+          offers.push({ ...deserializeOffer(cached), _syncing: true })
+        } else {
           offers.push(deserializeOffer(cached))
         }
       }
 
-      // 4. Save updated cache
+      // 6. Persist (pruned to MAX_CACHE_HISTORY inside saveCachedOffers).
       saveCachedOffers(walletKey, updatedCache)
 
       console.log(`📊 Total offers returned: ${offers.length}`)
@@ -540,12 +665,12 @@ export function useEscrowProgram(connection, wallet) {
 
     } catch (err) {
       console.error('Error fetching offers:', err)
-      
+
       // Fallback to cache only
       const fallbackOffers = Object.values(cachedOffers)
         .filter(c => c.buyer === walletKey || c.seller === walletKey)
         .map(deserializeOffer)
-      
+
       console.log(`⚠️ Using ${fallbackOffers.length} cached offers as fallback`)
       return fallbackOffers
     }
@@ -664,6 +789,12 @@ export function useEscrowProgram(connection, wallet) {
 
       console.log('🔐 Creating offer...')
 
+      // Enforce the cap on simultaneously open contracts.
+      const openCount = await countOpenContracts()
+      if (openCount >= MAX_OPEN_CONTRACTS) {
+        throw new Error(translate('escrow.maxOpenReached', { n: MAX_OPEN_CONTRACTS }))
+      }
+
       // Ensure buyer index exists
       const buyerIndex = await getOrCreateBuyerIndex()
       if (!buyerIndex.exists) {
@@ -746,7 +877,7 @@ export function useEscrowProgram(connection, wallet) {
     } finally {
       setLoading(false)
     }
-  }, [connection, getProgram, wallet?.publicKey, getOrCreateBuyerIndex, initializeBuyerIndex])
+  }, [connection, getProgram, wallet?.publicKey, getOrCreateBuyerIndex, initializeBuyerIndex, countOpenContracts])
 
   /**
    * Accept an offer (as seller)
@@ -760,6 +891,12 @@ export function useEscrowProgram(connection, wallet) {
       if (!program || !wallet?.publicKey) throw new Error('Wallet not connected')
 
       console.log('🔵 Accepting offer:', offerPubkey.toString())
+
+      // Enforce the cap on simultaneously open contracts.
+      const openCount = await countOpenContracts()
+      if (openCount >= MAX_OPEN_CONTRACTS) {
+        throw new Error(translate('escrow.maxOpenReached', { n: MAX_OPEN_CONTRACTS }))
+      }
 
       const offer = await program.account.offer.fetch(offerPubkey)
       const [escrowVaultAuthorityPDA] = getEscrowVaultAuthorityPDA(offerPubkey)
@@ -816,7 +953,7 @@ export function useEscrowProgram(connection, wallet) {
     } finally {
       setLoading(false)
     }
-  }, [connection, getProgram, wallet?.publicKey, getSellerIndex, initializeSellerIndex])
+  }, [connection, getProgram, wallet?.publicKey, getSellerIndex, initializeSellerIndex, countOpenContracts])
 
   /**
    * Cancel an offer (only if pending)

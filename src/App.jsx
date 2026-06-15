@@ -1969,6 +1969,7 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
   const [selectedContract, setSelectedContract] = useState(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [sortMode, setSortMode] = useState('newest') // newest | oldest | open | amountDesc | amountAsc
   const [contractsMetadata, setContractsMetadata] = useState(() => {
     try {
       const stored = localStorage.getItem('h173k_contracts_metadata')
@@ -2057,6 +2058,52 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
     } catch { /* ignore */ }
   }
   
+  // ----- Contract sorting -----
+  // Recency signal: prefer user-action timestamps from metadata, then cache lastUpdated,
+  // then fall back to the buyer nonce as a coarse monotonic proxy.
+  const contractRecency = useCallback((c) => {
+    const key = c.publicKey.toString()
+    const m = contractsMetadata[key] || {}
+    if (m.createdAt) return m.createdAt
+    if (m.acceptedAt) return m.acceptedAt
+    if (c._lastUpdated) return c._lastUpdated
+    const n = c.nonce?.toNumber ? c.nonce.toNumber() : Number(c.nonce || 0)
+    return n
+  }, [contractsMetadata])
+
+  const isOpenContract = (c) => {
+    const s = parseOfferStatus(c.status)
+    return s !== OfferStatus.Completed && s !== OfferStatus.Burned && s !== OfferStatus.Cancelled
+  }
+
+  const sortedContracts = useMemo(() => {
+    const arr = [...contracts]
+    switch (sortMode) {
+      case 'oldest':
+        arr.sort((a, b) => contractRecency(a) - contractRecency(b))
+        break
+      case 'open':
+        arr.sort((a, b) => {
+          const ao = isOpenContract(a) ? 0 : 1
+          const bo = isOpenContract(b) ? 0 : 1
+          if (ao !== bo) return ao - bo                    // open on top
+          return contractRecency(b) - contractRecency(a)   // then newest first
+        })
+        break
+      case 'amountDesc':
+        arr.sort((a, b) => fromTokenAmount(b.amount) - fromTokenAmount(a.amount))
+        break
+      case 'amountAsc':
+        arr.sort((a, b) => fromTokenAmount(a.amount) - fromTokenAmount(b.amount))
+        break
+      case 'newest':
+      default:
+        arr.sort((a, b) => contractRecency(b) - contractRecency(a))
+        break
+    }
+    return arr
+  }, [contracts, sortMode, contractRecency])
+
   // Handle manual refresh
   const handleRefresh = useCallback(async () => {
     if (refreshing) return
@@ -2229,6 +2276,23 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
         </div>
       )}
       
+      {!loading && contracts.length > 0 && (
+        <div className="p2p-controls contracts-sort" style={{ marginBottom: 12 }}>
+          <select
+            className="p2p-mini-select"
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value)}
+            title={t('escrow.sortLabel')}
+          >
+            <option value="newest">{t('escrow.sortNewest')}</option>
+            <option value="oldest">{t('escrow.sortOldest')}</option>
+            <option value="open">{t('escrow.sortOpen')}</option>
+            <option value="amountDesc">{t('escrow.sortAmountDesc')}</option>
+            <option value="amountAsc">{t('escrow.sortAmountAsc')}</option>
+          </select>
+        </div>
+      )}
+
       {loading ? (
         <div className="loading-spinner-small" />
       ) : contracts.length === 0 ? (
@@ -2238,9 +2302,11 @@ function EscrowView({ connection, publicKey, balance, solBalance, price, toUSD, 
         </div>
       ) : (
         <div className="contracts-list" ref={contractsListRef}>
-          {contracts.map((contract) => {
+          {sortedContracts.map((contract) => {
             const meta = contractsMetadata[contract.publicKey.toString()] || {}
-            const status = getStatusInfo(contract.status, contract, publicKey)
+            const status = contract._syncing
+              ? { label: t('escrow.statusSyncing'), class: 'pending' }
+              : getStatusInfo(contract.status, contract, publicKey)
             const amount = fromTokenAmount(contract.amount)
             
             return (
@@ -3746,7 +3812,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
 
-      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.0.8</span></div></div>
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.1.0</span></div></div>
     </div>
   )
 }
