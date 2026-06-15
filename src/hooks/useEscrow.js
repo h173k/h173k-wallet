@@ -734,41 +734,73 @@ export function useEscrowProgram(connection, wallet) {
       }
     }
 
-    // Full blockchain search for import
+    // Targeted blockchain search for import.
+    // Scanning ALL offers globally (getProgramAccounts over the whole program) is slow
+    // and gets throttled on free RPC tiers (e.g. Helius free), which can make an existing
+    // contract look "not found". Instead, first fetch only THIS wallet's own offers via
+    // memcmp filters on the buyer/seller fields (a small, reliable set that covers any
+    // status — ongoing, completed, etc.). Only fall back to a global scan for the edge
+    // case of importing an open offer created by someone else (wallet not yet a participant).
     console.log('🔍 Searching blockchain for import...')
-    try {
-      const offers = await program.account.offer.all()
-      
-      for (const { publicKey, account } of offers) {
-        const testHash = hashCode(code.trim(), publicKey)
-        if (Buffer.from(testHash).equals(Buffer.from(account.codeHash))) {
-          console.log('✅ Found on blockchain:', publicKey.toString())
-          
-          // Check participation
-          const isBuyer = account.buyer.equals(wallet.publicKey)
-          const isSeller = account.seller && 
-            !account.seller.equals(new PublicKey('11111111111111111111111111111111')) && 
-            account.seller.equals(wallet.publicKey)
-          
-          if (!isBuyer && !isSeller) {
-            const status = parseOfferStatus(account.status)
-            if (status !== OfferStatus.PendingSeller) {
-              throw new Error('You are not a participant in this contract')
-            }
-          }
-          
-          // Cache this offer
-          const serialized = serializeOffer(account, publicKey)
-          if (isTerminalStatus(account.status)) {
-            serialized.isTerminal = true
-            serialized.terminalAt = Date.now()
-          }
-          updateCachedOffer(walletKey, publicKey.toString(), serialized)
-          
-          return { publicKey, ...account }
+
+    // Offer account byte offsets (after the 8-byte Anchor discriminator):
+    //   buyer @ 8, buyerVault @ 40, seller @ 72
+    const matchAndReturn = ({ publicKey, account }) => {
+      const testHash = hashCode(code.trim(), publicKey)
+      if (!Buffer.from(testHash).equals(Buffer.from(account.codeHash))) return null
+
+      // Check participation (preserves original import semantics)
+      const isBuyer = account.buyer.equals(wallet.publicKey)
+      const isSeller = account.seller &&
+        !account.seller.equals(new PublicKey('11111111111111111111111111111111')) &&
+        account.seller.equals(wallet.publicKey)
+
+      if (!isBuyer && !isSeller) {
+        const status = parseOfferStatus(account.status)
+        if (status !== OfferStatus.PendingSeller) {
+          throw new Error('You are not a participant in this contract')
         }
       }
-      
+
+      // Cache this offer
+      const serialized = serializeOffer(account, publicKey)
+      if (isTerminalStatus(account.status)) {
+        serialized.isTerminal = true
+        serialized.terminalAt = Date.now()
+      }
+      updateCachedOffer(walletKey, publicKey.toString(), serialized)
+
+      console.log('✅ Found on blockchain:', publicKey.toString())
+      return { publicKey, ...account }
+    }
+
+    try {
+      const walletB58 = wallet.publicKey.toBase58()
+
+      // 1. The wallet's own offers (buyer or seller), any status — covers re-loading a
+      //    contract you created or accepted, including completed ones not in cache.
+      const [asBuyer, asSeller] = await Promise.all([
+        program.account.offer.all([{ memcmp: { offset: 8, bytes: walletB58 } }]),
+        program.account.offer.all([{ memcmp: { offset: 72, bytes: walletB58 } }]),
+      ])
+
+      const own = new Map()
+      for (const o of [...asBuyer, ...asSeller]) own.set(o.publicKey.toString(), o)
+
+      console.log(`🔍 Searching ${own.size} own offers for code...`)
+      for (const o of own.values()) {
+        const res = matchAndReturn(o)
+        if (res) return res
+      }
+
+      // 2. Fallback for importing someone else's open offer (not yet a participant).
+      //    Only reached when the code doesn't match any of the wallet's own contracts.
+      const offers = await program.account.offer.all()
+      for (const o of offers) {
+        const res = matchAndReturn(o)
+        if (res) return res
+      }
+
       return null
     } catch (err) {
       console.error('Error in readOfferByCode:', err)
