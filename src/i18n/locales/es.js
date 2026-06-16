@@ -183,7 +183,7 @@ export default {
     copyFailed: "Error al copiar",
     winH173k: "Gana h173k",
     warnTitle: "Importante",
-    warnBody: "Esta billetera acepta SOLO h173k y SOL. Enviar cualquier otro token o activo a esta dirección puede provocar su pérdida permanente.",
+    warnBody: "Esta billetera muestra SOLO h173k y SOL. Otros tokens enviados a esta dirección no se pierden, simplemente no aparecerán aquí. Para verlos o usarlos, importa tu frase semilla en una billetera multi-token.",
     warnConfirm: "Entiendo",
   },
   lottery: {

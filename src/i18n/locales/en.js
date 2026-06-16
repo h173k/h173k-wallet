@@ -186,7 +186,7 @@ export default {
     addressCopied: "Address copied!",
     copyFailed: "Copy failed",
     warnTitle: "Important",
-    warnBody: "This wallet accepts ONLY h173k and SOL. Sending any other token or asset to this address may result in permanent loss.",
+    warnBody: "This wallet displays ONLY h173k and SOL. Other tokens sent to this address are not lost — they simply won't appear here. To see or use them, import your seed phrase into a multi-token wallet.",
     warnConfirm: "I understand",
   },
   lottery: {

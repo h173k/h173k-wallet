@@ -183,7 +183,7 @@ export default {
     copyFailed: "Échec de la copie",
     winH173k: "Gagnez des h173k",
     warnTitle: "Important",
-    warnBody: "Ce portefeuille accepte UNIQUEMENT h173k et SOL. Envoyer tout autre jeton ou actif à cette adresse peut entraîner sa perte définitive.",
+    warnBody: "Ce portefeuille affiche UNIQUEMENT h173k et SOL. Les autres jetons envoyés à cette adresse ne sont pas perdus — ils n'apparaîtront simplement pas ici. Pour les voir ou les utiliser, importez votre phrase de récupération dans un portefeuille multi-jetons.",
     warnConfirm: "J'ai compris",
   },
   lottery: {

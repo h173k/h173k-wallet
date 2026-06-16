@@ -183,7 +183,7 @@ export default {
     addressCopied: "Adres skopiowany!",
     copyFailed: "Kopiowanie nie powiodło się",
     warnTitle: "Ważne",
-    warnBody: "Ten portfel przyjmuje WYŁĄCZNIE h173k oraz SOL. Wysłanie jakiegokolwiek innego tokena lub aktywa na ten adres może spowodować ich trwałą utratę.",
+    warnBody: "Ten portfel wyświetla WYŁĄCZNIE h173k oraz SOL. Inne tokeny wysłane na ten adres nie zostają utracone — po prostu nie będą tu widoczne. Aby je zobaczyć lub użyć, wczytaj swoją frazę seed do portfela obsługującego wiele tokenów.",
     warnConfirm: "Rozumiem",
   },
   lottery: {

@@ -183,7 +183,7 @@ export default {
     copyFailed: "Kopieren fehlgeschlagen",
     winH173k: "Gewinne h173k",
     warnTitle: "Wichtig",
-    warnBody: "Diese Wallet akzeptiert NUR h173k und SOL. Das Senden anderer Token oder Assets an diese Adresse kann zu deren dauerhaftem Verlust führen.",
+    warnBody: "Diese Wallet zeigt NUR h173k und SOL an. Andere an diese Adresse gesendete Token gehen nicht verloren — sie werden hier nur nicht angezeigt. Um sie zu sehen oder zu nutzen, importiere deine Seed-Phrase in eine Multi-Token-Wallet.",
     warnConfirm: "Ich verstehe",
   },
   lottery: {
