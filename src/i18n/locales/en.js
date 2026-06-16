@@ -185,6 +185,9 @@ export default {
     info2: "Share this QR code or address to receive funds.",
     addressCopied: "Address copied!",
     copyFailed: "Copy failed",
+    warnTitle: "Important",
+    warnBody: "This wallet accepts ONLY h173k and SOL. Sending any other token or asset to this address may result in permanent loss.",
+    warnConfirm: "I understand",
   },
   lottery: {
     title: "Win h173k",

@@ -182,6 +182,9 @@ export default {
     addressCopied: "Adresse copiée !",
     copyFailed: "Échec de la copie",
     winH173k: "Gagnez des h173k",
+    warnTitle: "Important",
+    warnBody: "Ce portefeuille accepte UNIQUEMENT h173k et SOL. Envoyer tout autre jeton ou actif à cette adresse peut entraîner sa perte définitive.",
+    warnConfirm: "J'ai compris",
   },
   lottery: {
     title: "Gagnez des h173k",

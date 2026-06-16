@@ -182,6 +182,9 @@ export default {
     addressCopied: "¡Dirección copiada!",
     copyFailed: "Error al copiar",
     winH173k: "Gana h173k",
+    warnTitle: "Importante",
+    warnBody: "Esta billetera acepta SOLO h173k y SOL. Enviar cualquier otro token o activo a esta dirección puede provocar su pérdida permanente.",
+    warnConfirm: "Entiendo",
   },
   lottery: {
     title: "Gana h173k",

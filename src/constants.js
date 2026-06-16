@@ -2,7 +2,8 @@ import { PublicKey } from '@solana/web3.js'
 
 // ========== MAINNET CONFIGURATION ==========
 export const NETWORK = 'mainnet-beta'
-export const DEFAULT_RPC_ENDPOINT = 'https://mainnet.helius-rpc.com/?api-key=8ca1ae57-4ed8-4896-a299-bfe3e0a4a886'
+// No default RPC: the user must configure their own endpoint before the app proceeds.
+export const DEFAULT_RPC_ENDPOINT = ''
 
 // RPC Settings localStorage key
 export const RPC_SETTINGS_KEY = 'h173k_rpc_settings'
@@ -173,6 +174,17 @@ export function saveH173KDecimals(decimals) {
   } catch {
     return false
   }
+}
+
+// ========== RECEIVE WARNING ACK ==========
+// Tracks whether the user has acknowledged that this wallet accepts ONLY h173k and SOL.
+// Once acknowledged, the warning modal on the Receive screen no longer appears.
+const RECEIVE_WARN_KEY = 'h173k_receive_warn_ack'
+export function getReceiveWarnAck() {
+  try { return localStorage.getItem(RECEIVE_WARN_KEY) === 'true' } catch { return false }
+}
+export function saveReceiveWarnAck(value) {
+  try { localStorage.setItem(RECEIVE_WARN_KEY, value ? 'true' : 'false') } catch {}
 }
 
 // ========== LOTTERY (Win h173k) ==========

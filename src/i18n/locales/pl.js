@@ -182,6 +182,9 @@ export default {
     info2: "Udostępnij ten kod QR lub adres, aby otrzymać środki.",
     addressCopied: "Adres skopiowany!",
     copyFailed: "Kopiowanie nie powiodło się",
+    warnTitle: "Ważne",
+    warnBody: "Ten portfel przyjmuje WYŁĄCZNIE h173k oraz SOL. Wysłanie jakiegokolwiek innego tokena lub aktywa na ten adres może spowodować ich trwałą utratę.",
+    warnConfirm: "Rozumiem",
   },
   lottery: {
     title: "Wygraj h173k",

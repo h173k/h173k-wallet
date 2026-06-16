@@ -182,6 +182,9 @@ export default {
     addressCopied: "Adresse kopiert!",
     copyFailed: "Kopieren fehlgeschlagen",
     winH173k: "Gewinne h173k",
+    warnTitle: "Wichtig",
+    warnBody: "Diese Wallet akzeptiert NUR h173k und SOL. Das Senden anderer Token oder Assets an diese Adresse kann zu deren dauerhaftem Verlust führen.",
+    warnConfirm: "Ich verstehe",
   },
   lottery: {
     title: "Gewinne h173k",

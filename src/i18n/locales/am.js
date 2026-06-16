@@ -182,6 +182,9 @@ export default {
     addressCopied: "አድራሻ ተቀድቷል!",
     copyFailed: "መቅዳት አልተሳካም",
     winH173k: "h173k አሸንፍ",
+    warnTitle: "አስፈላጊ",
+    warnBody: "ይህ ቦርሳ h173k እና SOL ብቻ ይቀበላል። ሌላ ማንኛውንም ቶከን ወይም ንብረት ወደዚህ አድራሻ መላክ ቋሚ ኪሳራ ሊያስከትል ይችላል።",
+    warnConfirm: "ገባኝ",
   },
   lottery: {
     title: "h173k አሸንፍ",

@@ -70,7 +70,7 @@ import {
 } from './messenger/messenger'
 
 // Constants & Utils
-import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS } from './constants'
+import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck } from './constants'
 import { useTokenPrice } from './usePrice'
 import { 
   formatNumber, 
@@ -246,7 +246,9 @@ function App() {
   }, [])
   
   useEffect(() => {
-    if (checkComplete && !requiresInstall) {
+    // Do not connect until the user has configured an RPC endpoint.
+    // Without an RPC set, the app must not proceed.
+    if (checkComplete && !requiresInstall && isRpcConfigured()) {
       const conn = new Connection(getRpcEndpoint(), 'confirmed')
       setConnection(conn)
     }
@@ -330,7 +332,9 @@ function App() {
       </div>
       <div className="app-background"><div className="light-streak" /></div>
       <div className="app-container">
-        {!connection ? <LoadingScreen message={t('loading.connecting')} /> : <WalletApp connection={connection} onRpcChange={handleRpcChange} />}
+        {!isRpcConfigured()
+          ? <WalletApp connection={null} onRpcChange={handleRpcChange} />
+          : (!connection ? <LoadingScreen message={t('loading.connecting')} /> : <WalletApp connection={connection} onRpcChange={handleRpcChange} />)}
       </div>
       {iosNoticeModal}
     </>
@@ -561,6 +565,8 @@ function WalletApp({ connection, onRpcChange }) {
   }, [])
   
   if (loading || !initialized) return <LoadingScreen message={t('loading.wallet')} />
+  // The app must not proceed until an RPC endpoint is configured.
+  if (!isRpcConfigured()) return <OnboardingFlow onComplete={handleWalletCreated} showToast={showToast} pendingReferral={pendingReferral} onRpcChange={onRpcChange} />
   if (!hasWallet) return <OnboardingFlow onComplete={handleWalletCreated} showToast={showToast} pendingReferral={pendingReferral} onRpcChange={onRpcChange} />
   if (!isUnlocked) return <LockScreen onUnlock={handleUnlock} showToast={showToast} />
   
@@ -1690,7 +1696,12 @@ function ReceiveView({ publicKey, onBack, showToast, onWin }) {
   const address = publicKey.toString()
   // Use plain address for QR - universal, works for both SOL and any SPL tokens
   // Solana Pay format (solana:address) forces SOL in most wallets
-  
+
+  // Warn (once) that this wallet accepts ONLY h173k and SOL. After the user
+  // acknowledges it, the modal no longer appears.
+  const [showWarn, setShowWarn] = useState(() => !getReceiveWarnAck())
+  const confirmWarn = () => { saveReceiveWarnAck(true); setShowWarn(false) }
+
   const handleCopy = async () => {
     const success = await copyToClipboard(address)
     showToast(success ? t('receive.addressCopied') : t('receive.copyFailed'), success ? 'success' : 'error')
@@ -1708,6 +1719,17 @@ function ReceiveView({ publicKey, onBack, showToast, onWin }) {
         </div>
       </div>
       <div className="receive-info"><p>{t('receive.info1')}</p><p>{t('receive.info2')}</p></div>
+      {showWarn && (
+        <div className="p2p-modal-overlay">
+          <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="p2p-modal-head"><h3>{t('receive.warnTitle')}</h3></div>
+            <div className="escrow-info-card">
+              <p>{t('receive.warnBody')}</p>
+            </div>
+            <button className="btn btn-action" onClick={confirmWarn}>{t('receive.warnConfirm')}</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -3816,7 +3838,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
 
-      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.2.1</span></div></div>
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.3.0</span></div></div>
     </div>
   )
 }
