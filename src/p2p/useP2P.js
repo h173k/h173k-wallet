@@ -299,8 +299,34 @@ export function useP2P(connection, publicKey) {
         active.push(offer)
       }
 
-      setOffers(active)
-      return active
+      // Collapse to one offer per poster (per side) within the visibility window.
+      // Some users re-post an offer without cancelling the old one, so a list ends up
+      // showing the same person several times. Keep only their most recent offer; the
+      // ids of the older, now-hidden offers are remembered on the survivor as
+      // `duplicateIds` so that cancelling it also cancels them — otherwise a hidden
+      // older offer would reappear the moment the visible one is cancelled.
+      const survivors = new Map() // `${posterPubkey}|${type}` -> kept offer
+      for (const offer of active) {
+        if (!offer.posterPubkey) continue // unattributable — never grouped (kept as-is below)
+        const key = `${offer.posterPubkey}|${offer.type}`
+        const current = survivors.get(key)
+        if (!current) {
+          offer.duplicateIds = []
+          survivors.set(key, offer)
+        } else if (offer.createdAt > current.createdAt) {
+          // Newer offer wins; the previous survivor becomes one of its hidden duplicates.
+          offer.duplicateIds = [...current.duplicateIds, current.id]
+          survivors.set(key, offer)
+        } else {
+          // Older offer: hide it behind the current survivor.
+          current.duplicateIds.push(offer.id)
+        }
+      }
+      const deduped = active.filter(o =>
+        !o.posterPubkey || survivors.get(`${o.posterPubkey}|${o.type}`) === o)
+
+      setOffers(deduped)
+      return deduped
     } catch (err) {
       console.error('P2P fetchOffers error:', err)
       return []
@@ -452,24 +478,41 @@ export function useP2P(connection, publicKey) {
       const currencyAta = await getAssociatedTokenAddress(TOKEN_MINT, ownerPk, true)
       const userAta = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
 
-      const sigB64 = signCancellation(offer.currency, offer.id)
-      const memoText = encodeCancelMemo(offer.currency, offer.id, sigB64)
+      // Cancel this offer *and* any older offers by the same poster that the app was
+      // hiding behind it (offer.duplicateIds, populated by fetchOffers). Without this,
+      // cancelling the visible offer would let a hidden older one reappear on refresh.
+      const ids = [offer.id]
+      for (const id of (offer.duplicateIds || [])) {
+        if (id && !ids.includes(id)) ids.push(id)
+      }
 
-      // Auto-replenish SOL (cancel only needs the network fee, no extra rent).
-      return await withAutoSOL(async () => {
-        const tx = new Transaction()
-        tx.add(createTransferInstruction(userAta, currencyAta, publicKey, CANCEL_FEE_RAW))
-        tx.add(memoIx(memoText, publicKey))
+      // One cancel memo per transaction — same shape as a plain single cancel.
+      // (The RPC concatenates multiple memos from one tx into a single string that
+      // decodeMemo can't JSON-parse, so batching memos would make the cancellations
+      // unreadable by both this and older clients. Keeping one memo per tx stays fully
+      // compatible with the existing on-chain format.)
+      let firstSig = null
+      for (const id of ids) {
+        const memoText = encodeCancelMemo(offer.currency, id, signCancellation(offer.currency, id))
 
-        const { blockhash } = await connection.getLatestBlockhash()
-        tx.recentBlockhash = blockhash
-        tx.feePayer = publicKey
+        // Auto-replenish SOL (cancel only needs the network fee, no extra rent).
+        const sig = await withAutoSOL(async () => {
+          const tx = new Transaction()
+          tx.add(createTransferInstruction(userAta, currencyAta, publicKey, CANCEL_FEE_RAW))
+          tx.add(memoIx(memoText, publicKey))
 
-        const signed = sessionWallet.signTransaction(tx)
-        const sig = await connection.sendRawTransaction(signed.serialize())
-        await connection.confirmTransaction(sig, 'confirmed')
-        return { signature: sig }
-      }, onSwap, 0)
+          const { blockhash } = await connection.getLatestBlockhash()
+          tx.recentBlockhash = blockhash
+          tx.feePayer = publicKey
+
+          const signed = sessionWallet.signTransaction(tx)
+          const s = await connection.sendRawTransaction(signed.serialize())
+          await connection.confirmTransaction(s, 'confirmed')
+          return s
+        }, onSwap, 0)
+        if (!firstSig) firstSig = sig
+      }
+      return { signature: firstSig }
     } finally {
       setPosting(false)
     }
