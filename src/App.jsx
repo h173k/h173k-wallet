@@ -1115,6 +1115,9 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const convertAmountNum = parseFloat(convertAmount)
   const convertAmountOverLimit = convertAmountNum > 0 && convertAmountNum > maxConvertableSOL
   
+  // Max price impact (slippage) allowed for a single SOL→h173k conversion.
+  const MAX_CONVERT_SLIPPAGE_PCT = 0.5
+  
   const handleConvert = async () => {
     const numAmount = parseFloat(convertAmount)
     if (!numAmount || numAmount <= 0) {
@@ -1127,8 +1130,22 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
     }
     
     try {
-      const result = await convertSOLtoH173K(numAmount)
-      showToast(t('main.convertedToH173k', { sol: numAmount, h: formatSmartNumber(result.h173kReceived) }), 'success')
+      // Cap the converted SOL so this single conversion stays within MAX_CONVERT_SLIPPAGE_PCT.
+      // priceImpact scales linearly with input size, so the largest amount that hits the target
+      // is numAmount * (target / priceImpact). Floored to 4 decimals (matching SOL input
+      // granularity), which can only lower the impact further, keeping it at or below the limit.
+      let amountToConvert = numAmount
+      const limitQuote = await getSwapQuoteSOLtoH173K(numAmount)
+      if (limitQuote.priceImpact > MAX_CONVERT_SLIPPAGE_PCT) {
+        amountToConvert = Math.floor(numAmount * (MAX_CONVERT_SLIPPAGE_PCT / limitQuote.priceImpact) * 10000) / 10000
+      }
+      if (!(amountToConvert > 0)) {
+        showToast(t('main.enterValidAmount'), 'error')
+        return
+      }
+      
+      const result = await convertSOLtoH173K(amountToConvert)
+      showToast(t('main.convertedToH173k', { sol: amountToConvert, h: formatSmartNumber(result.h173kReceived) }), 'success')
       setShowConvertModal(false)
       setConvertAmount('')
       setConvertQuote(null)
