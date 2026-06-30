@@ -405,6 +405,9 @@ export default {
     maxOpenReached: "Maximum von {n} offenen Verträgen erreicht. Schließe (abschließen oder stornieren) einen bestehenden Vertrag, bevor du einen neuen öffnest.",
   },
   newContract: {
+    errNeedSolDeposit: "Nicht genug SOL, um SOL für Gebühren zu kaufen. Bitte zahle zuerst etwas SOL in diese Wallet ein.",
+    errDepositPlusSwap: "Nicht genug h173k. Dieser Vertrag benötigt {dep} (Kaution) + ~{swap} (zum Aufladen von SOL) = {total} h173k, du hast aber {have}. Reduziere den Betrag auf etwa {max}.",
+    solReserve: "Reserve für SOL-Aufladung",
     title: "Neuer Vertrag",
     infoPre: "Erstelle einen MAD-Vertrag als",
     infoBuyer: "Käufer",

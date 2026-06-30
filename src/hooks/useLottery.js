@@ -30,6 +30,7 @@ import {
   LOTTERY_MAX_PRIZE_H173K,
 } from '../constants'
 import { useSwap } from './useSwap'
+import { payReferralBonusSafe } from './useEscrow'
 
 const RAW = Math.pow(10, TOKEN_DECIMALS)
 const MAX_PRIZE_RAW = Math.round(LOTTERY_MAX_PRIZE_H173K * RAW)
@@ -67,11 +68,18 @@ function sleep(ms) {
 
 // Czy błąd transakcji wynika z braku SOL (wtedy warto dokupić SOL i ponowić)?
 function isInsufficientSolError(e) {
-  const m = String(e?.message || e || '').toLowerCase()
+  const blob = (String(e?.message || e || '') + ' ' + (e?.logs || []).join(' ')).toLowerCase()
+  // SPL-Token shortfall (custom program error 0x1) is NOT a SOL problem — a bare
+  // "insufficient" match would otherwise wrongly trigger an h173k→SOL swap.
+  if (
+    blob.includes('custom program error: 0x1') ||
+    (blob.includes('error: insufficient funds') && blob.includes('tokenkeg'))
+  ) return false
   return (
-    m.includes('insufficient') ||
-    m.includes('no record of a prior credit') ||
-    m.includes('debit an account')
+    blob.includes('insufficient lamports') ||
+    blob.includes('insufficient funds for rent') ||
+    blob.includes('no record of a prior credit') ||
+    blob.includes('debit an account')
   )
 }
 
@@ -469,6 +477,10 @@ export function useLottery(connection, wallet) {
         if (revealSig) prize = await readPrizeFromTx(connection, revealSig, ata)
         if (!prize) prize = await estimatePrizeH173k() // fallback
       }
+
+      // Pay the referral bonus separately and best-effort — never affects the spin.
+      // Price is resolved internally (last-known / pool) when not provided.
+      payReferralBonusSafe(connection, wallet, ata, null).catch(() => {})
 
       return { won, prize, guess, winningNumber }
     },

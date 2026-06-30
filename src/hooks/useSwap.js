@@ -51,6 +51,24 @@ const MIN_SOL_FOR_SWAP = 0.00204 + 0.000005 // ~0.002045
 // SOL buffer added when replenishing
 const SOL_BUFFER = 0.007
 
+// Recognise a SOL-shortfall error specifically. MUST NOT match an SPL-Token
+// "insufficient funds" (custom program error 0x1) — otherwise a token-side
+// shortage would wrongly trigger an h173k→SOL swap and burn even more h173k.
+function isInsufficientSolError(e) {
+  const blob = (String(e?.message || e || '') + ' ' + (e?.logs || []).join(' ')).toLowerCase()
+  // Token-program shortfall → NOT a SOL problem.
+  if (
+    blob.includes('custom program error: 0x1') ||
+    (blob.includes('error: insufficient funds') && blob.includes('tokenkeg'))
+  ) return false
+  return (
+    blob.includes('insufficient lamports') ||
+    blob.includes('insufficient funds for rent') ||
+    blob.includes('no record of a prior credit') ||
+    blob.includes('debit an account')
+  )
+}
+
 /**
  * Get CPMM Authority PDA
  */
@@ -594,9 +612,26 @@ export function useSwap(connection, wallet) {
     if (currentSOL < MIN_SOL_FOR_SWAP_TX) {
       throw new Error(`NO_SOL:Not enough SOL to execute swap. Have ${currentSOL.toFixed(6)} SOL, need at least ${MIN_SOL_FOR_SWAP_TX.toFixed(6)} SOL. Please deposit a small amount of SOL first.`)
     }
-    
-    // Calculate how much H173K we need to swap
-    const { h173kNeeded, quote } = await calculateSwapForSOL(targetSOL)
+
+    // Net cost of THIS swap tx. The WSOL account is created AND closed in the same
+    // transaction, so its rent round-trips and is NOT a real cost — only base fee +
+    // priority fee are. swapForSOL is the single source of truth for its own cost:
+    // callers pass the NET SOL they want and we gross it up here.
+    const swapCost = swapFeeFloor + 0.000005
+
+    // Economical guard: never run a swap whose net yield would not exceed its own cost.
+    // (Prevents burning h173k on a tx that nets ~0 SOL.)
+    if (targetSOL <= swapCost) {
+      console.log(`⏭️ swapForSOL skipped: target ${targetSOL.toFixed(6)} ≤ swap cost ${swapCost.toFixed(6)} — not economical`)
+      return { success: false, skipped: true, h173kUsed: 0, solReceived: 0 }
+    }
+
+    // Ask the pool for the requested NET amount PLUS this tx's own cost, so the wallet
+    // lands at `targetSOL` AFTER fees instead of below it.
+    const grossTarget = targetSOL + swapCost
+
+    // Calculate how much H173K we need to swap (for the gross output)
+    const { h173kNeeded, quote } = await calculateSwapForSOL(grossTarget)
     
     // Check H173K balance
     const tokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, wallet.publicKey)
@@ -638,85 +673,102 @@ export function useSwap(connection, wallet) {
 
     const settings = getReplenishSettings()
 
-    // === REPLENISH TARGET ===
+    // === REPLENISH FLOOR ===
     // Minimum SOL needed to pay for the replenish swap transaction itself.
     // Guard: wallet must have at least this much to initiate a swap at all.
     const swapTxCost = settings.swapFeeSol + 0.000005
 
-    // Target = what the user configured + one swapTxCost buffer + any extra SOL
-    // the caller knows will be consumed by the operation (e.g. sponsor transfer).
-    // This ensures the wallet has enough AFTER the operation completes.
-    const TARGET = settings.replenishTo + swapTxCost + extraSOLNeeded
+    // SOL the operation itself must have to execute: rents for accounts it creates
+    // (extraSOLNeeded) plus a small tx-fee buffer. Operations that only pay a fee — or
+    // that REFUND rent, like cancel — pass extraSOLNeeded≈0, so they are essentially free
+    // and must NEVER be blocked by the swap-reserve logic below.
+    const WSOL_ATA_RENT = 0.00204
+    const FEE_BUFFER = 0.00005
+    const operationCost = extraSOLNeeded + FEE_BUFFER
+
+    // The swap itself needs SOL to bootstrap: fees + the temporary WSOL ATA rent
+    // (~0.00204, reclaimed on close). Below this floor a swap cannot run at all.
+    const swapFloor = WSOL_ATA_RENT + swapTxCost  // === MIN_SOL_FOR_SWAP_TX
+
+    // Reserve we'd LIKE to keep so the NEXT swap can still bootstrap. This is a TARGET,
+    // not a hard requirement — it may trigger a top-up but must never block an operation
+    // the wallet can already afford. Hoisted so the reactive retry can reuse it.
+    const BOOTSTRAP_RESERVE_MARGIN = 0.0003
+    const reserveFloor = operationCost + swapFloor + BOOTSTRAP_RESERVE_MARGIN
 
     // === PROACTIVE CHECK ===
-    // Top up before the operation if SOL is below the user-defined threshold.
-    // Guard: need at least swapTxCost to pay for the replenish swap itself.
+    // Swap before the operation ONLY when current SOL cannot fund it. We never
+    // force-buy up to the comfort target, because that would drain h173k the
+    // operation itself needs (e.g. the 2× escrow deposit).
     try {
       const currentLamports = await connection.getBalance(wallet.publicKey)
       const currentSOL = currentLamports / LAMPORTS_PER_SOL
 
-      // Replenish proactively only when SOL would not safely cover this operation.
-      // Floor guard: must have at least swapTxCost to pay for the replenish swap itself.
-      const WSOL_ATA_RENT = 0.00204
-      const actualSwapFloor = WSOL_ATA_RENT + swapTxCost  // 0.002145 — min do kolejnego swapa
+      // Hard-fail ONLY when the operation is genuinely UNAFFORDABLE *and* we cannot even
+      // bootstrap a swap to fix it. An affordable op (e.g. cancel, which only pays a fee
+      // and refunds rent) is never blocked here, regardless of the reserve.
+      if (currentSOL < operationCost && currentSOL < swapFloor) {
+        throw new Error(`NO_SOL:Not enough SOL to auto-convert h173k. Have ${currentSOL.toFixed(6)} SOL, need at least ${swapFloor.toFixed(6)} SOL to start the conversion. Please deposit a small amount of SOL first.`)
+      }
 
-      // Minimum SOL needed to (a) wykonać tę operację (extraSOLNeeded, np. rent biletu)
-      // ORAZ (b) wciąż móc opłacić przyszły swap. Poniżej tego progu — dokup SOL.
-      // Próg jest mniejszy od TARGET, więc po jednym top-upie NIE wpadamy w pętlę
-      // ciągłych swapów (nie marnujemy h173k), a jednocześnie nigdy nie zabraknie SOL.
-      const operationFloor = extraSOLNeeded + actualSwapFloor
-
-      const needsReplenish =
-        (currentSOL < settings.threshold || currentSOL < operationFloor) &&
-        currentSOL >= swapTxCost
-
-      if (needsReplenish) {
-        // How much to buy: enough to reach TARGET from current balance,
-        // PLUS the cost of the swap tx itself (swapFeeSol + base fee).
-        // Without this, the tx fee eats into the received SOL and we land below TARGET.
-        const neededSOL = TARGET - currentSOL + swapTxCost
+      // Swap when finishing the operation would leave SOL BELOW the bootstrap floor —
+      // i.e. when currentSOL < operationCost + swapFloor. This is the MINIMAL trigger that
+      // prevents depletion: it does NOT fire when SOL comfortably covers the operation and
+      // still leaves a bootstrap reserve, but it DOES fire just before the wallet would
+      // strand itself (so it can never run out of SOL while h173k is available to convert).
+      // When it fires we top up to reserveFloor so a small reserve remains afterwards.
+      const minSafeSOL = operationCost + swapFloor
+      const needsSwap = currentSOL < minSafeSOL && currentSOL >= swapFloor
+      if (needsSwap) {
+        const neededSOL = reserveFloor - currentSOL
         if (neededSOL > 0) {
-          console.log(`⚡ Proactive replenish: ${currentSOL.toFixed(6)} SOL → target ${TARGET.toFixed(6)} SOL (replenishTo=${settings.replenishTo}, +swapBuffer=${swapTxCost.toFixed(6)})`)
+          console.log(`⚡ Proactive replenish: ${currentSOL.toFixed(6)} SOL → reserve ${reserveFloor.toFixed(6)} SOL (net deficit ${neededSOL.toFixed(6)})`)
           if (onSwap) onSwap({ status: 'swapping', attempt: 0 })
           try {
             setLoading(true)
             const swapResult = await swapForSOL(neededSOL)
             setLoading(false)
-            if (onSwap) onSwap({ status: 'swapped', h173kUsed: swapResult.h173kUsed, solReceived: swapResult.solReceived })
-            await new Promise(r => setTimeout(r, 1500))
+            if (swapResult?.skipped) {
+              console.log('⚡ Proactive swap skipped (not economical) — proceeding without it')
+            } else {
+              if (onSwap) onSwap({ status: 'swapped', h173kUsed: swapResult.h173kUsed, solReceived: swapResult.solReceived })
+              await new Promise(r => setTimeout(r, 1500))
 
-            // === POST-SWAP SLIPPAGE CHECK ===
-            // Verify the swap actually reached TARGET (slippage may have fallen short).
-            // If still below TARGET and wallet has enough to pay for another swap, top up the remainder.
-            try {
-              const afterLamports = await connection.getBalance(wallet.publicKey)
-              const afterSOL = afterLamports / LAMPORTS_PER_SOL
-              const stillNeeded = TARGET - afterSOL
-              if (stillNeeded > 0 && afterSOL >= swapTxCost) {
-                console.log(`⚡ Slippage top-up: ${afterSOL.toFixed(6)} SOL still short of target by ${stillNeeded.toFixed(6)} SOL, buying remainder`)
-                if (onSwap) onSwap({ status: 'swapping', attempt: 0 })
-                setLoading(true)
-                const topUpResult = await swapForSOL(stillNeeded)
+              // === POST-SWAP SLIPPAGE CHECK ===
+              // Only top up if still short of the OPERATION FLOOR (not the comfort target).
+              // A tiny remaining shortfall is auto-skipped by swapForSOL's economical guard.
+              try {
+                const afterLamports = await connection.getBalance(wallet.publicKey)
+                const afterSOL = afterLamports / LAMPORTS_PER_SOL
+                const stillNeeded = reserveFloor - afterSOL
+                if (stillNeeded > 0 && afterSOL >= swapTxCost) {
+                  console.log(`⚡ Slippage top-up: ${afterSOL.toFixed(6)} SOL still below floor by ${stillNeeded.toFixed(6)} SOL`)
+                  if (onSwap) onSwap({ status: 'swapping', attempt: 0 })
+                  setLoading(true)
+                  const topUpResult = await swapForSOL(stillNeeded)
+                  setLoading(false)
+                  if (!topUpResult?.skipped && onSwap) onSwap({ status: 'swapped', h173kUsed: topUpResult.h173kUsed, solReceived: topUpResult.solReceived })
+                  await new Promise(r => setTimeout(r, 1500))
+                }
+              } catch (topUpErr) {
                 setLoading(false)
-                if (onSwap) onSwap({ status: 'swapped', h173kUsed: topUpResult.h173kUsed, solReceived: topUpResult.solReceived })
-                await new Promise(r => setTimeout(r, 1500))
+                if (topUpErr?.message?.startsWith('NO_H173K:') || topUpErr?.message?.startsWith('NO_SOL:')) throw topUpErr
+                console.log('Warning: Slippage top-up failed, continuing:', topUpErr?.message)
               }
-            } catch (topUpErr) {
-              setLoading(false)
-              if (topUpErr?.message?.startsWith('NO_H173K:')) throw new Error(topUpErr.message.replace('NO_H173K:', ''))
-              if (topUpErr?.message?.startsWith('NO_SOL:')) throw new Error(topUpErr.message.replace('NO_SOL:', ''))
-              console.log('Warning: Slippage top-up failed, continuing:', topUpErr?.message)
             }
           } catch (swapErr) {
             setLoading(false)
-            if (swapErr?.message?.startsWith('NO_H173K:')) throw new Error(swapErr.message.replace('NO_H173K:', ''))
-            if (swapErr?.message?.startsWith('NO_SOL:')) throw new Error(swapErr.message.replace('NO_SOL:', ''))
+            if (swapErr?.message?.startsWith('NO_H173K:') || swapErr?.message?.startsWith('NO_SOL:')) throw swapErr
             console.log('Warning: Proactive swap failed, continuing:', swapErr?.message)
           }
         }
       }
     } catch (err) {
-      if (err.message && (err.message.includes('NO_H173K') || err.message.includes('NO_SOL'))) throw err
+      // Surface fatal fund shortfalls as clean, user-facing messages; swallow only
+      // transient issues (e.g. a failed getBalance) so the operation can still try.
+      const m = err?.message || ''
+      if (m.startsWith('NO_H173K:')) throw new Error(m.replace('NO_H173K:', ''))
+      if (m.startsWith('NO_SOL:')) throw new Error(m.replace('NO_SOL:', ''))
     }
 
     const MAX_RETRIES = 2
@@ -736,26 +788,36 @@ export function useSwap(connection, wallet) {
           break
         }
 
-        // Reactive: re-fetch real-time balance and calculate exactly what's needed to reach TARGET
-        let solToGet = TARGET
+        // Only a genuine SOL shortfall justifies a swap-and-retry. A token-side
+        // failure (e.g. SPL-Token 0x1 on the escrow deposit) must surface immediately —
+        // swapping more h173k for SOL would only deepen the token shortage.
+        if (!isInsufficientSolError(error)) {
+          console.log('⛔ Not a SOL-shortfall error — not swapping, surfacing the error')
+          throw error
+        }
+
+        // Re-fetch balance and buy only the NET deficit up to the operation floor.
+        let solToGet = reserveFloor
         try {
           const lamports = await connection.getBalance(wallet.publicKey)
           const currentSOL = lamports / LAMPORTS_PER_SOL
-          // Buy what's missing to reach TARGET plus the swap tx cost itself;
-          // always at least swapTxCost so the swap can execute.
-          solToGet = Math.max(TARGET - currentSOL + swapTxCost, swapTxCost + 0.000005)
-        } catch { /* use TARGET as fallback */ }
+          solToGet = reserveFloor - currentSOL
+        } catch { /* fall back to reserveFloor */ }
 
-        console.log(`💡 Reactive replenish: getting ${solToGet.toFixed(6)} SOL (target=${TARGET.toFixed(6)}, replenishTo=${settings.replenishTo})`)
+        // Already at/above the floor → more SOL cannot help. Stop rather than spin.
+        if (solToGet <= 0) {
+          console.log('⛔ Already at operation floor — extra SOL would not help, giving up')
+          throw lastError
+        }
 
+        console.log(`💡 Reactive replenish: getting ${solToGet.toFixed(6)} SOL (reserve=${reserveFloor.toFixed(6)})`)
+
+        let swapResult
         try {
           if (onSwap) onSwap({ status: 'swapping', attempt: attempt + 1 })
           setLoading(true)
-          const swapResult = await swapForSOL(solToGet)
+          swapResult = await swapForSOL(solToGet)
           setLoading(false)
-          if (onSwap) onSwap({ status: 'swapped', h173kUsed: swapResult.h173kUsed, solReceived: swapResult.solReceived })
-          await new Promise(r => setTimeout(r, 1500))
-          console.log('🔄 Retrying operation...')
         } catch (swapError) {
           setLoading(false)
           console.log('❌ Swap failed:', swapError?.message)
@@ -763,12 +825,93 @@ export function useSwap(connection, wallet) {
           if (swapError?.message?.startsWith('NO_SOL:')) throw new Error(swapError.message.replace('NO_SOL:', ''))
           throw lastError
         }
+
+        // Swap wasn't economical (net yield ≤ its own cost) → don't burn h173k for nothing.
+        if (swapResult?.skipped) {
+          console.log('⛔ Reactive swap not economical — giving up rather than burning h173k')
+          throw lastError
+        }
+
+        if (onSwap) onSwap({ status: 'swapped', h173kUsed: swapResult.h173kUsed, solReceived: swapResult.solReceived })
+        await new Promise(r => setTimeout(r, 1500))
+        console.log('🔄 Retrying operation...')
       }
     }
 
     throw lastError
   }, [wallet, swapForSOL, connection])
-  
+
+  /**
+   * Read-only estimate of how much h173k the *proactive* auto-SOL replenishment
+   * inside withAutoSOL would consume for an operation needing `extraSOLNeeded` SOL.
+   * Performs NO swap and NO state change — it only mirrors withAutoSOL's TARGET /
+   * threshold math so callers can pre-validate funds before starting the operation.
+   *
+   * @returns {Promise<{willSwap:boolean, h173kForSwap:number, canSwap:boolean,
+   *                     currentSOL:number, estimateFailed?:boolean}>}
+   *   - willSwap: a replenish swap would be triggered
+   *   - canSwap: wallet has enough SOL to even initiate that swap
+   *   - h173kForSwap: estimated h173k the swap would spend (0 if none / unknown)
+   *   - estimateFailed: balance or pool quote couldn't be read (caller should fall
+   *                     back to existing behavior instead of hard-blocking)
+   */
+  const estimateAutoSOLCostH173K = useCallback(async (extraSOLNeeded = 0) => {
+    if (!wallet?.publicKey) {
+      return { willSwap: false, h173kForSwap: 0, canSwap: true, currentSOL: 0 }
+    }
+
+    const settings = getReplenishSettings()
+    const swapTxCost = settings.swapFeeSol + 0.000005
+    const WSOL_ATA_RENT = 0.00204
+    const FEE_BUFFER = 0.00005
+    const BOOTSTRAP_RESERVE_MARGIN = 0.0003
+    // Mirror withAutoSOL exactly: operationCost = what the op must have to run; swapFloor =
+    // bootstrap minimum for a swap; reserveFloor = op + reserve target.
+    const operationCost = extraSOLNeeded + FEE_BUFFER
+    const swapFloor = WSOL_ATA_RENT + swapTxCost  // === MIN_SOL_FOR_SWAP_TX
+    const reserveFloor = operationCost + swapFloor + BOOTSTRAP_RESERVE_MARGIN
+
+    let currentSOL = 0
+    try {
+      const lamports = await connection.getBalance(wallet.publicKey)
+      currentSOL = lamports / LAMPORTS_PER_SOL
+    } catch {
+      return { willSwap: false, h173kForSwap: 0, canSwap: true, currentSOL: 0, estimateFailed: true }
+    }
+
+    // No swap needed only when SOL covers the operation AND still leaves the bootstrap
+    // floor afterwards (currentSOL - operationCost >= swapFloor).
+    const minSafeSOL = operationCost + swapFloor
+    if (currentSOL >= minSafeSOL) {
+      return { willSwap: false, h173kForSwap: 0, canSwap: true, currentSOL }
+    }
+
+    // A swap is needed (to afford the op, or to avoid post-op depletion). Below the
+    // bootstrap floor it cannot run → block only if the op itself is unaffordable; an
+    // affordable op (e.g. cancel, extraSOLNeeded≈0) just proceeds without a reserve top-up.
+    if (currentSOL < swapFloor) {
+      if (currentSOL < operationCost) {
+        return { willSwap: true, h173kForSwap: 0, canSwap: false, currentSOL } // → errNeedSolDeposit
+      }
+      return { willSwap: false, h173kForSwap: 0, canSwap: true, currentSOL }
+    }
+
+    // Can bootstrap → a swap will run up to the reserve floor (op + reserve). swapForSOL
+    // grosses the request up by its own tx cost, so estimate for that.
+    const neededSOL = reserveFloor - currentSOL
+    if (neededSOL <= 0) {
+      return { willSwap: false, h173kForSwap: 0, canSwap: true, currentSOL }
+    }
+
+    try {
+      const { h173kNeeded } = await calculateSwapForSOL(neededSOL + swapTxCost)
+      return { willSwap: true, h173kForSwap: h173kNeeded, canSwap: true, currentSOL }
+    } catch {
+      // Pool/RPC quote unavailable — report no usable estimate.
+      return { willSwap: true, h173kForSwap: 0, canSwap: true, currentSOL, estimateFailed: true }
+    }
+  }, [wallet?.publicKey, connection, calculateSwapForSOL])
+
   return {
     loading,
     error,
@@ -779,6 +922,7 @@ export function useSwap(connection, wallet) {
     calculateSwapForSOL,
     swapForSOL,
     withAutoSOL,
+    estimateAutoSOLCostH173K,
     convertSOLtoH173K,
     fetchPoolData,
     MIN_SOL_FOR_SWAP

@@ -405,6 +405,9 @@ export default {
     maxOpenReached: "Se alcanzó el máximo de {n} contratos abiertos. Cierra (completa o cancela) un contrato existente antes de abrir uno nuevo.",
   },
   newContract: {
+    errNeedSolDeposit: "No hay suficiente SOL para comprar SOL para las comisiones. Deposita primero un poco de SOL en esta cartera.",
+    errDepositPlusSwap: "h173k insuficiente. Este contrato necesita {dep} (depósito) + ~{swap} (para recargar SOL) = {total} h173k, pero tienes {have}. Reduce el importe a aproximadamente {max}.",
+    solReserve: "Reserva para recarga de SOL",
     title: "Nuevo contrato",
     infoPre: "Crea un contrato MAD como",
     infoBuyer: "comprador",

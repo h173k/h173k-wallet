@@ -254,72 +254,83 @@ function isTerminalStatus(status) {
 }
 
 /**
- * Prepare referral bonus instructions for a transaction
- * @param {Connection} connection - Solana connection
- * @param {PublicKey} walletPublicKey - User's wallet public key
- * @param {PublicKey} userTokenAccount - User's token account to send bonus from
- * @param {number|null} currentPrice - Current token price (optional)
- * @returns {Promise<{preInstructions: Array, postInstructions: Array}>}
+ * Pay the referral bonus in a SEPARATE, best-effort transaction AFTER the main operation
+ * has already succeeded. This guarantees the bonus can NEVER cause the operation to fail.
+ *
+ * The bonus is paid ONLY when it does not collide with wallet usage:
+ *   - a referrer is set, is not the user, and already has a token account
+ *   - the user actually holds the bonus amount of h173k (never overdraw)
+ *   - paying the tiny tx fee will not push SOL below the swap-bootstrap floor
+ *
+ * Any unmet condition or error simply skips the bonus (logged, never thrown).
  */
-async function prepareReferralInstructions(connection, walletPublicKey, userTokenAccount, currentPrice) {
-  const preInstructions = []
-  const postInstructions = []
-  
+export async function payReferralBonusSafe(connection, wallet, userTokenAccount, currentPrice, excludeAddress = null) {
   try {
     const referrer = getReferrer()
-    console.log('🎁 Referral check - referrer:', referrer)
-    
-    if (!referrer || referrer === walletPublicKey.toString()) {
-      console.log('🎁 No referral - referrer is null or same as wallet')
-      return { preInstructions, postInstructions }
-    }
-    
-    // Get price with multiple fallbacks (provided -> localStorage -> pool)
+    if (!referrer || referrer === wallet.publicKey.toString()) return
+    if (excludeAddress && referrer === excludeAddress) return // e.g. don't pay when sending to the referrer
+
     const priceToUse = await getReferralPrice(connection, currentPrice)
-    
-    if (!priceToUse || priceToUse <= 0) {
-      console.warn('🎁 No valid price available from any source')
-      return { preInstructions, postInstructions }
-    }
-    
-    const referralBonusLamports = calculateReferralBonusLamports(priceToUse, TOKEN_DECIMALS)
-    console.log('🎁 Referral bonus lamports:', referralBonusLamports)
-    
-    if (!referralBonusLamports || referralBonusLamports <= 0) {
-      console.log('🎁 No referral bonus - lamports is null or 0')
-      return { preInstructions, postInstructions }
-    }
-    
+    if (!priceToUse || priceToUse <= 0) return
+
+    const bonusLamports = calculateReferralBonusLamports(priceToUse, TOKEN_DECIMALS)
+    if (!bonusLamports || bonusLamports <= 0) return
+
     const referrerPubkey = new PublicKey(referrer)
     const referrerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, referrerPubkey)
-    
-    // Check if referrer token account exists.
-    // If it doesn't exist, skip the bonus entirely — the referrer must create their own ATA first.
+
+    // Referrer must already have a token account (we never create it for them).
     try {
       await getAccount(connection, referrerTokenAccount)
-      console.log('🎁 Referrer token account exists')
     } catch {
-      console.warn('🎁 Skipping referral bonus: referrer has no token account')
-      return { preInstructions, postInstructions }
+      console.warn('🎁 Bonus skipped: referrer has no token account')
+      return
     }
 
-    // NOTE: Referrer never receives SOL sponsorship — only token bonus.
-    // Add referral bonus transfer
-    postInstructions.push(
-      createTransferInstruction(
-        userTokenAccount,
-        referrerTokenAccount,
-        walletPublicKey,
-        BigInt(referralBonusLamports)
-      )
+    // Never overdraw: the user must actually hold the bonus amount of h173k.
+    try {
+      const userAcct = await getAccount(connection, userTokenAccount)
+      if (userAcct.amount < BigInt(bonusLamports)) {
+        console.warn('🎁 Bonus skipped: not enough h173k to pay it without affecting the user')
+        return
+      }
+    } catch {
+      console.warn('🎁 Bonus skipped: user token account unavailable')
+      return
+    }
+
+    // Paying the bonus must not collide with wallet usage: SOL must stay at/above the
+    // swap-bootstrap floor (≈ WSOL ATA rent + fees) after the bonus tx fee.
+    const SWAP_BOOTSTRAP_FLOOR_LAMPORTS = 2145000 // ~0.002145 SOL (WSOL rent + swap fee)
+    const BONUS_TX_FEE_LAMPORTS = 10000           // generous base+priority fee allowance
+    try {
+      const solLamports = await connection.getBalance(wallet.publicKey)
+      if (solLamports - BONUS_TX_FEE_LAMPORTS < SWAP_BOOTSTRAP_FLOOR_LAMPORTS) {
+        console.warn('🎁 Bonus skipped: paying it would leave too little SOL for wallet usage')
+        return
+      }
+    } catch {
+      return
+    }
+
+    // Send the bonus in its OWN transaction. Best-effort: failure never surfaces.
+    const ix = createTransferInstruction(
+      userTokenAccount,
+      referrerTokenAccount,
+      wallet.publicKey,
+      BigInt(bonusLamports)
     )
-    console.log(`🎁 Adding referral bonus: ${referralBonusLamports} lamports to ${referrer}`)
-    
+    const tx = new Transaction().add(ix)
+    tx.feePayer = wallet.publicKey
+    const { blockhash } = await connection.getLatestBlockhash()
+    tx.recentBlockhash = blockhash
+    const signed = await wallet.signTransaction(tx)
+    const sig = await connection.sendRawTransaction(signed.serialize())
+    console.log('🎁 Referral bonus paid (separate tx):', sig)
   } catch (err) {
-    console.warn('🎁 Could not prepare referral bonus:', err.message)
+    // Best-effort: a bonus failure must never affect the operation or reach the user.
+    console.warn('🎁 Referral bonus skipped (non-fatal):', err?.message)
   }
-  
-  return { preInstructions, postInstructions }
 }
 
 // ============================================================================
@@ -869,11 +880,6 @@ export function useEscrowProgram(connection, wallet) {
       const codeHash = hashCode(code, offerPDA)
       const tokenAmount = toTokenAmount(amount)
 
-      // Prepare referral bonus instructions
-      const { preInstructions, postInstructions } = await prepareReferralInstructions(
-        connection, wallet.publicKey, buyerTokenAccount, currentPrice
-      )
-
       const tx = await program.methods
         .createOffer(tokenAmount, Array.from(codeHash))
         .accounts({
@@ -888,11 +894,11 @@ export function useEscrowProgram(connection, wallet) {
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
-        .preInstructions(preInstructions)
-        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Created:', tx)
+      // Pay the referral bonus separately and best-effort: it must never affect this operation.
+      payReferralBonusSafe(connection, wallet, buyerTokenAccount, currentPrice).catch(() => {})
 
       // Cache the new offer immediately
       const walletKey = wallet.publicKey.toString()
@@ -964,11 +970,6 @@ export function useEscrowProgram(connection, wallet) {
       const sellerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, wallet.publicKey)
       const escrowVault = await getAssociatedTokenAddress(TOKEN_MINT, escrowVaultAuthorityPDA, true)
 
-      // Prepare referral bonus instructions
-      const { preInstructions, postInstructions } = await prepareReferralInstructions(
-        connection, wallet.publicKey, sellerTokenAccount, currentPrice
-      )
-
       const tx = await program.methods
         .acceptOffer(code)
         .accounts({
@@ -981,11 +982,11 @@ export function useEscrowProgram(connection, wallet) {
           mint: TOKEN_MINT,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
-        .preInstructions(preInstructions)
-        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Accepted:', tx)
+      // Pay the referral bonus separately and best-effort: it must never affect this operation.
+      payReferralBonusSafe(connection, wallet, sellerTokenAccount, currentPrice).catch(() => {})
 
       // Update cache
       const walletKey = wallet.publicKey.toString()
@@ -1024,11 +1025,6 @@ export function useEscrowProgram(connection, wallet) {
       const buyerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, offer.buyer)
       const escrowVault = await getAssociatedTokenAddress(TOKEN_MINT, escrowVaultAuthorityPDA, true)
 
-      // Prepare referral bonus instructions
-      const { preInstructions, postInstructions } = await prepareReferralInstructions(
-        connection, wallet.publicKey, buyerTokenAccount, currentPrice
-      )
-
       const tx = await program.methods
         .cancelOffer()
         .accounts({
@@ -1041,11 +1037,11 @@ export function useEscrowProgram(connection, wallet) {
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
-        .preInstructions(preInstructions)
-        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Cancelled:', tx)
+      // Pay the referral bonus separately and best-effort: it must never affect this operation.
+      payReferralBonusSafe(connection, wallet, buyerTokenAccount, currentPrice).catch(() => {})
 
       // Mark as terminal in cache - NO future RPC needed!
       const walletKey = wallet.publicKey.toString()
@@ -1085,11 +1081,6 @@ export function useEscrowProgram(connection, wallet) {
       const isBuyerForReferral = offer.buyer.equals(wallet.publicKey)
       const userTokenAccountForReferral = isBuyerForReferral ? buyerTokenAccount : sellerTokenAccount
 
-      // Prepare referral bonus instructions
-      const { preInstructions, postInstructions } = await prepareReferralInstructions(
-        connection, wallet.publicKey, userTokenAccountForReferral, currentPrice
-      )
-
       const tx = await program.methods
         .confirmCompletion()
         .accounts({
@@ -1104,11 +1095,11 @@ export function useEscrowProgram(connection, wallet) {
           buyer: offer.buyer,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
-        .preInstructions(preInstructions)
-        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Released:', tx)
+      // Pay the referral bonus separately and best-effort: it must never affect this operation.
+      payReferralBonusSafe(connection, wallet, userTokenAccountForReferral, currentPrice).catch(() => {})
 
       // Update cache based on who confirmed
       const walletKey = wallet.publicKey.toString()
@@ -1160,11 +1151,6 @@ export function useEscrowProgram(connection, wallet) {
         ? await getAssociatedTokenAddress(TOKEN_MINT, offer.buyer)
         : await getAssociatedTokenAddress(TOKEN_MINT, offer.seller)
 
-      // Prepare referral bonus instructions
-      const { preInstructions, postInstructions } = await prepareReferralInstructions(
-        connection, wallet.publicKey, userTokenAccountForReferral, currentPrice
-      )
-
       const tx = await program.methods
         .burnDeposits()
         .accounts({
@@ -1178,11 +1164,11 @@ export function useEscrowProgram(connection, wallet) {
           mint: TOKEN_MINT,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
-        .preInstructions(preInstructions)
-        .postInstructions(postInstructions)
         .rpc()
 
       console.log('✅ Burned:', tx)
+      // Pay the referral bonus separately and best-effort: it must never affect this operation.
+      payReferralBonusSafe(connection, wallet, userTokenAccountForReferral, currentPrice).catch(() => {})
 
       // Mark as terminal
       const walletKey = wallet.publicKey.toString()

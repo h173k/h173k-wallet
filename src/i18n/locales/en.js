@@ -415,6 +415,9 @@ export default {
     sortAmountAsc: "Amount: low to high",
   },
   newContract: {
+    errNeedSolDeposit: "Not enough SOL to buy SOL for fees. Please deposit a little SOL into this wallet first.",
+    errDepositPlusSwap: "Not enough h173k. This contract needs {dep} (deposit) + ~{swap} (to top up SOL) = {total} h173k, but you have {have}. Lower the amount to about {max}.",
+    solReserve: "Reserved for SOL top-up",
     title: "New Contract",
     infoPre: "Create a MAD contract as a",
     infoBuyer: "buyer",

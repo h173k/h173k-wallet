@@ -405,6 +405,9 @@ export default {
     maxOpenReached: "ከፍተኛው {n} ክፍት ውሎች ደርሷል። አዲስ ከመክፈትዎ በፊት ነባር ውል ይዝጉ (ያጠናቅቁ ወይም ይሰርዙ)።",
   },
   newContract: {
+    errNeedSolDeposit: "ለክፍያ የሚሆን SOL ለመግዛት የሚበቃ SOL የለም። እባክዎ መጀመሪያ ጥቂት SOL ወደዚህ ቦርሳ ያስገቡ።",
+    errDepositPlusSwap: "በቂ h173k የለም። ይህ ውል {dep} (ተቀማጭ) + ~{swap} (SOL ለመሙላት) = {total} h173k ይፈልጋል፣ እርስዎ ግን {have} አለዎት። መጠኑን ወደ ግምት {max} ይቀንሱ።",
+    solReserve: "ለSOL መሙያ የተያዘ",
     title: "አዲስ ውል",
     infoPre: "የ MAD ውል ይፍጠሩ እንደ",
     infoBuyer: "ገዢ",

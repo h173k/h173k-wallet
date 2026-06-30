@@ -43,7 +43,7 @@ import { QRCodeGenerator, QRCodeScanner } from './components/QRCode'
 
 // Hooks
 import { useSwap } from './hooks/useSwap'
-import { useEscrowProgram } from './hooks/useEscrow'
+import { useEscrowProgram, payReferralBonusSafe } from './hooks/useEscrow'
 
 // Lottery (Win h173k)
 import LotteryView from './lottery/LotteryView'
@@ -1023,7 +1023,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   
   // Determine if SOL warning should be shown
   // Only show if not enough SOL for swap even with h173k
-  const { swapFeeSol: _swapFeeSol, threshold: solThreshold, replenishTo: solReplenishTo } = getReplenishSettings()
+  const { swapFeeSol: _swapFeeSol, replenishTo: solReplenishTo } = getReplenishSettings()
   const swapTxFloor = _swapFeeSol + 0.000005  // absolute minimum to initiate any swap
   const needsDeposit = solBalance < swapTxFloor
   const lowSOL = solBalance < MIN_SOL_BALANCE && solBalance >= swapTxFloor
@@ -1085,11 +1085,11 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   }
   
   // SOL to h173k conversion
-  const { convertThreshold, replenishTo, swapFeeSol, threshold } = getReplenishSettings()
+  const { convertThreshold, replenishTo, swapFeeSol } = getReplenishSettings()
   const WSOL_ATA_RENT = 0.00204 // 2039280 lamports — rent-exempt deposit for a token account
   // Solana system accounts must stay above rent-exempt minimum (890880 lamports ≈ 0.00089 SOL).
   const SOL_ACCOUNT_RENT_EXEMPT = 0.00089088
-  const effectiveThreshold = Math.max(threshold, SOL_ACCOUNT_RENT_EXEMPT)
+  const effectiveThreshold = SOL_ACCOUNT_RENT_EXEMPT
   // Cost of this conversion (WSOL ATA is always closed after swap, so rent is always needed).
   const CONVERT_ATA_OVERHEAD = WSOL_ATA_RENT + swapFeeSol + 0.000005
   // Reserve enough SOL for the *next* swap (replenish: h173k→SOL) so it's always executable.
@@ -1098,6 +1098,12 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const maxConvertableSOL = Math.floor(Math.max(0, solBalance - effectiveThreshold - CONVERT_ATA_OVERHEAD - NEXT_SWAP_RESERVE) * 10000) / 10000
   
   const handleConvertAmountChange = async (value) => {
+    // Clamp to the max convertible amount so the input can never be set to a value that
+    // would leave SOL below the reserved minimum (which the app would refuse anyway).
+    const num = parseFloat(value)
+    if (!isNaN(num) && num > maxConvertableSOL) {
+      value = String(maxConvertableSOL)
+    }
     setConvertAmount(value)
     setConvertQuote(null)
     
@@ -1405,7 +1411,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
         {usdValue !== null && <div className="balance-usd">{formatUSD(usdValue)}</div>}
         <div className="balance-sol-row">
           <span className="balance-sol">{formatNumber(solBalance, 4)} SOL</span>
-          {solBalance > convertThreshold  && (
+          {solBalance > convertThreshold && maxConvertableSOL > 0 && (
             <button className="convert-sol-btn" onClick={() => setShowConvertModal(true)}>
               {t('main.convert')}
             </button>
@@ -1469,9 +1475,8 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const { withAutoSOL, loading: swapLoading } = useSwap(connection, sessionWallet)
   const usdValue = toUSD && amount ? toUSD(parseFloat(amount) || 0) : null
   
-  // Get referrer and referral bonus info
+  // Get referrer and referral bonus info (bonus is paid separately, best-effort)
   const referrer = getReferrer()
-  const referralBonusLamports = referrer ? calculateReferralBonusLamports(price, TOKEN_DECIMALS) : null
   const referralBonusInfo = referrer ? getReferralBonusInfo(price) : null
   
   const handleScan = (data) => {
@@ -1485,15 +1490,11 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     const sendAmount = parseFloat(amount)
     if (!sendAmount || sendAmount <= 0) { showToast(t('main.enterValidAmount'), 'error'); return }
     
-    // Calculate total needed including referral bonus
-    let totalNeeded = sendAmount
-    if (referralBonusInfo && referralBonusInfo.tokenAmount) {
-      totalNeeded += referralBonusInfo.tokenAmount
-    }
-    
-    if (totalNeeded > balance) { 
-      showToast(referralBonusInfo ? t('send.insufficientBalanceReferral') : t('send.insufficientBalance'), 'error')
-      return 
+    // The referral bonus is paid separately (best-effort) AFTER the send, and is skipped
+    // if it doesn't fit — so it never blocks the send and is not counted here.
+    if (sendAmount > balance) {
+      showToast(t('send.insufficientBalance'), 'error')
+      return
     }
 
     // Pre-calculate sponsor amount + recipient ATA cost.
@@ -1569,29 +1570,9 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
             )
           }
 
-          // Add referral bonus transfer if referrer exists and bonus is calculable
-          if (referrer && referralBonusLamports && referralBonusLamports > 0) {
-            try {
-              const referrerPubkey = new PublicKey(referrer)
-              // Don't send referral to self or to the recipient
-              if (referrer !== publicKey.toString() && referrer !== recipient) {
-                const referrerTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, referrerPubkey)
-                
-                // Only send bonus if referrer already has a token account — never create it on their behalf
-                try {
-                  await getAccount(connection, referrerTokenAccount)
-                  // Add referral bonus transfer
-                  transaction.add(createTransferInstruction(senderTokenAccount, referrerTokenAccount, publicKey, referralBonusLamports))
-                  console.log(`Adding referral bonus: ${referralBonusLamports} lamports to ${referrer}`)
-                } catch {
-                  console.warn(`Skipping referral bonus: referrer has no token account`)
-                }
-              }
-            } catch (err) {
-              console.error('Error adding referral transfer:', err)
-              // Continue without referral if there's an error
-            }
-          }
+          // NOTE: the referral bonus is intentionally NOT part of this transaction. It is
+          // paid separately and best-effort after the send succeeds (see handleSend below),
+          // so it can never make the send itself fail.
           
           const { blockhash } = await connection.getLatestBlockhash()
           transaction.recentBlockhash = blockhash
@@ -1615,6 +1596,12 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       
       setTxSignature(signature)
       showToast(t('send.txSent'), 'success')
+      // Pay the referral bonus separately and best-effort — never affects the send. Skipped
+      // if it doesn't fit, and not paid when the recipient IS the referrer.
+      try {
+        const senderAta = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
+        payReferralBonusSafe(connection, sessionWallet, senderAta, price, recipient).catch(() => {})
+      } catch { /* best-effort */ }
       onRefresh()
     } catch (err) { 
       console.error('Send error:', err)
@@ -2378,30 +2365,24 @@ function NewContractView({ connection, escrow, balance, solBalance, price, toUSD
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
   const [createdCode, setCreatedCode] = useState(null)
+  // Part B: h173k that the SOL auto-replenish swap is expected to consume, so the
+  // amount/MAX/validation can reserve it. 0 until estimated (and on estimate failure).
+  const [swapCostH173K, setSwapCostH173K] = useState(0)
   
-  const { withAutoSOL, loading: swapLoading } = useSwap(connection, sessionWallet)
-  
-const handleCreate = async () => {
-  const numAmount = parseFloat(amount)
-  if (!numAmount || numAmount <= 0) {
-    showToast(t('main.enterValidAmount'), 'error')
-    return
-  }
-  const requiredDeposit = numAmount * 2
+  const { withAutoSOL, estimateAutoSOLCostH173K, loading: swapLoading } = useSwap(connection, sessionWallet)
 
-  if (requiredDeposit > balance) {
-    showToast(t('newContract.errDeposit', { n: formatNumber(requiredDeposit) }), 'error')
-    return
-  }
-
-  setLoading(true)
-  try {
-    const code = generateCode()
-
+  // Shared between the live estimate (Part B) and handleCreate (Part A) so both use
+  // the exact same extra-SOL figure that withAutoSOL will be given.
+  const computeExtraSOLNeeded = useCallback(async () => {
     const BUYER_INDEX_RENT  = 12166080 / 1e9  // 0.01216608 SOL — rent nowego buyerIndex PDA
     const ESCROW_VAULT_RENT = 0.00204          // ATA rent — escrowVault zawsze nowy (unikalny offerPDA)
+    // createOffer also init's the `offer` PDA (8 disc + 4×32 pk + 3×8 u64 + 32 codeHash
+    // + 1 status + 8 nonce + 3×1 bool = 204 B). Its rent is paid by the buyer and MUST be
+    // reserved — otherwise the operation drains SOL below the swap-bootstrap floor and the
+    // next operation gets stranded with no way to auto-convert h173k.
+    const OFFER_ACCOUNT_SIZE = 204
+    const OFFER_RENT_FALLBACK = 0.00231
 
-    // 1. buyerIndex — koszt tylko przy pierwszym kontrakcie tego portfela
     let buyerIndexRent = 0
     try {
       const [buyerIndexPDA] = getBuyerIndexPDA(sessionWallet.publicKey)
@@ -2411,12 +2392,82 @@ const handleCreate = async () => {
       buyerIndexRent = BUYER_INDEX_RENT
     }
 
-    // 2. escrowVault ATA — zawsze ponoszony (każdy kontrakt = nowy unikalny vault)
-    const escrowVaultRent = ESCROW_VAULT_RENT
+    let offerRent = OFFER_RENT_FALLBACK
+    try {
+      const lamports = await connection.getMinimumBalanceForRentExemption(OFFER_ACCOUNT_SIZE)
+      offerRent = lamports / LAMPORTS_PER_SOL
+    } catch {
+      offerRent = OFFER_RENT_FALLBACK
+    }
+
+    return buyerIndexRent + ESCROW_VAULT_RENT + offerRent
+  }, [connection])
+
+  // Part B: keep a live estimate of the h173k the auto-SOL top-up would spend, so the
+  // UI can reserve it (MAX, hint, insufficient check). Read-only — triggers no swap.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const extra = await computeExtraSOLNeeded()
+        const est = await estimateAutoSOLCostH173K(extra)
+        if (cancelled) return
+        setSwapCostH173K(est.estimateFailed ? 0 : (est.h173kForSwap || 0))
+      } catch {
+        if (!cancelled) setSwapCostH173K(0)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [solBalance, balance, computeExtraSOLNeeded, estimateAutoSOLCostH173K])
+  
+const handleCreate = async () => {
+  const numAmount = parseFloat(amount)
+  if (!numAmount || numAmount <= 0) {
+    showToast(t('main.enterValidAmount'), 'error')
+    return
+  }
+  const requiredDeposit = numAmount * 2
+
+  // Hard floor: the 2× deposit itself must fit. Exactly-equal balance is fine on-chain
+  // (a transfer of the full balance succeeds), so only block when it strictly exceeds.
+  if (requiredDeposit > balance) {
+    showToast(t('newContract.errDeposit', { n: formatNumber(requiredDeposit) }), 'error')
+    return
+  }
+
+  setLoading(true)
+  try {
+    const code = generateCode()
 
     // NOTE: sponsorAmt removed — referrer never receives SOL sponsorship.
     // Suma wszystkich kosztów SOL które createOffer poniesie z portfela twórcy
-    const extraSOLNeeded = buyerIndexRent + escrowVaultRent
+    const extraSOLNeeded = await computeExtraSOLNeeded()
+
+    // Part A: ensure h173k covers BOTH the deposit AND the h173k the auto-SOL top-up
+    // will spend, before any swap happens. Otherwise the swap eats into the balance
+    // and createOffer later fails on-chain with less h173k than the deposit needs.
+    const est = await estimateAutoSOLCostH173K(extraSOLNeeded)
+    if (est.willSwap && !est.canSwap) {
+      showToast(t('newContract.errNeedSolDeposit'), 'error')
+      return
+    }
+
+    // The referral bonus is no longer part of the createOffer transaction — it is paid
+    // separately, best-effort, AFTER the operation succeeds, and is skipped automatically
+    // if it doesn't fit. So it can never block contract creation and is not counted here.
+    // Only the deposit and any auto-SOL swap compete for h173k.
+    const competingH173k = est.estimateFailed ? 0 : est.h173kForSwap
+    if (requiredDeposit + competingH173k > balance) {
+      const maxAmount = Math.max(0, (balance - competingH173k) / 2)
+      showToast(t('newContract.errDepositPlusSwap', {
+        dep: formatNumber(requiredDeposit),
+        swap: formatNumber(competingH173k),
+        total: formatNumber(requiredDeposit + competingH173k),
+        have: formatNumber(balance),
+        max: formatNumber(maxAmount),
+      }), 'error')
+      return
+    }
 
     const result = await withAutoSOL(
       () => escrow.createOffer(numAmount, code, name, price),
@@ -2474,7 +2525,11 @@ const handleCreate = async () => {
   
   const numAmount = parseFloat(amount) || 0
   const requiredDeposit = numAmount * 2
-  const insufficientBalance = !!amount && numAmount > 0 && requiredDeposit > balance
+  // Part B: reserve the h173k the SOL auto-replenish will consume, so MAX/validation
+  // never push the deposit past what remains after that swap.
+  const maxContractAmount = Math.max(0, (balance - swapCostH173K) / 2)
+  const requiredTotal = requiredDeposit + swapCostH173K
+  const insufficientBalance = !!amount && numAmount > 0 && requiredTotal > balance
   const usdValue = toUSD && amount ? toUSD(numAmount) : null
   
   return (
@@ -2503,10 +2558,10 @@ const handleCreate = async () => {
             type="number" className="form-input" placeholder="0.00"
             value={amount} onChange={(e) => setAmount(e.target.value)} step="0.01"
           />
-          <button className="max-btn" onClick={() => setAmount((balance / 2).toFixed(2))}>MAX</button>
+          <button className="max-btn" onClick={() => setAmount(maxContractAmount.toFixed(2))}>MAX</button>
         </div>
         <div className="form-hint-row">
-          <span className="form-hint">{t('newContract.available', { n: formatH173K(balance, h173kDecimals), max: formatH173K(balance / 2, h173kDecimals) })}</span>
+          <span className="form-hint">{t('newContract.available', { n: formatH173K(balance, h173kDecimals), max: formatH173K(maxContractAmount, h173kDecimals) })}</span>
           {usdValue && <span className="amount-usd-preview">{formatUSD(usdValue)}</span>}
         </div>
       </div>
@@ -2516,14 +2571,20 @@ const handleCreate = async () => {
           <span>{t('newContract.yourDeposit')}</span>
           <span>{formatH173K(requiredDeposit, h173kDecimals)} h173k</span>
         </div>
+        {swapCostH173K > 0 && (
+          <div className="deposit-row">
+            <span>{t('newContract.solReserve')}</span>
+            <span>{formatH173K(swapCostH173K, h173kDecimals)} h173k</span>
+          </div>
+        )}
         <div className={`deposit-row total${insufficientBalance ? ' deposit-row--error' : ''}`}>
           <span>{t('newContract.requiredBalance')}</span>
-          <span>{formatH173K(requiredDeposit, h173kDecimals)} h173k</span>
+          <span>{formatH173K(requiredTotal, h173kDecimals)} h173k</span>
         </div>
         {insufficientBalance && (
           <div className="deposit-row deposit-row--insufficient">
             <span>{t('newContract.insufficient')}</span>
-            <span className="deposit-shortfall">−{formatH173K(requiredDeposit - balance, h173kDecimals)} h173k</span>
+            <span className="deposit-shortfall">−{formatH173K(requiredTotal - balance, h173kDecimals)} h173k</span>
           </div>
         )}
       </div>
@@ -3285,7 +3346,11 @@ function ReplenishNowButton({ connection, solBalance, showToast }) {
     setBusy(true)
     try {
       const result = await swapForSOL(neededSOL)
-      showToast(t('replenish.replenishOk', { n: result.solReceived.toFixed(4) }), 'success')
+      if (result?.skipped) {
+        showToast(t('replenish.alreadySufficient'), 'info')
+      } else {
+        showToast(t('replenish.replenishOk', { n: result.solReceived.toFixed(4) }), 'success')
+      }
     } catch (err) {
       const msg = err.message.replace(/^NO_H173K:|^NO_SOL:/, '')
       showToast(t('replenish.replenishError', { msg }), 'error')
@@ -3476,20 +3541,16 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
   // Replenish SOL settings sub-view
   if (showReplenishSettings) {
     const handleSaveReplenish = () => {
-      const threshold = parseFloat(replenishForm.threshold)
       const replenishTo = parseFloat(replenishForm.replenishTo)
       const swapFeeSol = parseFloat(replenishForm.swapFeeSol)
       const convertThreshold = parseFloat(replenishForm.convertThreshold)
 
       if (isNaN(swapFeeSol) || swapFeeSol < MIN_SWAP_PRIORITY_FEE) { showToast(t('replenish.minSwapFee', { n: MIN_SWAP_PRIORITY_FEE }), 'error'); return }
-      if (isNaN(threshold) || threshold < MIN_TRIGGER_THRESHOLD) { showToast(t('replenish.minTrigger', { n: MIN_TRIGGER_THRESHOLD }), 'error'); return }
       if (isNaN(replenishTo) || replenishTo < MIN_REPLENISH_TO) { showToast(t('replenish.minReplenishTo', { n: MIN_REPLENISH_TO }), 'error'); return }
-      if (replenishTo <= threshold) { showToast(t('replenish.replenishGtThreshold'), 'error'); return }
       const minConvert = WSOL_ATA_RENT_CONST + swapFeeSol
       if (isNaN(convertThreshold) || convertThreshold < minConvert) { showToast(t('replenish.minConvert', { n: minConvert.toFixed(5) }), 'error'); return }
-      if (convertThreshold < threshold) { showToast(t('replenish.convertGteThreshold', { n: threshold }), 'error'); return }
 
-      saveReplenishSettings({ threshold, replenishTo, swapFeeSol, convertThreshold })
+      saveReplenishSettings({ replenishTo, swapFeeSol, convertThreshold })
       showToast(t('replenish.savedToast'), 'success')
     }
 
@@ -3502,18 +3563,6 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
 
         <div className="settings-section">
           <h3>{t('replenish.settingsTitle')}</h3>
-          <div className="form-group">
-            <label className="form-label">{t('replenish.triggerLabel')}</label>
-            <input
-              type="number"
-              className="form-input"
-              placeholder={DEFAULT_REPLENISH_SETTINGS.threshold}
-              value={replenishForm.threshold}
-              onChange={(e) => setReplenishForm(f => ({ ...f, threshold: e.target.value }))}
-              step="0.001" min={MIN_TRIGGER_THRESHOLD}
-            />
-            <span className="form-hint">{t('replenish.triggerHint', { min: MIN_TRIGGER_THRESHOLD })}</span>
-          </div>
           <div className="form-group">
             <label className="form-label">{t('replenish.replenishToLabel')}</label>
             <input
@@ -3855,7 +3904,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
 
-      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.3.1</span></div></div>
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.3.14</span></div></div>
     </div>
   )
 }

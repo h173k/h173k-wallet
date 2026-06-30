@@ -412,6 +412,9 @@ export default {
     sortAmountAsc: "Kwota: od najmniejszej",
   },
   newContract: {
+    errNeedSolDeposit: "Za mało SOL, aby dokupić SOL na opłaty. Najpierw wpłać trochę SOL na ten portfel.",
+    errDepositPlusSwap: "Za mało h173k. Kontrakt wymaga {dep} (depozyt) + ~{swap} (na dokupienie SOL) = {total} h173k, a masz {have}. Zmniejsz kwotę do ok. {max}.",
+    solReserve: "Rezerwa na dokupienie SOL",
     title: "Nowy kontrakt",
     infoPre: "Utwórz kontrakt MAD jako",
     infoBuyer: "kupujący",
