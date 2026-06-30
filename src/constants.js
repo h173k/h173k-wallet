@@ -101,7 +101,6 @@ export const MIN_REPLENISH_TO = 3 * WSOL_ATA_RENT        // 0.00612
 export const DEFAULT_REPLENISH_SETTINGS = {
   replenishTo: MIN_REPLENISH_TO,    // manual top-up target (used by the manual "Replenish"/"Swap for SOL" buttons)
   swapFeeSol: MIN_SWAP_PRIORITY_FEE, // priority fee in SOL added to swap transactions
-  convertThreshold: MIN_TRIGGER_THRESHOLD, // above this SOL balance, show "Convert to h173k"
 }
 
 export function getReplenishSettings() {

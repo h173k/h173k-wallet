@@ -1085,7 +1085,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   }
   
   // SOL to h173k conversion
-  const { convertThreshold, replenishTo, swapFeeSol } = getReplenishSettings()
+  const { replenishTo, swapFeeSol } = getReplenishSettings()
   const WSOL_ATA_RENT = 0.00204 // 2039280 lamports — rent-exempt deposit for a token account
   // Solana system accounts must stay above rent-exempt minimum (890880 lamports ≈ 0.00089 SOL).
   const SOL_ACCOUNT_RENT_EXEMPT = 0.00089088
@@ -1411,7 +1411,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
         {usdValue !== null && <div className="balance-usd">{formatUSD(usdValue)}</div>}
         <div className="balance-sol-row">
           <span className="balance-sol">{formatNumber(solBalance, 4)} SOL</span>
-          {solBalance > convertThreshold && maxConvertableSOL > 0 && (
+          {maxConvertableSOL > 0 && (
             <button className="convert-sol-btn" onClick={() => setShowConvertModal(true)}>
               {t('main.convert')}
             </button>
@@ -3543,14 +3543,11 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
     const handleSaveReplenish = () => {
       const replenishTo = parseFloat(replenishForm.replenishTo)
       const swapFeeSol = parseFloat(replenishForm.swapFeeSol)
-      const convertThreshold = parseFloat(replenishForm.convertThreshold)
 
       if (isNaN(swapFeeSol) || swapFeeSol < MIN_SWAP_PRIORITY_FEE) { showToast(t('replenish.minSwapFee', { n: MIN_SWAP_PRIORITY_FEE }), 'error'); return }
       if (isNaN(replenishTo) || replenishTo < MIN_REPLENISH_TO) { showToast(t('replenish.minReplenishTo', { n: MIN_REPLENISH_TO }), 'error'); return }
-      const minConvert = WSOL_ATA_RENT_CONST + swapFeeSol
-      if (isNaN(convertThreshold) || convertThreshold < minConvert) { showToast(t('replenish.minConvert', { n: minConvert.toFixed(5) }), 'error'); return }
 
-      saveReplenishSettings({ replenishTo, swapFeeSol, convertThreshold })
+      saveReplenishSettings({ replenishTo, swapFeeSol })
       showToast(t('replenish.savedToast'), 'success')
     }
 
@@ -3588,18 +3585,6 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
             <span className="form-hint">{t('replenish.swapFeeHint', { min: MIN_SWAP_PRIORITY_FEE })}</span>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">{t('replenish.convertLabel')}</label>
-            <input
-              type="number"
-              className="form-input"
-              placeholder={DEFAULT_REPLENISH_SETTINGS.convertThreshold}
-              value={replenishForm.convertThreshold}
-              onChange={(e) => setReplenishForm(f => ({ ...f, convertThreshold: e.target.value }))}
-              step="0.001" min={WSOL_ATA_RENT_CONST + parseFloat(replenishForm.swapFeeSol || 0)}
-            />
-            <span className="form-hint">{t('replenish.convertHint')}</span>
-          </div>
           <button
             className="btn btn-primary"
             onClick={handleSaveReplenish}
@@ -3904,7 +3889,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
 
-      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.3.14</span></div></div>
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.3.15</span></div></div>
     </div>
   )
 }
