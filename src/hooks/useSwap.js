@@ -56,13 +56,21 @@ const SOL_BUFFER = 0.007
 // shortage would wrongly trigger an h173k→SOL swap and burn even more h173k.
 function isInsufficientSolError(e) {
   const blob = (String(e?.message || e || '') + ' ' + (e?.logs || []).join(' ')).toLowerCase()
-  // Token-program shortfall → NOT a SOL problem.
+  // A SystemProgram lamport shortfall is the definitive SOL signal — trust it FIRST, even
+  // though the failure also surfaces as "custom program error: 0x1" (System's own 0x1).
+  // This happens when funding an account/ATA rent runs out mid-transaction, e.g.
+  // "Transfer: insufficient lamports 900238, need 2039280". Checking this before the 0x1
+  // exclusion below is essential — otherwise a real SOL shortage is mistaken for a token
+  // error and the auto-swap retry never fires.
+  if (blob.includes('insufficient lamports')) return true
+
+  // SPL-Token shortfall (token 0x1) → NOT a SOL problem. Never let a token shortage
+  // trigger an h173k→SOL swap (it would burn even more h173k).
   if (
     blob.includes('custom program error: 0x1') ||
     (blob.includes('error: insufficient funds') && blob.includes('tokenkeg'))
   ) return false
   return (
-    blob.includes('insufficient lamports') ||
     blob.includes('insufficient funds for rent') ||
     blob.includes('no record of a prior credit') ||
     blob.includes('debit an account')
@@ -417,18 +425,34 @@ export function useSwap(connection, wallet) {
         )
       }
       
-      // Get recent blockhash and send
-      const { blockhash } = await connection.getLatestBlockhash()
-      transaction.recentBlockhash = blockhash
+      // Send with a small retry on transient blockhash errors. "Blockhash not found"
+      // (and "block height exceeded") come from RPC-node lag between fetching the blockhash
+      // and simulating/sending — not from anything wrong with the transaction. Each retry
+      // fetches a FRESH blockhash and re-signs, which clears the previous signature.
       transaction.feePayer = wallet.publicKey
-      
-      const signedTx = await wallet.signTransaction(transaction)
-      const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-        skipPreflight: false,
-        maxRetries: 3
-      })
-      
-      await connection.confirmTransaction(signature, 'confirmed')
+      let signature
+      let lastErr
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+          transaction.recentBlockhash = blockhash
+          const signedTx = await wallet.signTransaction(transaction)
+          signature = await connection.sendRawTransaction(signedTx.serialize(), {
+            skipPreflight: false,
+            maxRetries: 3,
+          })
+          await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed')
+          break
+        } catch (sendErr) {
+          lastErr = sendErr
+          const m = (sendErr?.message || '').toLowerCase()
+          const transient = m.includes('blockhash not found') || m.includes('block height exceeded')
+          if (!transient || attempt === 2) throw sendErr
+          console.log(`↻ swap send: transient blockhash error — retrying with a fresh blockhash (attempt ${attempt + 2}/3)`)
+          await new Promise(r => setTimeout(r, 600))
+        }
+      }
+      if (!signature) throw lastErr || new Error('Swap send failed')
       
       return {
         success: true,
@@ -497,7 +521,7 @@ export function useSwap(connection, wallet) {
           canReplenish: false,
           h173kNeeded,
           solOutput,
-          error: `Need ${h173kNeeded.toFixed(2)} h173k but only have ${currentH173K.toFixed(2)}`,
+          error: `Need ${h173kNeeded.toFixed(9)} h173k but only have ${currentH173K.toFixed(9)}`,
           insufficientH173K: true
         }
       }
@@ -539,7 +563,7 @@ export function useSwap(connection, wallet) {
       const h173kBalance = Number(tokenBalance.value.uiAmount)
       
       if (h173kNeeded > h173kBalance) {
-        throw new Error(`Insufficient H173K. Need ${h173kNeeded.toFixed(2)}, have ${h173kBalance.toFixed(2)}`)
+        throw new Error(`Insufficient H173K. Need ${h173kNeeded.toFixed(9)}, have ${h173kBalance.toFixed(9)}`)
       }
       
       const result = await executeSwap(quote, 'H173KtoSOL')
@@ -638,14 +662,14 @@ export function useSwap(connection, wallet) {
     const tokenBalance = await connection.getTokenAccountBalance(tokenAccount)
     const h173kBalance = Number(tokenBalance.value.uiAmount)
     
-    console.log(`🪙 H173K needed: ${h173kNeeded.toFixed(2)}, H173K balance: ${h173kBalance.toFixed(2)}`)
+    console.log(`🪙 H173K needed: ${h173kNeeded.toFixed(9)}, H173K balance: ${h173kBalance.toFixed(9)}`)
     
     if (h173kNeeded > h173kBalance) {
-      throw new Error(`NO_H173K:Insufficient h173k to get more SOL. Need ${h173kNeeded.toFixed(2)} h173k, have ${h173kBalance.toFixed(2)} h173k. Please add more h173k to your wallet.`)
+      throw new Error(`NO_H173K:Insufficient h173k to get more SOL. Need ${h173kNeeded.toFixed(9)} h173k, have ${h173kBalance.toFixed(9)} h173k. Please add more h173k to your wallet.`)
     }
     
     // Execute swap
-    console.log(`🔄 Executing swap: ${h173kNeeded.toFixed(2)} H173K -> ~${targetSOL.toFixed(4)} SOL...`)
+    console.log(`🔄 Executing swap: ${h173kNeeded.toFixed(9)} H173K -> ~${targetSOL.toFixed(4)} SOL...`)
     
     const result = await executeSwap(quote, 'H173KtoSOL')
     console.log(`✅ Swap complete! Got ${result.outputAmount.toFixed(6)} SOL`)
