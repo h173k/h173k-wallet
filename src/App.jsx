@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { version as APP_VERSION } from '../package.json'
 import { Connection, PublicKey, Transaction, LAMPORTS_PER_SOL, SystemProgram } from '@solana/web3.js'
 import { 
   TOKEN_PROGRAM_ID, 
@@ -43,6 +44,7 @@ import { QRCodeGenerator, QRCodeScanner } from './components/QRCode'
 
 // Hooks
 import { useSwap } from './hooks/useSwap'
+import { useUsdtSwap, beginSendAsUsdt, endSendAsUsdt, isSendAsUsdtInFlight } from './hooks/useUsdtSwap'
 import { useEscrowProgram, payReferralBonusSafe } from './hooks/useEscrow'
 
 // Lottery (Win h173k)
@@ -70,7 +72,7 @@ import {
 } from './messenger/messenger'
 
 // Constants & Utils
-import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck } from './constants'
+import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT } from './constants'
 import { useTokenPrice } from './usePrice'
 import { 
   formatNumber, 
@@ -371,6 +373,10 @@ function WalletApp({ connection, onRpcChange }) {
   const [messengerTarget, setMessengerTarget] = useState(null)
   // Last seen h173k balance, used to detect incoming transfers for notifications.
   const prevH173kRef = useRef(null)
+  // Holds the latest USDT auto-convert routine so fetchBalances can invoke it on every
+  // balance refresh (automatic interval, manual button, or pull-to-refresh) without a
+  // separate timer and without a dependency cycle.
+  const checkAndConvertUsdtRef = useRef(null)
 
   // Open the messenger focused on a specific peer, ensuring the thread exists.
   const openMessengerWith = useCallback((address, suggestedName) => {
@@ -506,6 +512,11 @@ function WalletApp({ connection, onRpcChange }) {
 
       // Scan for new encrypted messages alongside the balance refresh.
       try { await scanIncomingMessages(connection, publicKey) } catch (e) { /* non-fatal */ }
+
+      // Convert any incoming USDT as part of the balance refresh itself — whether this
+      // refresh was triggered automatically (interval) or manually (button / pull-to-
+      // refresh). Fire-and-forget so it never blocks showing the updated balances.
+      checkAndConvertUsdtRef.current?.()
     } catch (err) {
       if (err.message && (err.message.includes('401') || err.message.includes('Unauthorized'))) {
         setRpcError('rpc_limit')
@@ -521,6 +532,8 @@ function WalletApp({ connection, onRpcChange }) {
       return () => clearInterval(interval)
     }
   }, [isUnlocked, publicKey, fetchBalances])
+
+
 
   // Cache the public address (not sensitive) so we can scan for message
   // notifications even on a cold start while the wallet is still locked.
@@ -547,7 +560,76 @@ function WalletApp({ connection, onRpcChange }) {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
   }, [])
-  
+
+  // ===== Auto-convert incoming USDT into h173k =====
+  // Any USDT that lands on this wallet is swapped, in full, into h173k on the
+  // h173k-USDT CPMM pool — with no slippage limit (fill at any price). SOL needed for
+  // the conversion's fees is sourced from h173k via withAutoSOL, so the wallet never
+  // needs a SOL top-up to accept USDT.
+  const usdtSwap = useUsdtSwap(connection, sessionWallet)
+  const { withAutoSOL: withAutoSOLForUsdt } = useSwap(connection, sessionWallet)
+  const { getUsdtBalanceRaw: getUsdtBalanceRawFn, convertAllUsdtToH173K: convertAllUsdtFn } = usdtSwap
+  const convertingUsdtRef = useRef(false)
+  // Once we've shown a conversion-failure toast (typically "not enough SOL"), stay silent
+  // on subsequent refreshes so the user isn't spammed every cycle. Reset on success or
+  // when there's no longer any USDT to convert, so a genuinely new situation warns again.
+  const usdtConvertWarnedRef = useRef(false)
+
+  const checkAndConvertUsdt = useCallback(async () => {
+    if (!connection || !publicKey || !sessionWallet.isUnlocked()) return
+    if (convertingUsdtRef.current) return
+    // Don't grab USDT that a "send as USDT" flow is holding mid-transfer.
+    if (isSendAsUsdtInFlight()) return
+    let usdtAmount = 0
+    try {
+      const usdtRaw = await getUsdtBalanceRawFn()
+      usdtAmount = Number(usdtRaw) / Math.pow(10, USDT_DECIMALS)
+    } catch { return }
+    // Ignore dust that couldn't cover its own conversion fees. Nothing pending → clear the
+    // silence flag so the next real arrival is announced fresh.
+    if (usdtAmount < MIN_USDT_AUTO_CONVERT) { usdtConvertWarnedRef.current = false; return }
+
+    convertingUsdtRef.current = true
+    const wasSilenced = usdtConvertWarnedRef.current
+    // Only announce "detected" when we're not already in a silenced (stuck) state.
+    if (!wasSilenced) showToast(t('usdt.detected', { amount: formatNumber(usdtAmount, 2) }), 'info')
+    try {
+      // The conversion tx pays a swap priority fee; pass it as extraSOLNeeded so
+      // withAutoSOL reserves matching h173k for the SOL top-up if the wallet is short.
+      const { swapFeeSol } = getReplenishSettings()
+      const result = await withAutoSOLForUsdt(
+        () => convertAllUsdtFn(),
+        (info) => {
+          if (info.status === 'swapping') showToast(t('send.swappingH173kForSol'), 'info')
+        },
+        (swapFeeSol || 0.0001) + 0.000005
+      )
+      if (result && !result.skipped) {
+        usdtConvertWarnedRef.current = false // success clears the silence flag
+        showToast(t('usdt.converted', {
+          usdt: formatNumber(result.usdtIn, 2),
+          h: formatSmartNumber(result.h173kReceived),
+        }), 'success')
+        fetchBalances()
+      }
+    } catch (err) {
+      console.error('USDT auto-convert error:', err)
+      const locked = err?.message?.includes('Wallet is locked')
+      // Show the failure once, then silence repeats until the situation changes.
+      if (!locked && !wasSilenced) {
+        showToast(t('usdt.convertFailed', { msg: err.message }), 'error')
+      }
+      if (!locked) usdtConvertWarnedRef.current = true
+    } finally {
+      convertingUsdtRef.current = false
+    }
+  }, [connection, publicKey, getUsdtBalanceRawFn, convertAllUsdtFn, withAutoSOLForUsdt, showToast, t, fetchBalances])
+
+  // Point the ref at the latest conversion routine (assigned during render so it's ready
+  // before the first balance refresh fires). No separate timer — the conversion now runs
+  // as part of every balance refresh, automatic or manual.
+  checkAndConvertUsdtRef.current = checkAndConvertUsdt
+
   const handleWalletCreated = useCallback((pubKey) => {
     setHasWallet(true)
     setIsUnlocked(true)
@@ -1471,9 +1553,47 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const [txSignature, setTxSignature] = useState(null)
   const [sponsorAmtState, setSponsorAmtState] = useState(0) // pre-calculated in validateAndProceed
   const [extraSOLNeeded, setExtraSOLNeeded] = useState(0)   // sponsor + recipient ATA rent
-  
-  const { withAutoSOL, loading: swapLoading } = useSwap(connection, sessionWallet)
+
+  // "Send as USDT": the entered h173k amount is converted to USDT (no slippage limit)
+  // and the resulting USDT is transferred to the recipient.
+  const [sendAsUsdt, setSendAsUsdt] = useState(false)
+  const [usdtQuote, setUsdtQuote] = useState(null)          // { outputAmount, priceImpact }
+  const [usdtFeeReserveH173K, setUsdtFeeReserveH173K] = useState(0) // h173k reserved for SOL fees
+  const [sentToken, setSentToken] = useState('h173k')      // token label for the success screen
+  const [sentUsdtAmount, setSentUsdtAmount] = useState(0)  // USDT actually sent (success screen)
+
+  const { withAutoSOL, estimateAutoSOLCostH173K, loading: swapLoading } = useSwap(connection, sessionWallet)
+  const usdtSwap = useUsdtSwap(connection, sessionWallet)
+  const { getQuote: getUsdtQuote, estimateSendAsUsdtSOL } = usdtSwap
   const usdValue = toUSD && amount ? toUSD(parseFloat(amount) || 0) : null
+
+  // Live estimate for USDT mode: probable USDT output + price impact (the "slippage"
+  // shown in the UI), plus the h173k that would be reserved to buy SOL for fees.
+  useEffect(() => {
+    if (!sendAsUsdt) { setUsdtQuote(null); setUsdtFeeReserveH173K(0); return }
+    const amt = parseFloat(amount)
+    let cancelled = false
+    ;(async () => {
+      // Quote the h173k -> USDT conversion for the entered amount.
+      if (amt && amt > 0) {
+        try {
+          const q = await getUsdtQuote('H173KtoUSDT', amt)
+          if (!cancelled) setUsdtQuote({ outputAmount: q.outputAmount, priceImpact: q.priceImpact })
+        } catch { if (!cancelled) setUsdtQuote(null) }
+      } else if (!cancelled) {
+        setUsdtQuote(null)
+      }
+      // Estimate the h173k that withAutoSOL would spend to buy SOL for this send's fees.
+      try {
+        let recipientPk = null
+        try { recipientPk = new PublicKey(recipient) } catch { /* not yet valid */ }
+        const extraSOL = await estimateSendAsUsdtSOL(recipientPk)
+        const est = await estimateAutoSOLCostH173K(extraSOL)
+        if (!cancelled) setUsdtFeeReserveH173K(est.estimateFailed ? 0 : (est.h173kForSwap || 0))
+      } catch { if (!cancelled) setUsdtFeeReserveH173K(0) }
+    })()
+    return () => { cancelled = true }
+  }, [sendAsUsdt, amount, recipient, getUsdtQuote, estimateSendAsUsdtSOL, estimateAutoSOLCostH173K])
   
   // Get referrer and referral bonus info (bonus is paid separately, best-effort)
   const referrer = getReferrer()
@@ -1494,6 +1614,37 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     // if it doesn't fit — so it never blocks the send and is not counted here.
     if (sendAmount > balance) {
       showToast(t('send.insufficientBalance'), 'error')
+      return
+    }
+
+    // ===== SEND AS USDT =====
+    // The entered h173k amount converts to USDT and is transferred. SOL for the
+    // conversion + transfer fees is bought from h173k, so we must reserve that h173k on
+    // top of the amount being sent — and surface it (MAD-contract style) if it doesn't fit.
+    if (sendAsUsdt) {
+      let recipientPk = null
+      try { recipientPk = new PublicKey(recipient) } catch { /* validated above */ }
+      const extraSOL = await usdtSwap.estimateSendAsUsdtSOL(recipientPk)
+      const est = await estimateAutoSOLCostH173K(extraSOL)
+      if (est.willSwap && !est.canSwap) {
+        showToast(t('send.errNeedSolDeposit'), 'error')
+        return
+      }
+      const feeReserve = est.estimateFailed ? 0 : est.h173kForSwap
+      setUsdtFeeReserveH173K(feeReserve)
+      if (sendAmount + feeReserve > balance) {
+        showToast(t('send.errUsdtPlusSwap', {
+          amt: formatH173K(sendAmount),
+          swap: formatH173K(feeReserve),
+          total: formatH173K(sendAmount + feeReserve),
+          have: formatH173K(balance),
+          max: formatH173K(Math.max(0, balance - feeReserve)),
+        }), 'error')
+        return
+      }
+      setSponsorAmtState(0)
+      setExtraSOLNeeded(extraSOL)
+      setConfirmStep(true)
       return
     }
 
@@ -1542,7 +1693,60 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       const recipientPubkey = new PublicKey(recipient)
       const sendAmount = parseFloat(amount)
       const amountLamports = Math.floor(sendAmount * Math.pow(10, TOKEN_DECIMALS))
-      
+
+      // ===== SEND AS USDT =====
+      // Two retry-safe phases: (1) convert h173k -> USDT (no slippage limit), then
+      // (2) transfer the USDT actually received. SOL for both is bought from h173k.
+      if (sendAsUsdt) {
+        const onSwap = (swapInfo) => {
+          if (swapInfo.status === 'swapping') {
+            showToast(t('send.swappingH173kForSol'), 'info')
+          } else if (swapInfo.status === 'swapped') {
+            showToast(t('main.swappedForSol', { h: formatSmartNumber(swapInfo.h173kUsed), s: swapInfo.solReceived.toFixed(4) }), 'info')
+            if (onRefresh) onRefresh()
+          }
+        }
+
+        // Pause the background auto-converter so it can't grab the USDT we're about to
+        // hold between the conversion and the transfer.
+        beginSendAsUsdt()
+        try {
+          showToast(t('send.convertingToUsdt'), 'info')
+          const conv = await withAutoSOL(
+            () => usdtSwap.convertH173KtoUSDT(sendAmount),
+            onSwap,
+            extraSOLNeeded
+          )
+          const usdtRaw = conv.usdtReceivedRaw
+          if (!usdtRaw || usdtRaw <= 0n) {
+            throw new Error('Conversion produced no USDT')
+          }
+
+          const sig = await withAutoSOL(
+            () => usdtSwap.transferUsdt(recipientPubkey, usdtRaw),
+            onSwap,
+            0.00204 + 0.000005 // recipient USDT ATA (if new) + base fee
+          )
+
+          setSentToken('USDT')
+          setSentUsdtAmount(conv.usdtReceived)
+          setTxSignature(sig)
+          showToast(t('send.txSent'), 'success')
+          // Pay the referral bonus in h173k, best-effort — exactly as a normal send does.
+          // payReferralBonusSafe checks the sender's h173k balance and SOL floor itself and
+          // skips if paying it could affect the wallet, and runs in its own fire-and-forget
+          // transaction, so it can never block or fail the USDT send.
+          try {
+            const senderAta = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
+            payReferralBonusSafe(connection, sessionWallet, senderAta, price, recipient).catch(() => {})
+          } catch { /* best-effort */ }
+          onRefresh()
+        } finally {
+          endSendAsUsdt()
+        }
+        return
+      }
+
       // Use withAutoSOL wrapper for the entire send operation
       const signature = await withAutoSOL(
         async () => {
@@ -1621,7 +1825,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         <div className="success-card">
           <div className="success-icon">✓</div>
           <h2>{t('send.successTitle')}</h2>
-          <p className="success-amount">{formatH173K(parseFloat(amount))} h173k</p>
+          <p className="success-amount">{sentToken === 'USDT' ? `${formatNumber(sentUsdtAmount, 2)} USDT` : `${formatH173K(parseFloat(amount))} h173k`}</p>
           <p className="success-to">{t('send.successTo', { addr: shortenAddress(recipient) })}</p>
           <a href={`https://solscan.io/tx/${txSignature}`} target="_blank" rel="noopener noreferrer" className="tx-link">{t('send.viewOnSolscan')}</a>
           <button className="btn btn-primary" onClick={onBack}>{t('common.done')}</button>
@@ -1644,7 +1848,16 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       <div className="send-view">
         <div className="view-header"><button className="back-btn" onClick={() => setConfirmStep(false)}><BackIcon size={16} /> {t('common.back')}</button><h2>{t('send.confirmTitle')}</h2></div>
         <div className="confirm-card">
-          <div className="confirm-row"><span className="confirm-label">{t('send.amount')}</span><span className="confirm-value">{formatH173K(parseFloat(amount))} h173k{usdValue && <span className="confirm-usd">({formatUSD(usdValue)})</span>}</span></div>
+          <div className="confirm-row"><span className="confirm-label">{sendAsUsdt ? t('send.amountToConvert') : t('send.amount')}</span><span className="confirm-value">{formatH173K(parseFloat(amount))} h173k{usdValue && <span className="confirm-usd">({formatUSD(usdValue)})</span>}</span></div>
+          {sendAsUsdt && (
+            <>
+              <div className="confirm-row"><span className="confirm-label">{t('send.recipientReceivesApprox')}</span><span className="confirm-value">≈ {usdtQuote ? formatNumber(usdtQuote.outputAmount, 2) : '—'} USDT</span></div>
+              <div className="confirm-row"><span className="confirm-label">{t('send.estimatedSlippage')}</span><span className="confirm-value">≈ {usdtQuote ? formatNumber(usdtQuote.priceImpact, 2) : '—'}%</span></div>
+              {usdtFeeReserveH173K > 0 && (
+                <div className="confirm-row"><span className="confirm-label">{t('send.solReserve')}</span><span className="confirm-value">{formatH173K(usdtFeeReserveH173K)} h173k</span></div>
+              )}
+            </>
+          )}
           <div className="confirm-row"><span className="confirm-label">{t('send.to')}</span><span className="confirm-value address">{shortenAddress(recipient)}</span></div>
           {referrer && referralBonusInfo && referralBonusInfo.tokenAmount && (
             <div className="confirm-row referral-row">
@@ -1679,17 +1892,59 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         </div>
       </div>
       <div className="form-group">
+        <label className="checkbox-row">
+          <input type="checkbox" checked={sendAsUsdt} onChange={(e) => setSendAsUsdt(e.target.checked)} />
+          <span>{t('send.sendAsUsdt')}</span>
+        </label>
+        {sendAsUsdt && <div className="form-hint">{t('send.sendAsUsdtHint')}</div>}
+      </div>
+      <div className="form-group">
         <label className="form-label">{t('send.amountLabel')}</label>
         <div className="amount-input-wrapper">
           <input type="number" className="form-input" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} step="0.01" />
-          <button className="max-btn" onClick={() => setAmount(balance.toString())}>MAX</button>
+          <button className="max-btn" onClick={() => setAmount(Math.max(0, balance - (sendAsUsdt ? usdtFeeReserveH173K : 0)).toString())}>MAX</button>
         </div>
         <div className="form-hint-row">
           <span className="form-hint">{t('send.available', { n: formatH173K(balance) })}</span>
           {usdValue !== null && <span className="amount-usd-preview">{formatUSD(usdValue)}</span>}
         </div>
       </div>
-      <button className="btn btn-primary btn-action" onClick={validateAndProceed} disabled={!recipient || !amount}>{t('common.continue')}</button>
+
+      {sendAsUsdt && (() => {
+        const amt = parseFloat(amount) || 0
+        const total = amt + usdtFeeReserveH173K
+        const insufficient = amt > 0 && total > balance
+        return (
+          <div className={`deposit-preview${insufficient ? ' deposit-preview--error' : ''}`}>
+            <div className="deposit-row">
+              <span>{t('send.recipientReceivesApprox')}</span>
+              <span>≈ {usdtQuote && amt > 0 ? formatNumber(usdtQuote.outputAmount, 2) : '—'} USDT</span>
+            </div>
+            <div className="deposit-row">
+              <span>{t('send.estimatedSlippage')}</span>
+              <span>≈ {usdtQuote && amt > 0 ? formatNumber(usdtQuote.priceImpact, 2) : '—'}%</span>
+            </div>
+            {usdtFeeReserveH173K > 0 && (
+              <div className="deposit-row">
+                <span>{t('send.solReserve')}</span>
+                <span>{formatH173K(usdtFeeReserveH173K)} h173k</span>
+              </div>
+            )}
+            <div className={`deposit-row total${insufficient ? ' deposit-row--error' : ''}`}>
+              <span>{t('send.requiredBalance')}</span>
+              <span>{formatH173K(total)} h173k</span>
+            </div>
+            {insufficient && (
+              <div className="deposit-row deposit-row--insufficient">
+                <span>{t('send.insufficient')}</span>
+                <span className="deposit-shortfall">−{formatH173K(total - balance)} h173k</span>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      <button className="btn btn-primary btn-action" onClick={validateAndProceed} disabled={!recipient || !amount || (sendAsUsdt && (parseFloat(amount) || 0) + usdtFeeReserveH173K > balance)}>{t('common.continue')}</button>
     </div>
   )
 }
@@ -1722,12 +1977,17 @@ function ReceiveView({ publicKey, onBack, showToast, onWin }) {
           <button className="btn btn-action" style={{ flex: 1 }} onClick={onWin}>{t('receive.winH173k')}</button>
         </div>
       </div>
-      <div className="receive-info"><p>{t('receive.info1')}</p><p>{t('receive.info2')}</p></div>
+      <div className="receive-info">
+        <p className="receive-usdt-notice">{t('receive.usdtAutoConvert')}</p>
+        <p>{t('receive.info1')}</p>
+        <p>{t('receive.info2')}</p>
+      </div>
       {showWarn && (
         <div className="p2p-modal-overlay">
           <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>
             <div className="p2p-modal-head"><h3>{t('receive.warnTitle')}</h3></div>
             <div className="escrow-info-card">
+              <p className="receive-usdt-notice">{t('receive.usdtAutoConvert')}</p>
               <p>{t('receive.warnBody')}</p>
             </div>
             <button className="btn btn-action" onClick={confirmWarn}>{t('receive.warnConfirm')}</button>
@@ -1882,6 +2142,56 @@ function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
         }
       }
       
+      await delay(300) // Delay before USDT transactions
+
+      // 3. Fetch USDT transactions (genuine transfers to/from other wallets).
+      // The auto-conversion swap (USDT<->h173k via the pool) is intentionally excluded:
+      // it moves BOTH USDT and h173k in the same tx, so we skip any USDT change that
+      // coincides with an h173k change and show only real incoming/outgoing USDT.
+      try {
+        const usdtAccount = await getAssociatedTokenAddress(USDT_MINT, publicKey)
+        const usdtSignatures = await connection.getSignaturesForAddress(usdtAccount, { limit: 20 })
+        const seenSigs = new Set(allTxs.map(tx => tx.signature))
+        const newUsdtSignatures = usdtSignatures.filter(sig => !seenSigs.has(sig.signature))
+
+        await delay(100)
+        const usdtResults = await processBatch(newUsdtSignatures, 3, 250)
+
+        for (const { tx, sig } of usdtResults) {
+          try {
+            if (!tx?.meta) continue
+            const preBalances = tx.meta.preTokenBalances || []
+            const postBalances = tx.meta.postTokenBalances || []
+
+            const preU = preBalances.find(b => b.mint === USDT_MINT.toString() && b.owner === ownerStr)
+            const postU = postBalances.find(b => b.mint === USDT_MINT.toString() && b.owner === ownerStr)
+            const usdtDiff = (postU?.uiTokenAmount?.uiAmount || 0) - (preU?.uiTokenAmount?.uiAmount || 0)
+            if (usdtDiff === 0) continue
+
+            // If h173k ALSO changed in this tx, it's an auto-conversion swap — not a
+            // USDT transfer. Skip it (the h173k side already appears in the h173k pass).
+            const preH = preBalances.find(b => b.mint === TOKEN_MINT.toString() && b.owner === ownerStr)
+            const postH = postBalances.find(b => b.mint === TOKEN_MINT.toString() && b.owner === ownerStr)
+            const h173kDiff = (postH?.uiTokenAmount?.uiAmount || 0) - (preH?.uiTokenAmount?.uiAmount || 0)
+            if (Math.abs(h173kDiff) > 1e-9) continue
+
+            allTxs.push({
+              signature: sig.signature,
+              blockTime: sig.blockTime,
+              type: usdtDiff > 0 ? 'receive' : 'send',
+              amount: Math.abs(usdtDiff),
+              token: 'USDT',
+              error: sig.err !== null,
+            })
+          } catch (err) {
+            console.error('Error parsing USDT tx:', sig.signature, err)
+          }
+        }
+      } catch (err) {
+        // No USDT account yet, or transient RPC error — just skip the USDT pass.
+        console.log('USDT history pass skipped:', err?.message)
+      }
+
       // Filter and sort
       const finalTxs = allTxs.filter(tx => tx && tx.amount > 0 && !tx.error)
       finalTxs.sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0))
@@ -1978,7 +2288,7 @@ function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
                 <div className="tx-type">{tx.type === 'receive' ? t('history.received') : t('history.sent')} {tx.token}</div>
                 <div className="tx-date">{tx.blockTime ? new Date(tx.blockTime * 1000).toLocaleDateString() : t('history.unknown')}</div>
               </div>
-              <div className={`tx-amount ${tx.type}`}>{tx.type === 'receive' ? '+' : '-'}{tx.token === 'SOL' ? formatNumber(tx.amount, 4) : formatH173K(tx.amount, h173kDecimals)} {tx.token}</div>
+              <div className={`tx-amount ${tx.type}`}>{tx.type === 'receive' ? '+' : '-'}{tx.token === 'SOL' ? formatNumber(tx.amount, 4) : tx.token === 'USDT' ? formatNumber(tx.amount, 2) : formatH173K(tx.amount, h173kDecimals)} {tx.token}</div>
             </a>
           ))}
         </div>
@@ -3889,7 +4199,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         )}
       </div>
 
-      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>1.5.3.15</span></div></div>
+      <div className="settings-section"><h3>{t('settings.about')}</h3><div className="settings-item"><span>{t('settings.version')}</span><span>{APP_VERSION}</span></div></div>
     </div>
   )
 }

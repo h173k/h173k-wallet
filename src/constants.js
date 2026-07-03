@@ -77,6 +77,23 @@ export const TOKEN_MINT = new PublicKey('173AvoJNQoWsaR1wdYTMNLUqZc1b7d4SzB2ZZRZ
 // Token decimals
 export const TOKEN_DECIMALS = 9
 
+// ========== USDT (auto-conversion) ==========
+// USDT (SPL) mint on Solana — the quote token of the h173k-USDT CPMM pool below.
+export const USDT_MINT = new PublicKey('Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB')
+
+// USDT has 6 decimals (standard SPL USDT).
+export const USDT_DECIMALS = 6
+
+// h173k-USDT Raydium CPMM pool (same pool used by usePrice.js for on-chain pricing).
+// All swap accounts (ammConfig, vaults, observation, token order) are read dynamically
+// from this pool account at runtime — nothing is hardcoded.
+export const USDT_POOL_ID = new PublicKey('J9ED7D3pR7Uw5W6Y52p1Mq3Gfkmumg8fHRvLEiHLL2S7')
+
+// Auto-conversion threshold: incoming USDT is converted only once the balance is above
+// this amount. Below it, the USDT is left as-is (converting dust would burn more h173k on
+// transaction fees than the swap could return).
+export const MIN_USDT_AUTO_CONVERT = 0.01
+
 // Price update interval (30 seconds)
 export const PRICE_UPDATE_INTERVAL = 30000
 

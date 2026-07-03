@@ -1364,6 +1364,31 @@ body {
   line-height: 1.6;
 }
 
+.receive-usdt-notice {
+  color: var(--color-accent, #4ade80);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+/* Checkbox row (e.g. "Send as USDT" toggle) */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-white-90, #eee);
+  user-select: none;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--color-accent, #4ade80);
+  flex-shrink: 0;
+}
+
 /* === History View === */
 .tx-list {
   display: flex;
