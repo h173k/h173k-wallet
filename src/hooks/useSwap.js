@@ -693,7 +693,7 @@ export function useSwap(connection, wallet) {
     // Reserve we'd LIKE to keep so the NEXT swap can still bootstrap. This is a TARGET,
     // not a hard requirement — it may trigger a top-up but must never block an operation
     // the wallet can already afford. Hoisted so the reactive retry can reuse it.
-    const BOOTSTRAP_RESERVE_MARGIN = 0.0003
+    const BOOTSTRAP_RESERVE_MARGIN = 0.001  // raised from 0.0003 so a swap leaves enough SOL above the bootstrap floor for the NEXT swap, even after slippage/economical skips (prevents stranding just below the floor)
     const reserveFloor = operationCost + swapFloor + BOOTSTRAP_RESERVE_MARGIN
 
     // === PROACTIVE CHECK ===
@@ -864,7 +864,7 @@ export function useSwap(connection, wallet) {
     const swapTxCost = settings.swapFeeSol + 0.000005
     const WSOL_ATA_RENT = 0.00204
     const FEE_BUFFER = 0.00005
-    const BOOTSTRAP_RESERVE_MARGIN = 0.0003
+    const BOOTSTRAP_RESERVE_MARGIN = 0.001  // raised from 0.0003 so a swap leaves enough SOL above the bootstrap floor for the NEXT swap, even after slippage/economical skips (prevents stranding just below the floor)
     // Mirror withAutoSOL exactly: operationCost = what the op must have to run; swapFloor =
     // bootstrap minimum for a swap; reserveFloor = op + reserve target.
     const operationCost = extraSOLNeeded + FEE_BUFFER
