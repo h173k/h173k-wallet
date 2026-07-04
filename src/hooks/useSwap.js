@@ -798,11 +798,40 @@ export function useSwap(connection, wallet) {
     const MAX_RETRIES = 2
     let lastError = null
 
+    // After a successful operation, rebuild the SOL reserve if it dropped low — WHILE the
+    // wallet can still bootstrap a swap (SOL ≥ swapFloor). This is the missing safety net:
+    // pre-op top-ups can under-deliver (slippage) or fail transiently and get swallowed,
+    // and operations then drain SOL. Without this, the balance drifts a little lower each
+    // operation until it falls under the bootstrap floor and strands (no SOL left to even
+    // run the rescue swap). Best-effort and non-blocking: it never delays or fails the
+    // operation's result.
+    const restoreReserveInBackground = () => {
+      ;(async () => {
+        try {
+          const lamports = await connection.getBalance(wallet.publicKey)
+          const sol = lamports / LAMPORTS_PER_SOL
+          // Only act when below the reserve target AND still above the bootstrap floor.
+          if (sol < reserveFloor && sol >= swapFloor) {
+            const deficit = reserveFloor - sol
+            console.log(`🩹 Post-op reserve restore: ${sol.toFixed(6)} SOL → target ${reserveFloor.toFixed(6)} SOL (deficit ${deficit.toFixed(6)})`)
+            if (onSwap) onSwap({ status: 'swapping', attempt: 0 })
+            const r = await swapForSOL(deficit)
+            if (r && !r.skipped && onSwap) onSwap({ status: 'swapped', h173kUsed: r.h173kUsed, solReceived: r.solReceived })
+          }
+        } catch (e) {
+          // Never surface: rebuilding the reserve is opportunistic.
+          console.log('Post-op reserve restore skipped:', e?.message)
+        }
+      })()
+    }
+
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       console.log(`🚀 withAutoSOL: Attempt ${attempt + 1}/${MAX_RETRIES + 1}...`)
 
       try {
-        return await operation()
+        const result = await operation()
+        restoreReserveInBackground() // rebuild the buffer for next time (best-effort)
+        return result
       } catch (error) {
         lastError = error
         console.log(`❌ Attempt ${attempt + 1} failed:`, error?.message || error)
