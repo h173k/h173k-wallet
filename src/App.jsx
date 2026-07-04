@@ -1177,7 +1177,13 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   // Reserve enough SOL for the *next* swap (replenish: h173k→SOL) so it's always executable.
   // That swap creates a fresh WSOL ATA for output: full rent + fees required.
   const NEXT_SWAP_RESERVE = WSOL_ATA_RENT + swapFeeSol + 0.000005
-  const maxConvertableSOL = Math.floor(Math.max(0, solBalance - effectiveThreshold - CONVERT_ATA_OVERHEAD - NEXT_SWAP_RESERVE) * 10000) / 10000
+  // On a fresh wallet the h173k OUTPUT ATA doesn't exist yet and this conversion must
+  // create it (permanent rent, not reclaimed). A zero h173k balance is a reliable proxy
+  // for "no ATA" — you cannot hold h173k without one. Reserve its rent so the conversion
+  // can't run short and fail on-chain (AccountNotInitialized would otherwise become an
+  // insufficient-lamports failure once we add the ATA-creation instruction).
+  const H173K_OUTPUT_ATA_RENT = balance === 0 ? WSOL_ATA_RENT : 0
+  const maxConvertableSOL = Math.floor(Math.max(0, solBalance - effectiveThreshold - CONVERT_ATA_OVERHEAD - NEXT_SWAP_RESERVE - H173K_OUTPUT_ATA_RENT) * 10000) / 10000
   
   const handleConvertAmountChange = async (value) => {
     // Clamp to the max convertible amount so the input can never be set to a value that
