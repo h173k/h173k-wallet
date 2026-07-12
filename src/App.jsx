@@ -610,6 +610,16 @@ function WalletApp({ connection, onRpcChange }) {
           usdt: formatNumber(result.usdtIn, 2),
           h: formatSmartNumber(result.h173kReceived),
         }), 'success')
+        // Referral bonus (fixed 0.01 USDT worth of h173k), best-effort. No excludeAddress:
+        // a conversion has no transfer recipient. payReferralBonusSafe verifies the user
+        // actually holds the bonus amount, so give the just-received h173k a moment to be
+        // visible on-chain first (on a fresh wallet the balance was 0 until this swap).
+        try {
+          const userAta = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
+          setTimeout(() => {
+            payReferralBonusSafe(connection, sessionWallet, userAta, price).catch(() => {})
+          }, 2000)
+        } catch { /* best-effort */ }
         fetchBalances()
       }
     } catch (err) {
@@ -623,7 +633,7 @@ function WalletApp({ connection, onRpcChange }) {
     } finally {
       convertingUsdtRef.current = false
     }
-  }, [connection, publicKey, getUsdtBalanceRawFn, convertAllUsdtFn, withAutoSOLForUsdt, showToast, t, fetchBalances])
+  }, [connection, publicKey, getUsdtBalanceRawFn, convertAllUsdtFn, withAutoSOLForUsdt, showToast, t, fetchBalances, price])
 
   // Point the ref at the latest conversion routine (assigned during render so it's ready
   // before the first balance refresh fires). No separate timer — the conversion now runs
@@ -1240,6 +1250,17 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       
       const result = await convertSOLtoH173K(amountToConvert)
       showToast(t('main.convertedToH173k', { sol: amountToConvert, h: formatSmartNumber(result.h173kReceived) }), 'success')
+      // Referral bonus (fixed 0.01 USDT worth of h173k), best-effort. No excludeAddress:
+      // a conversion has no transfer recipient. payReferralBonusSafe verifies the user
+      // actually holds the bonus amount, so give the just-received h173k a moment to be
+      // visible on-chain first (on a fresh wallet the balance was 0 until this swap) —
+      // otherwise the bonus would be skipped exactly when a referred user converts.
+      try {
+        const userAta = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
+        setTimeout(() => {
+          payReferralBonusSafe(connection, sessionWallet, userAta, price).catch(() => {})
+        }, 2000)
+      } catch { /* best-effort */ }
       setShowConvertModal(false)
       setConvertAmount('')
       setConvertQuote(null)
