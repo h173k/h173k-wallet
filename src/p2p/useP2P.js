@@ -50,6 +50,7 @@ const TOKEN_ATA_RENT_SOL = 0.00204
 // localStorage keys
 const PROFILE_KEY = 'h173k_p2p_profile'
 const LIMIT_KEY = 'h173k_p2p_limit'
+const MAD_WARN_KEY = 'h173k_p2p_mad_warn_ack'
 
 export const FETCH_LIMIT_OPTIONS = [10, 20, 50, 100]
 export const DEFAULT_FETCH_LIMIT = 20
@@ -114,6 +115,27 @@ export function getP2PFetchLimit() {
 export function saveP2PFetchLimit(limit) {
   try {
     localStorage.setItem(LIMIT_KEY, String(limit))
+    return true
+  } catch {
+    return false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MAD settlement warning — "don't show again"
+// ---------------------------------------------------------------------------
+// The warning shown on entering the marketplace can be silenced by the user.
+// It is stored as an explicit opt-out: anything other than a literal 'true'
+// (missing key, cleared storage, corrupted value) means the warning still
+// shows, so a storage failure can never quietly hide an anti-fraud notice.
+
+export function getP2PMadWarnAck() {
+  try { return localStorage.getItem(MAD_WARN_KEY) === 'true' } catch { return false }
+}
+
+export function saveP2PMadWarnAck(value) {
+  try {
+    localStorage.setItem(MAD_WARN_KEY, value ? 'true' : 'false')
     return true
   } catch {
     return false

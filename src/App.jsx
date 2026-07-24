@@ -72,7 +72,7 @@ import {
 } from './messenger/messenger'
 
 // Constants & Utils
-import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT } from './constants'
+import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT, getUsdtPriceImpactGuard, saveUsdtPriceImpactGuard, clampUsdtPriceImpactPct, DEFAULT_MAX_USDT_PRICE_IMPACT_PCT, MIN_USDT_PRICE_IMPACT_PCT, MAX_USDT_PRICE_IMPACT_PCT, USDT_PRICE_IMPACT_STEP } from './constants'
 import { useTokenPrice } from './usePrice'
 import { 
   formatNumber, 
@@ -1569,6 +1569,13 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   )
 }
 
+// Price impact is compared at the same 2-decimal precision it is displayed at, so a
+// withdrawal can never be rejected with a message that reads "1.00% exceeds 1.00%".
+// The tolerance this introduces (< 0.005 percentage points) is immaterial next to
+// normal pool movement.
+const roundPct = (n) => Math.round(n * 100) / 100
+const showPct = (n) => roundPct(n).toFixed(2)
+
 // ========== SEND VIEW ==========
 function SendView({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onRefresh }) {
   const { t } = useTranslation()
@@ -1588,6 +1595,19 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const [usdtFeeReserveH173K, setUsdtFeeReserveH173K] = useState(0) // h173k reserved for SOL fees
   const [sentToken, setSentToken] = useState('h173k')      // token label for the success screen
   const [sentUsdtAmount, setSentUsdtAmount] = useState(0)  // USDT actually sent (success screen)
+
+  // Price-impact ceiling for USDT withdrawals (Settings → "USDT withdrawals").
+  // Read once per mount for the live preview; validateAndProceed re-reads it right
+  // before sending so a change made in Settings always takes effect immediately.
+  const [impactGuard, setImpactGuard] = useState(() => getUsdtPriceImpactGuard())
+  useEffect(() => { setImpactGuard(getUsdtPriceImpactGuard()) }, [sendAsUsdt])
+
+  // Does the currently quoted withdrawal breach the configured ceiling?
+  const impactExceeded = !!(
+    sendAsUsdt && impactGuard.enabled && usdtQuote &&
+    (parseFloat(amount) || 0) > 0 &&
+    roundPct(usdtQuote.priceImpact) > roundPct(impactGuard.maxPct)
+  )
 
   const { withAutoSOL, estimateAutoSOLCostH173K, loading: swapLoading } = useSwap(connection, sessionWallet)
   const usdtSwap = useUsdtSwap(connection, sessionWallet)
@@ -1649,6 +1669,35 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     // conversion + transfer fees is bought from h173k, so we must reserve that h173k on
     // top of the amount being sent — and surface it (MAD-contract style) if it doesn't fit.
     if (sendAsUsdt) {
+      // ---- Price-impact guard ----
+      // Re-read the setting (it may have been changed in Settings since this view
+      // mounted) and re-quote so the decision is made on live pool reserves.
+      const guard = getUsdtPriceImpactGuard()
+      setImpactGuard(guard)
+      if (guard.enabled) {
+        let quotedImpact = null
+        try {
+          const q = await getUsdtQuote('H173KtoUSDT', sendAmount)
+          setUsdtQuote({ outputAmount: q.outputAmount, priceImpact: q.priceImpact })
+          quotedImpact = q.priceImpact
+        } catch {
+          // Fall back to the last live preview rather than silently letting the
+          // withdrawal through unchecked.
+          quotedImpact = usdtQuote ? usdtQuote.priceImpact : null
+        }
+        if (quotedImpact === null) {
+          showToast(t('send.impactQuoteFailed'), 'error')
+          return
+        }
+        if (roundPct(quotedImpact) > roundPct(guard.maxPct)) {
+          showToast(t('send.impactBlocked', {
+            impact: showPct(quotedImpact),
+            limit: showPct(guard.maxPct),
+          }), 'error')
+          return
+        }
+      }
+
       let recipientPk = null
       try { recipientPk = new PublicKey(recipient) } catch { /* validated above */ }
       const extraSOL = await usdtSwap.estimateSendAsUsdtSOL(recipientPk)
@@ -1725,6 +1774,34 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       // Two retry-safe phases: (1) convert h173k -> USDT (no slippage limit), then
       // (2) transfer the USDT actually received. SOL for both is bought from h173k.
       if (sendAsUsdt) {
+        // ---- Final price-impact check ----
+        // validateAndProceed checked this, but the user may have sat on the confirm
+        // screen while the pool moved, and convertH173KtoUSDT itself fills at any
+        // price. This is the last point at which the withdrawal can still be aborted
+        // without anything having been signed.
+        const guard = getUsdtPriceImpactGuard()
+        if (guard.enabled) {
+          let finalImpact
+          try {
+            const q = await getUsdtQuote('H173KtoUSDT', sendAmount)
+            finalImpact = q.priceImpact
+          } catch {
+            showToast(t('send.impactQuoteFailed'), 'error')
+            setConfirmStep(false)
+            return
+          }
+          if (roundPct(finalImpact) > roundPct(guard.maxPct)) {
+            setImpactGuard(guard)
+            setUsdtQuote((prev) => ({ ...(prev || {}), priceImpact: finalImpact }))
+            showToast(t('send.impactBlocked', {
+              impact: showPct(finalImpact),
+              limit: showPct(guard.maxPct),
+            }), 'error')
+            setConfirmStep(false)
+            return
+          }
+        }
+
         const onSwap = (swapInfo) => {
           if (swapInfo.status === 'swapping') {
             showToast(t('send.swappingH173kForSol'), 'info')
@@ -1879,7 +1956,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
           {sendAsUsdt && (
             <>
               <div className="confirm-row"><span className="confirm-label">{t('send.recipientReceivesApprox')}</span><span className="confirm-value">≈ {usdtQuote ? formatNumber(usdtQuote.outputAmount, 2) : '—'} USDT</span></div>
-              <div className="confirm-row"><span className="confirm-label">{t('send.estimatedSlippage')}</span><span className="confirm-value">≈ {usdtQuote ? formatNumber(usdtQuote.priceImpact, 2) : '—'}%</span></div>
+              <div className="confirm-row"><span className="confirm-label">{t('send.estimatedSlippage')}</span><span className="confirm-value">≈ {usdtQuote ? showPct(usdtQuote.priceImpact) : '—'}%</span></div>
               {usdtFeeReserveH173K > 0 && (
                 <div className="confirm-row"><span className="confirm-label">{t('send.solReserve')}</span><span className="confirm-value">{formatH173K(usdtFeeReserveH173K)} h173k</span></div>
               )}
@@ -1947,10 +2024,16 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
               <span>{t('send.recipientReceivesApprox')}</span>
               <span>≈ {usdtQuote && amt > 0 ? formatNumber(usdtQuote.outputAmount, 2) : '—'} USDT</span>
             </div>
-            <div className="deposit-row">
+            <div className={`deposit-row${impactExceeded ? ' deposit-row--error' : ''}`}>
               <span>{t('send.estimatedSlippage')}</span>
-              <span>≈ {usdtQuote && amt > 0 ? formatNumber(usdtQuote.priceImpact, 2) : '—'}%</span>
+              <span>≈ {usdtQuote && amt > 0 ? showPct(usdtQuote.priceImpact) : '—'}%</span>
             </div>
+            {impactGuard.enabled && (
+              <div className="deposit-row">
+                <span>{t('send.impactLimit')}</span>
+                <span>{showPct(impactGuard.maxPct)}%</span>
+              </div>
+            )}
             {usdtFeeReserveH173K > 0 && (
               <div className="deposit-row">
                 <span>{t('send.solReserve')}</span>
@@ -1967,11 +2050,19 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
                 <span className="deposit-shortfall">−{formatH173K(total - balance)} h173k</span>
               </div>
             )}
+            {impactExceeded && (
+              <div className="impact-warning">
+                {t('send.impactWarning', {
+                  impact: showPct(usdtQuote.priceImpact),
+                  limit: showPct(impactGuard.maxPct),
+                })}
+              </div>
+            )}
           </div>
         )
       })()}
 
-      <button className="btn btn-primary btn-action" onClick={validateAndProceed} disabled={!recipient || !amount || (sendAsUsdt && (parseFloat(amount) || 0) + usdtFeeReserveH173K > balance)}>{t('common.continue')}</button>
+      <button className="btn btn-primary btn-action" onClick={validateAndProceed} disabled={!recipient || !amount || impactExceeded || (sendAsUsdt && (parseFloat(amount) || 0) + usdtFeeReserveH173K > balance)}>{t('common.continue')}</button>
     </div>
   )
 }
@@ -3708,6 +3799,99 @@ function ReplenishNowButton({ connection, solBalance, showToast }) {
   )
 }
 
+// ========== USDT WITHDRAWAL PRICE-IMPACT GUARD ==========
+// Stops a "Send as USDT" withdrawal whose price impact would exceed the configured
+// ceiling. On by default at 1%. The toggle switches the check off entirely; the
+// slider (and the paired numeric field) sets the ceiling.
+function UsdtPriceImpactSettings({ showToast }) {
+  const { t } = useTranslation()
+  const [guard, setGuard] = useState(() => getUsdtPriceImpactGuard())
+  // Kept as text so the field can be cleared/typed into freely; committed on blur.
+  const [pctText, setPctText] = useState(() => String(getUsdtPriceImpactGuard().maxPct))
+
+  const persist = (next) => {
+    saveUsdtPriceImpactGuard(next)
+    setGuard(next)
+  }
+
+  const toggle = () => {
+    const next = { ...guard, enabled: !guard.enabled }
+    persist(next)
+    showToast(next.enabled ? t('usdtImpact.enabledToast') : t('usdtImpact.disabledToast'), 'info')
+  }
+
+  // Slider drags update live without spamming a toast.
+  const onSlide = (value) => {
+    const pct = clampUsdtPriceImpactPct(parseFloat(value))
+    setPctText(String(pct))
+    persist({ ...guard, maxPct: pct })
+  }
+
+  // Typed values are only clamped + persisted once the field loses focus.
+  const commitText = () => {
+    const pct = clampUsdtPriceImpactPct(pctText)
+    setPctText(String(pct))
+    persist({ ...guard, maxPct: pct })
+    showToast(t('usdtImpact.limitSet', { n: formatNumber(pct, 2) }), 'success')
+  }
+
+  return (
+    <div className="settings-section">
+      <h3>{t('usdtImpact.title')}</h3>
+
+      <div className="settings-item" onClick={toggle} style={{ cursor: 'pointer' }}>
+        <div>
+          <div>{t('usdtImpact.label')}</div>
+          <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '2px' }}>
+            {t('usdtImpact.desc')}
+          </div>
+        </div>
+        <span className={`badge ${guard.enabled ? 'enabled' : ''}`}>
+          {guard.enabled ? t('common.on') : t('common.off')}
+        </span>
+      </div>
+
+      <div className={`settings-item impact-limit-row${guard.enabled ? '' : ' impact-limit-row--off'}`} style={{ display: 'block' }}>
+        <div className="impact-limit-head">
+          <span>{t('usdtImpact.maxImpact')}</span>
+          <span className="impact-limit-field">
+            <input
+              className="autolock-input"
+              type="text"
+              inputMode="decimal"
+              value={pctText}
+              disabled={!guard.enabled}
+              onChange={(e) => setPctText(e.target.value.replace(/[^\d.,]/g, '').replace(',', '.'))}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+              onBlur={commitText}
+            />
+            <span className="autolock-unit">%</span>
+          </span>
+        </div>
+        <input
+          className="impact-slider"
+          type="range"
+          min={MIN_USDT_PRICE_IMPACT_PCT}
+          max={MAX_USDT_PRICE_IMPACT_PCT}
+          step={USDT_PRICE_IMPACT_STEP}
+          value={guard.maxPct}
+          disabled={!guard.enabled}
+          onChange={(e) => onSlide(e.target.value)}
+        />
+        <div className="impact-slider-scale">
+          <span>{formatNumber(MIN_USDT_PRICE_IMPACT_PCT, 1)}%</span>
+          <span>{formatNumber(MAX_USDT_PRICE_IMPACT_PCT, 0)}%</span>
+        </div>
+        <div className="form-hint">
+          {guard.enabled
+            ? t('usdtImpact.hintOn', { n: formatNumber(guard.maxPct, 2) })
+            : t('usdtImpact.hintOff')}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ========== P2P SETTINGS SECTION (only visible once onboarded) ==========
 function P2PSettingsSection({ showToast }) {
   const { t } = useTranslation()
@@ -4182,6 +4366,8 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         <h3>{t('settings.sending')}</h3>
         <SponsorAccountsToggle showToast={showToast} />
       </div>
+
+      <UsdtPriceImpactSettings showToast={showToast} />
       
       <div className="settings-section">
         <h3>{t('settings.security')}</h3>

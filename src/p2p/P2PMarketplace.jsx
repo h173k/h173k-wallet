@@ -8,6 +8,7 @@ import {
   useP2P,
   getP2PProfile, saveP2PProfile,
   getP2PFetchLimit, saveP2PFetchLimit,
+  getP2PMadWarnAck, saveP2PMadWarnAck,
   FETCH_LIMIT_OPTIONS,
   POST_FEE_H173K, CANCEL_FEE_H173K,
   computeTrade, requiredH173KToTake, requiredH173KToPost, viewerPaysInH173K, contactLink,
@@ -97,8 +98,55 @@ function P2POnboarding({ onDone, onBack, showToast }) {
 // ===========================================================================
 // Main marketplace
 // ===========================================================================
+// ===========================================================================
+// MAD warning — shown every time the marketplace is opened
+// ===========================================================================
+// The marketplace only lists offers; settlement is supposed to happen inside a
+// MAD escrow contract. Anyone who talks a counterparty into paying "directly"
+// is stepping outside the only mechanism that makes a scam impossible, so the
+// warning shows on every entry until the user explicitly silences it. The
+// permanent strip above the offer list stays either way, so the reminder to
+// settle through MAD never disappears from the marketplace entirely.
+function P2PMADWarning({ onAccept, onLeave }) {
+  const { t } = useTranslation()
+  const [dontShow, setDontShow] = useState(false)
+
+  return (
+    <div className="p2p-modal-overlay">
+      <div className="p2p-modal p2p-mad-warning" onClick={(e) => e.stopPropagation()}>
+        <div className="p2p-modal-head"><h3>⚠️ {t('p2pMad.title')}</h3></div>
+
+        <div className="escrow-info-card p2p-mad-body">
+          <p><strong>{t('p2pMad.rule')}</strong></p>
+          <p>{t('p2pMad.why')}</p>
+          <p className="p2p-mad-danger">{t('p2pMad.bypass')}</p>
+          <p>{t('p2pMad.misuse')}</p>
+        </div>
+
+        <ul className="p2p-mad-list">
+          <li>{t('p2pMad.tip1')}</li>
+          <li>{t('p2pMad.tip2')}</li>
+          <li>{t('p2pMad.tip3')}</li>
+        </ul>
+
+        <label className="checkbox-row p2p-mad-dontshow">
+          <input type="checkbox" checked={dontShow} onChange={(e) => setDontShow(e.target.checked)} />
+          <span>{t('p2pMad.dontShowAgain')}</span>
+        </label>
+
+        <div className="p2p-mad-actions">
+          <button className="btn btn-secondary" onClick={onLeave}>{t('common.back')}</button>
+          <button className="btn btn-action" onClick={() => onAccept(dontShow)}>{t('p2pMad.confirm')}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, profile, onProfileChange, onOpenMessenger, deepLink, onDeepLinkDone }) {
   const { t } = useTranslation()
+  // Seeded from storage: skipped entirely once the user ticks "don't show again".
+  const [madAck, setMadAck] = useState(() => getP2PMadWarnAck())
   const { offers, loading, posting, fetchOffers, fetchOfferBySignature, postOffer, cancelOffer } = useP2P(connection, publicKey)
 
   const [currency, setCurrency] = useState(profile.currency)
@@ -228,6 +276,11 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
         <h2>{t('p2p.title')}</h2>
       </div>
 
+      {/* Permanent reminder — the entry modal is dismissed, this strip is not. */}
+      <div className="p2p-mad-strip">
+        <strong>{t('p2pMad.stripStrong')}</strong> {t('p2pMad.stripText')}
+      </div>
+
       {/* ===== Banner ===== */}
       <div className="p2p-banner">
         <div className="p2p-tabs">
@@ -315,6 +368,14 @@ function P2PMain({ connection, publicKey, balance, solBalance, price, toUSD, onB
       {showSettings && (
         <P2PSettingsModal profile={profile} onClose={() => setShowSettings(false)}
           onSave={(p) => { onProfileChange(p); if (p.currency !== currency) changeCurrency(p.currency); setShowSettings(false); showToast(t('p2p.settingsSaved'), 'success') }} />
+      )}
+
+      {/* ===== MAD warning (on entry, above everything else) ===== */}
+      {!madAck && (
+        <P2PMADWarning
+          onAccept={(dontShow) => { if (dontShow) saveP2PMadWarnAck(true); setMadAck(true) }}
+          onLeave={onBack}
+        />
       )}
     </div>
   )
@@ -752,6 +813,7 @@ function P2PSettingsModal({ profile, onClose, onSave }) {
   const { t } = useTranslation()
   const [nickname, setNickname] = useState(profile.nickname)
   const [currency, setCurrency] = useState(profile.currency)
+
   return (
     <div className="p2p-modal-overlay" onClick={onClose}>
       <div className="p2p-modal" onClick={(e) => e.stopPropagation()}>

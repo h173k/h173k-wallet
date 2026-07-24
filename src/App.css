@@ -3928,3 +3928,145 @@ body {
 .language-item.active {
   background: var(--color-white-10);
 }
+
+/* ============================================
+   USDT withdrawal price-impact guard
+   ============================================ */
+
+/* Breach notice inside the "Send as USDT" preview panel */
+.impact-warning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--color-error);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Settings row: limit value + slider */
+.impact-limit-row { padding-top: 14px; padding-bottom: 14px; }
+
+.impact-limit-row--off { opacity: 0.45; }
+
+.impact-limit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.impact-limit-field { display: inline-flex; align-items: center; gap: 6px; }
+
+.impact-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-white-20);
+  outline: none;
+  margin: 0;
+}
+
+.impact-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--border-radius-full);
+  background: var(--color-white);
+  border: none;
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.impact-slider::-webkit-slider-thumb:active { transform: scale(1.15); }
+
+.impact-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--border-radius-full);
+  background: var(--color-white);
+  border: none;
+  cursor: pointer;
+}
+
+.impact-slider:disabled { cursor: not-allowed; }
+.impact-slider:disabled::-webkit-slider-thumb { background: var(--color-gray-faded); cursor: not-allowed; }
+.impact-slider:disabled::-moz-range-thumb { background: var(--color-gray-faded); cursor: not-allowed; }
+
+.impact-slider-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-white-50);
+}
+
+.impact-limit-row .form-hint { margin-top: 10px; }
+
+/* ============================================
+   P2P — MAD settlement warning
+   ============================================ */
+
+.p2p-mad-warning { border-color: rgba(251, 191, 36, 0.45); }
+
+.p2p-mad-body p { margin-bottom: 10px; }
+.p2p-mad-body p:last-child { margin-bottom: 0; }
+
+.p2p-mad-danger {
+  color: var(--color-warning);
+  font-weight: var(--font-medium);
+}
+
+.p2p-mad-list {
+  list-style: none;
+  margin: 14px 0 18px;
+  padding: 0;
+}
+
+.p2p-mad-list li {
+  position: relative;
+  padding-left: 20px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-white-70);
+}
+
+.p2p-mad-list li::before {
+  content: "\2022";
+  position: absolute;
+  left: 6px;
+  color: var(--color-warning);
+}
+
+.p2p-mad-actions { display: flex; gap: 10px; }
+.p2p-mad-actions .btn { flex: 1; }
+
+/* Permanent reminder strip above the offer list */
+.p2p-mad-strip {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-white-70);
+}
+
+.p2p-mad-strip strong { color: var(--color-warning); }
+
+/* "Don't show again" opt-out inside the MAD warning */
+.p2p-mad-dontshow {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: var(--border-radius-sm);
+  background: var(--color-white-05);
+  font-size: 13px;
+  color: var(--color-white-70);
+}

@@ -94,6 +94,64 @@ export const USDT_POOL_ID = new PublicKey('J9ED7D3pR7Uw5W6Y52p1Mq3Gfkmumg8fHRvLE
 // transaction fees than the swap could return).
 export const MIN_USDT_AUTO_CONVERT = 0.01
 
+// ========== USDT WITHDRAWAL PRICE-IMPACT GUARD ==========
+// A "Send as USDT" withdrawal swaps h173k into USDT on the CPMM pool, so a large
+// withdrawal moves the price against the user. This guard aborts the withdrawal
+// BEFORE anything is signed when the quoted price impact exceeds the configured
+// ceiling. Enabled by default at 1%; the user can raise the ceiling or switch the
+// check off entirely in Settings.
+const USDT_PRICE_IMPACT_KEY = 'h173k_usdt_price_impact_guard'
+
+// Default ceiling, in percent, for a single USDT withdrawal.
+export const DEFAULT_MAX_USDT_PRICE_IMPACT_PCT = 1
+
+// Bounds the user may configure the ceiling within.
+export const MIN_USDT_PRICE_IMPACT_PCT = 0.1
+export const MAX_USDT_PRICE_IMPACT_PCT = 50
+
+// Step used by the settings slider.
+export const USDT_PRICE_IMPACT_STEP = 0.1
+
+export const DEFAULT_USDT_PRICE_IMPACT_GUARD = {
+  enabled: true,                                // guard is ON out of the box
+  maxPct: DEFAULT_MAX_USDT_PRICE_IMPACT_PCT,    // 1% price impact
+}
+
+// Clamp a user-supplied percentage into the allowed range, falling back to the
+// default when the value isn't a usable number.
+export function clampUsdtPriceImpactPct(pct) {
+  const n = typeof pct === 'number' ? pct : parseFloat(pct)
+  if (!Number.isFinite(n)) return DEFAULT_MAX_USDT_PRICE_IMPACT_PCT
+  return Math.min(MAX_USDT_PRICE_IMPACT_PCT, Math.max(MIN_USDT_PRICE_IMPACT_PCT, n))
+}
+
+export function getUsdtPriceImpactGuard() {
+  try {
+    const stored = localStorage.getItem(USDT_PRICE_IMPACT_KEY)
+    if (!stored) return { ...DEFAULT_USDT_PRICE_IMPACT_GUARD }
+    const parsed = JSON.parse(stored)
+    return {
+      // Only an explicit `false` turns the guard off — anything malformed stays ON.
+      enabled: parsed.enabled !== false,
+      maxPct: clampUsdtPriceImpactPct(parsed.maxPct),
+    }
+  } catch {
+    return { ...DEFAULT_USDT_PRICE_IMPACT_GUARD }
+  }
+}
+
+export function saveUsdtPriceImpactGuard(guard) {
+  try {
+    localStorage.setItem(USDT_PRICE_IMPACT_KEY, JSON.stringify({
+      enabled: !!guard.enabled,
+      maxPct: clampUsdtPriceImpactPct(guard.maxPct),
+    }))
+    return true
+  } catch {
+    return false
+  }
+}
+
 // Price update interval (30 seconds)
 export const PRICE_UPDATE_INTERVAL = 30000
 
