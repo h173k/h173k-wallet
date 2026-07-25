@@ -74,6 +74,7 @@ import {
 // Constants & Utils
 import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT, getUsdtPriceImpactGuard, saveUsdtPriceImpactGuard, clampUsdtPriceImpactPct, DEFAULT_MAX_USDT_PRICE_IMPACT_PCT, MIN_USDT_PRICE_IMPACT_PCT, MAX_USDT_PRICE_IMPACT_PCT, USDT_PRICE_IMPACT_STEP } from './constants'
 import { useTokenPrice } from './usePrice'
+import { withConfirmFallback, installRpcNoticeFilter } from './confirmFallback'
 import { 
   formatNumber, 
   formatSmartNumber,
@@ -251,7 +252,11 @@ function App() {
     // Do not connect until the user has configured an RPC endpoint.
     // Without an RPC set, the app must not proceed.
     if (checkComplete && !requiresInstall && isRpcConfigured()) {
-      const conn = new Connection(getRpcEndpoint(), 'confirmed')
+      // Wrap the connection so confirmations poll over HTTP as well as over the
+      // websocket. Providers whose `signatureSubscribe` works (QuickNode, Helius)
+      // are unaffected — the websocket still settles first. See confirmFallback.js.
+      installRpcNoticeFilter()
+      const conn = withConfirmFallback(new Connection(getRpcEndpoint(), 'confirmed'))
       setConnection(conn)
     }
   }, [rpcVersion, checkComplete, requiresInstall])
