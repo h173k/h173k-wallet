@@ -533,3 +533,28 @@
   .lottery-modal.win .win-trophy,
   .lottery-modal.win .win-line { animation: none; opacity: 1; transform: none; }
 }
+
+/* ── Spin slider: blocked (no SOL / not enough h173k) ───────────────────────── */
+/* Distinct from the plain `.disabled` dim used while a spin is in flight: this
+   state means the wallet cannot pay, so it reads as a locked control rather than
+   a temporarily busy one. */
+.spin-track.blocked {
+  opacity: 1;                                   /* override .disabled dimming */
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.07);
+  cursor: not-allowed;
+}
+.spin-track.blocked .spin-label {
+  color: var(--color-error);
+  letter-spacing: 1.5px;                        /* longer text needs the room */
+  font-size: 13px;
+  padding: 0 68px;                              /* keep clear of the thumb */
+  text-align: center;
+  line-height: 1.25;
+}
+.spin-track.blocked .spin-thumb {
+  background: var(--color-white-20);
+  color: var(--color-white-50);
+  cursor: not-allowed;
+}
+.spin-track.blocked + .spin-hint { color: var(--color-white-50); }

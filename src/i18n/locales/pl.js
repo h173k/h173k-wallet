@@ -228,6 +228,10 @@ export default {
     cost: "Koszt",
     // Spin
     spin: "spin",
+    noSol: "brak SOL",
+    noH173k: "za ma\u0142o h173k",
+    noSolHint: "Dodaj troch\u0119 SOL na op\u0142at\u0119 sieciow\u0105 za spin.",
+    noH173kHint: "Do\u0142aduj h173k albo wybierz ta\u0144szy tryb.",
     whatIsThis: "Co to jest? Więcej informacji",
     stageCommit: "Składam Twój zakład…",
     stageWaiting: "Czekam na łańcuch…",

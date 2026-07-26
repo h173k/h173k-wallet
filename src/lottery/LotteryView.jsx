@@ -19,6 +19,8 @@ import {
   saveLotterySkipCostConfirm,
   getLotteryIntroAck,
   saveLotteryIntroAck,
+  getReplenishSettings,
+  WSOL_ATA_RENT,
 } from '../constants'
 import { formatSmartNumber, shortenAddress } from '../utils'
 
@@ -60,6 +62,13 @@ function ChevronRight({ size = 22 }) {
 function ArrowRight({ size = 22 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
 }
+function Lock({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  )
+}
 function TrophyIcon({ size = 40 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -80,10 +89,49 @@ function ReelCell({ sym }) {
   )
 }
 
+const SPIN_SOL_FALLBACK = 0.0019   // used until the on-chain rent estimate arrives
+const SPIN_FEE_BUFFER = 0.00005    // matches FEE_BUFFER inside withAutoSOL
+
+/**
+ * Can the wallet actually afford a spin in this mode?
+ *
+ * The rules here deliberately mirror the checks the spin itself performs, so the
+ * slider can never block a spin that would have gone through:
+ *
+ *  - h173k: the commit instruction transfers `mode.feeH173k` to the vault, so a
+ *    balance below that fails outright.
+ *  - SOL: low SOL is normally NOT fatal, because withAutoSOL buys SOL with h173k
+ *    first. It hard-fails with NO_SOL only when the wallet can neither pay for the
+ *    operation nor bootstrap that swap — i.e. `SOL < operationCost && SOL < swapFloor`.
+ *    That exact condition is reproduced below; anything above it stays enabled and
+ *    is left to the auto-swap, as before.
+ */
+function getSpinAffordability({ balance, solBalance, solCost, mode }) {
+  const h173k = Number(balance) || 0
+  const sol = Number(solBalance) || 0
+  const feeH173k = mode?.feeH173k || 0
+
+  if (h173k < feeH173k) {
+    return { ok: false, reason: 'h173k', needH173k: feeH173k }
+  }
+
+  const operationCost = (solCost != null ? solCost : SPIN_SOL_FALLBACK) + SPIN_FEE_BUFFER
+  let swapFeeSol = 0
+  try { swapFeeSol = getReplenishSettings().swapFeeSol || 0 } catch { swapFeeSol = 0 }
+  const swapFloor = WSOL_ATA_RENT + swapFeeSol + 0.000005
+
+  // Below both thresholds the wallet cannot pay and cannot buy its way out.
+  if (sol < operationCost && sol < swapFloor) {
+    return { ok: false, reason: 'sol', needSol: Math.min(operationCost, swapFloor) }
+  }
+
+  return { ok: true }
+}
+
 // ============================================================================
 // Component
 // ============================================================================
-export default function LotteryView({ connection, publicKey, onBack, showToast, onRefresh, h173kDecimals }) {
+export default function LotteryView({ connection, publicKey, balance, solBalance, onBack, showToast, onRefresh, h173kDecimals }) {
   const { t } = useTranslation()
   const lottery = useLottery(connection, sessionWallet)
 
@@ -104,6 +152,18 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
   const [dontShowCost, setDontShowCost] = useState(false)
 
   const mode = LOTTERY_MODES[modeIdx]
+
+  // Whether a spin in the CURRENT mode is affordable. Recomputed on balance or
+  // mode change, so switching to a cheaper mode re-enables the slider.
+  const affordability = getSpinAffordability({ balance, solBalance, solCost, mode })
+  const canSpin = affordability.ok
+
+  // Label shown on the slider: the blocking reason takes over from "Spin".
+  const spinLabel = canSpin
+    ? t('lottery.spin')
+    : affordability.reason === 'sol'
+      ? t('lottery.noSol')
+      : t('lottery.noH173k')
 
   // Licznik kwoty w panelu wygranej — odlicza od 0 do nagrody, zsynchronizowany
   // z wejściem panelu (start po pojawieniu się pucharka i tekstu).
@@ -293,13 +353,24 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
       showToast(t('lottery.notDeployed'), 'error')
       return
     }
+    // Belt-and-braces: the slider is already disabled in this case, but a stale
+    // balance or a mid-drag mode switch must never start a spin that cannot pay.
+    if (!canSpin) {
+      showToast(
+        affordability.reason === 'sol'
+          ? t('lottery.noSolHint')
+          : t('lottery.noH173kHint'),
+        'error'
+      )
+      return
+    }
     if (getLotterySkipCostConfirm()) {
       runSpin()
     } else {
       setDontShowCost(false)
       setShowCost(true)
     }
-  }, [spinning, lottery.configured, runSpin, showToast, t])
+  }, [spinning, lottery.configured, runSpin, showToast, t, canSpin, affordability.reason])
 
   const confirmCost = () => {
     if (dontShowCost) saveLotterySkipCostConfirm(true)
@@ -410,8 +481,19 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
 
       {/* Swipe to spin — przyklejone do dołu ekranu */}
       <div className="spin-zone">
-        <SpinSlider disabled={spinning} onTrigger={onSpinTriggered} label={t('lottery.spin')} />
-        <div className="spin-hint">{spinning ? stageLabel : ''}</div>
+        <SpinSlider
+          disabled={spinning || !canSpin}
+          blocked={!canSpin && !spinning}
+          onTrigger={onSpinTriggered}
+          label={spinning ? t('lottery.spin') : spinLabel}
+        />
+        <div className="spin-hint">
+          {spinning
+            ? stageLabel
+            : !canSpin
+              ? (affordability.reason === 'sol' ? t('lottery.noSolHint') : t('lottery.noH173kHint'))
+              : ''}
+        </div>
       </div>
 
       {/* ── Modale ── */}
@@ -536,7 +618,7 @@ export default function LotteryView({ connection, publicKey, onBack, showToast, 
 }
 
 // ── Swipe-to-spin slider ──────────────────────────────────────────────────────
-function SpinSlider({ disabled, onTrigger, label }) {
+function SpinSlider({ disabled, blocked, onTrigger, label }) {
   const trackRef = useRef(null)
   const thumbRef = useRef(null)
   const [x, setX] = useState(0)
@@ -589,12 +671,12 @@ function SpinSlider({ disabled, onTrigger, label }) {
   return (
     <div
       ref={trackRef}
-      className={`spin-track${disabled ? ' disabled' : ''}`}
+      className={`spin-track${disabled ? ' disabled' : ''}${blocked ? ' blocked' : ''}`}
       onPointerMove={onMove}
       onPointerUp={onUp}
       onPointerLeave={onUp}
     >
-      <div className="spin-fill" style={{ width: `${fillW}px` }} />
+      {!blocked && <div className="spin-fill" style={{ width: `${fillW}px` }} />}
       <div className="spin-label">{label}</div>
       <div
         ref={thumbRef}
@@ -602,7 +684,7 @@ function SpinSlider({ disabled, onTrigger, label }) {
         style={{ left: `${4 + x}px` }}
         onPointerDown={onDown}
       >
-        <ArrowRight size={22} />
+        {blocked ? <Lock size={20} /> : <ArrowRight size={22} />}
       </div>
     </div>
   )

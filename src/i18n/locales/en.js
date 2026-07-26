@@ -231,6 +231,10 @@ export default {
     cost: "Cost",
     // Spin
     spin: "spin",
+    noSol: "no SOL",
+    noH173k: "not enough h173k",
+    noSolHint: "Add a little SOL to cover the network fee for a spin.",
+    noH173kHint: "Top up h173k, or pick a cheaper mode.",
     whatIsThis: "What is this? More information",
     stageCommit: "Placing your bet…",
     stageWaiting: "Waiting for the chain…",

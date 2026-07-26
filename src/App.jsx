@@ -702,6 +702,7 @@ function WalletApp({ connection, onRpcChange }) {
       {currentView === 'lottery' && (
         <LotteryView
           connection={connection} publicKey={publicKey}
+          balance={balance} solBalance={solBalance}
           onBack={() => setCurrentView('receive')} showToast={showToast}
           onRefresh={fetchBalances} h173kDecimals={h173kDecimals}
         />
