@@ -2018,7 +2018,14 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
           <input type="checkbox" checked={sendAsUsdt} onChange={(e) => setSendAsUsdt(e.target.checked)} />
           <span>{t('send.sendAsUsdt')}</span>
         </label>
-        {sendAsUsdt && <div className="form-hint">{t('send.sendAsUsdtHint')}</div>}
+        {sendAsUsdt && (
+          <div className="form-hint">
+            {t('send.sendAsUsdtHint')}{' '}
+            {impactGuard.enabled
+              ? t('send.sendAsUsdtGuarded', { limit: showPct(impactGuard.maxPct) })
+              : t('send.sendAsUsdtNoLimit')}
+          </div>
+        )}
       </div>
       {!globalSponsor && !sendAsUsdt && (
         <div className="form-group">
