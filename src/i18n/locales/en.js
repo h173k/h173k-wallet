@@ -191,6 +191,8 @@ export default {
     impactWarning: "This withdrawal has a price impact of {impact}%, above your {limit}% limit. Raise the limit or switch it off in Settings \u2192 USDT withdrawals to let it through.",
     impactBlocked: "Withdrawal blocked: price impact {impact}% exceeds your {limit}% limit. Change it in Settings \u2192 USDT withdrawals for the transaction to go through.",
     impactQuoteFailed: "Couldn't check the price impact for this withdrawal. Please try again.",
+    sponsorOnce: "Fund recipient with SOL (this send only)",
+    sponsorOnceHint: "Adds a small amount of SOL for the recipient so they can cover network fees. Applies to this transfer only \u2014 to do it for every send, enable account sponsoring in Settings.",
   },
   receive: {
     title: "Receive",

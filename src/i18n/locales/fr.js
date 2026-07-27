@@ -177,6 +177,8 @@ export default {
     impactWarning: "Ce retrait a un impact sur le prix de {impact}%, au-del\u00e0 de votre limite de {limit}%. Augmentez la limite ou d\u00e9sactivez-la dans Param\u00e8tres \u2192 Retraits en USDT pour l'autoriser.",
     impactBlocked: "Retrait bloqu\u00e9 : l'impact sur le prix de {impact}% d\u00e9passe votre limite de {limit}%. Modifiez-le dans Param\u00e8tres \u2192 Retraits en USDT pour que la transaction passe.",
     impactQuoteFailed: "Impossible de v\u00e9rifier l'impact sur le prix de ce retrait. Veuillez r\u00e9essayer.",
+    sponsorOnce: "Approvisionner le destinataire en SOL (cet envoi uniquement)",
+    sponsorOnceHint: "Ajoute une petite quantit\u00e9 de SOL pour que le destinataire puisse payer les frais de r\u00e9seau. Uniquement pour ce transfert \u2014 pour le faire \u00e0 chaque envoi, activez le parrainage de comptes dans les Param\u00e8tres.",
   },
   receive: {
     title: "Recevoir",

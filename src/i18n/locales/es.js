@@ -177,6 +177,8 @@ export default {
     impactWarning: "Esta retirada tiene un impacto en el precio del {impact}%, por encima de tu l\u00edmite del {limit}%. Sube el l\u00edmite o desactívalo en Ajustes \u2192 Retiradas en USDT para permitirla.",
     impactBlocked: "Retirada bloqueada: el impacto en el precio del {impact}% supera tu l\u00edmite del {limit}%. C\u00e1mbialo en Ajustes \u2192 Retiradas en USDT para que la transacci\u00f3n se realice.",
     impactQuoteFailed: "No se pudo comprobar el impacto en el precio de esta retirada. Int\u00e9ntalo de nuevo.",
+    sponsorOnce: "Financiar al destinatario con SOL (solo este env\u00edo)",
+    sponsorOnceHint: "A\u00f1ade una peque\u00f1a cantidad de SOL para que el destinatario pueda cubrir las comisiones de red. Solo para esta transferencia: para hacerlo en cada env\u00edo, activa el patrocinio de cuentas en Ajustes.",
   },
   receive: {
     title: "Recibir",

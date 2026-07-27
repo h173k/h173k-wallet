@@ -177,6 +177,8 @@ export default {
     impactWarning: "Diese Auszahlung hat einen Preis-Impact von {impact}% und liegt damit \u00fcber deinem Limit von {limit}%. Erh\u00f6he das Limit oder schalte es unter Einstellungen \u2192 USDT-Auszahlungen ab.",
     impactBlocked: "Auszahlung blockiert: Preis-Impact {impact}% \u00fcberschreitet dein Limit von {limit}%. \u00c4ndere das unter Einstellungen \u2192 USDT-Auszahlungen, damit die Transaktion durchgeht.",
     impactQuoteFailed: "Der Preis-Impact dieser Auszahlung konnte nicht gepr\u00fcft werden. Bitte versuche es erneut.",
+    sponsorOnce: "Empf\u00e4nger mit SOL ausstatten (nur dieser Versand)",
+    sponsorOnceHint: "F\u00fcgt dem Empf\u00e4nger etwas SOL f\u00fcr Netzwerkgeb\u00fchren hinzu. Gilt nur f\u00fcr diese \u00dcberweisung \u2014 f\u00fcr jeden Versand aktiviere das Konto-Sponsoring in den Einstellungen.",
   },
   receive: {
     title: "Empfangen",

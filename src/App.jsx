@@ -1597,6 +1597,18 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   // "Send as USDT": the entered h173k amount is converted to USDT (no slippage limit)
   // and the resulting USDT is transferred to the recipient.
   const [sendAsUsdt, setSendAsUsdt] = useState(false)
+
+  // One-off SOL sponsoring for this single send.
+  // Only offered when the global "Sponsor accounts" setting is OFF — when it is on,
+  // every send already tops the recipient up, so a per-send switch would be
+  // meaningless. Read once per mount, like the rest of the settings-derived state.
+  const [globalSponsor] = useState(() => getSponsorAccounts())
+  const [sponsorOnce, setSponsorOnce] = useState(false)
+  // Effective sponsoring for THIS send: the global setting, or the one-off opt-in.
+  // Both are off on "Send as USDT" — that path returns before the sponsor transfer is
+  // ever added, so any sponsor amount would be shown on the confirm screen and
+  // factored into the SOL replenish target without ever being sent.
+  const sponsorThisSend = !sendAsUsdt && (globalSponsor || sponsorOnce)
   const [usdtQuote, setUsdtQuote] = useState(null)          // { outputAmount, priceImpact }
   const [usdtFeeReserveH173K, setUsdtFeeReserveH173K] = useState(0) // h173k reserved for SOL fees
   const [sentToken, setSentToken] = useState('h173k')      // token label for the success screen
@@ -1750,7 +1762,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     }
 
     let sponsorAmt = 0
-    if (getSponsorAccounts()) {
+    if (sponsorThisSend) {
       try {
         const REQUIRED_SOL = SOL_RENT_EXEMPT_SP
           + (WSOL_ATA_RENT_SP + SWAP_FEE_SP + TX_BASE_FEE_SP)
@@ -1874,7 +1886,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
           
           // Sponsor transfer — amount pre-calculated and capped in validateAndProceed.
           // withAutoSOL already replenished enough SOL to cover this.
-          if (getSponsorAccounts() && sponsorAmtState > 0) {
+          if (sponsorThisSend && sponsorAmtState > 0) {
             transaction.add(
               SystemProgram.transfer({
                 fromPubkey: publicKey,
@@ -2008,6 +2020,15 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         </label>
         {sendAsUsdt && <div className="form-hint">{t('send.sendAsUsdtHint')}</div>}
       </div>
+      {!globalSponsor && !sendAsUsdt && (
+        <div className="form-group">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={sponsorOnce} onChange={(e) => setSponsorOnce(e.target.checked)} />
+            <span>{t('send.sponsorOnce')}</span>
+          </label>
+          {sponsorOnce && <div className="form-hint">{t('send.sponsorOnceHint')}</div>}
+        </div>
+      )}
       <div className="form-group">
         <label className="form-label">{t('send.amountLabel')}</label>
         <div className="amount-input-wrapper">

@@ -188,6 +188,8 @@ export default {
     impactWarning: "Ta wyp\u0142ata ma price impact {impact}%, czyli powy\u017cej ustawionego limitu {limit}%. Zwi\u0119ksz limit lub wy\u0142\u0105cz go w Ustawieniach \u2192 Wyp\u0142aty USDT, aby j\u0105 wykona\u0107.",
     impactBlocked: "Wyp\u0142ata zablokowana: price impact {impact}% przekracza ustawiony limit {limit}%. Zmie\u0144 to w Ustawieniach \u2192 Wyp\u0142aty USDT, aby transakcja przesz\u0142a.",
     impactQuoteFailed: "Nie uda\u0142o si\u0119 sprawdzi\u0107 price impact dla tej wyp\u0142aty. Spr\u00f3buj ponownie.",
+    sponsorOnce: "Zasil odbiorc\u0119 w SOL (tylko ta wysy\u0142ka)",
+    sponsorOnceHint: "Dodaje odbiorcy niewielk\u0105 ilo\u015b\u0107 SOL na op\u0142aty sieciowe. Dotyczy tylko tego przelewu \u2014 aby robi\u0107 to przy ka\u017cdej wysy\u0142ce, w\u0142\u0105cz sponsorowanie kont w Ustawieniach.",
   },
   receive: {
     title: "Odbierz",
