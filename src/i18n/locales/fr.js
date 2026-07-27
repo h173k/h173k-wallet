@@ -192,6 +192,7 @@ export default {
     convertingToUsdt: "Conversion des h173k en USDT...",
     errNeedSolDeposit: "Pas assez de SOL pour convertir automatiquement les h173k et payer les frais. Déposez d'abord un peu de SOL.",
     errUsdtPlusSwap: "Il faut {total} h173k ({amt} à envoyer + {swap} réservés pour les frais SOL), mais vous avez {have} h173k. Maximum envoyable : {max} h173k.",
+    errAmountPlusSwap: "Il faut {total} h173k ({amt} à envoyer + {swap} réservés pour les frais SOL), mais vous avez {have} h173k. Maximum envoyable : {max} h173k.",
   },
   receive: {
     title: "Recevoir",

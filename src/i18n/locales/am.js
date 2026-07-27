@@ -192,6 +192,7 @@ export default {
     convertingToUsdt: "h173k ወደ USDT በመቀየር ላይ...",
     errNeedSolDeposit: "ለክፍያዎች h173k በራስ-ሰር ለመቀየር በቂ SOL የለም። እባክዎ መጀመሪያ ትንሽ SOL ያስገቡ።",
     errUsdtPlusSwap: "{total} h173k ያስፈልጋል ({amt} ለመላክ + {swap} ለSOL ክፍያዎች የተያዘ)፣ ነገር ግን {have} h173k አለዎት። ከፍተኛ መላክ የሚችሉት፡ {max} h173k።",
+    errAmountPlusSwap: "{total} h173k ያስፍልጋል ({amt} ለመላክ + {swap} ለSOL ክፍያዎች የተያዘ)፣ ነገር ግን {have} h173k አለዎት። ከፍተኛ መላክ የሚችሉት፡ {max} h173k።",
   },
   receive: {
     title: "ተቀበል",

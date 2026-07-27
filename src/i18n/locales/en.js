@@ -189,6 +189,7 @@ export default {
     convertingToUsdt: "Converting h173k to USDT...",
     errNeedSolDeposit: "Not enough SOL to auto-convert h173k for fees. Please deposit a little SOL first.",
     errUsdtPlusSwap: "Need {total} h173k ({amt} to send + {swap} reserved for SOL fees), but you have {have} h173k. Max you can send: {max} h173k.",
+    errAmountPlusSwap: "Need {total} h173k ({amt} to send + {swap} reserved for SOL fees), but you have {have} h173k. Max you can send: {max} h173k.",
     impactLimit: "Price impact limit",
     impactWarning: "This withdrawal has a price impact of {impact}%, above your {limit}% limit. Raise the limit or switch it off in Settings \u2192 USDT withdrawals to let it through.",
     impactBlocked: "Withdrawal blocked: price impact {impact}% exceeds your {limit}% limit. Change it in Settings \u2192 USDT withdrawals for the transaction to go through.",

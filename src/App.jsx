@@ -1582,6 +1582,47 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
 const roundPct = (n) => Math.round(n * 100) / 100
 const showPct = (n) => roundPct(n).toFixed(2)
 
+/**
+ * SOL a normal (non-USDT) send will spend on top of the network fee:
+ * the recipient's token ATA rent (when it must be created) plus the sponsor top-up.
+ *
+ * Single source of truth for both the live MAX/reserve preview and validateAndProceed,
+ * so the number shown can never drift from the number enforced.
+ */
+async function estimateSendExtraSOL(connection, recipientStr, sponsorEnabled) {
+  const WSOL_ATA_RENT_SP   = 0.00204
+  const SOL_RENT_EXEMPT_SP = 0.00089088
+  const TX_BASE_FEE_SP     = 0.000005
+  const { swapFeeSol: recipientSwapFee } = getReplenishSettings()
+  const SWAP_FEE_SP = recipientSwapFee || 0.0001
+
+  let recipientPk = null
+  try { recipientPk = new PublicKey(recipientStr) } catch { return { sponsorAmt: 0, recipientAtaRent: 0, extraSOL: 0 } }
+
+  // Recipient token ATA needs creating → rent is paid by the sender.
+  let recipientAtaRent = 0
+  try {
+    const recipientTokenAccountCheck = await getAssociatedTokenAddress(TOKEN_MINT, recipientPk)
+    await getAccount(connection, recipientTokenAccountCheck)
+  } catch {
+    recipientAtaRent = WSOL_ATA_RENT_SP
+  }
+
+  // Sponsor top-up: only the shortfall against the threshold, never a flat amount.
+  let sponsorAmt = 0
+  if (sponsorEnabled) {
+    try {
+      const REQUIRED_SOL = SOL_RENT_EXEMPT_SP
+        + (WSOL_ATA_RENT_SP + SWAP_FEE_SP + TX_BASE_FEE_SP)
+        + (WSOL_ATA_RENT_SP + SWAP_FEE_SP + TX_BASE_FEE_SP)
+      const recipientLamports = await connection.getBalance(recipientPk)
+      sponsorAmt = Math.max(0, REQUIRED_SOL - recipientLamports / LAMPORTS_PER_SOL)
+    } catch { /* leave at 0 */ }
+  }
+
+  return { sponsorAmt, recipientAtaRent, extraSOL: sponsorAmt + recipientAtaRent }
+}
+
 // ========== SEND VIEW ==========
 function SendView({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onRefresh }) {
   const { t } = useTranslation()
@@ -1611,6 +1652,9 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const sponsorThisSend = !sendAsUsdt && (globalSponsor || sponsorOnce)
   const [usdtQuote, setUsdtQuote] = useState(null)          // { outputAmount, priceImpact }
   const [usdtFeeReserveH173K, setUsdtFeeReserveH173K] = useState(0) // h173k reserved for SOL fees
+  // h173k reserved on the NORMAL send path to buy the SOL this send will spend
+  // (recipient ATA rent + sponsor top-up). Mirrors usdtFeeReserveH173K.
+  const [sendFeeReserveH173K, setSendFeeReserveH173K] = useState(0)
   const [sentToken, setSentToken] = useState('h173k')      // token label for the success screen
   const [sentUsdtAmount, setSentUsdtAmount] = useState(0)  // USDT actually sent (success screen)
 
@@ -1659,6 +1703,22 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     })()
     return () => { cancelled = true }
   }, [sendAsUsdt, amount, recipient, getUsdtQuote, estimateSendAsUsdtSOL, estimateAutoSOLCostH173K])
+
+  // Same estimate for the NORMAL send path: h173k that withAutoSOL would spend buying
+  // the SOL this send needs (recipient ATA rent + sponsor top-up). Independent of the
+  // entered amount, so it does not re-query on every keystroke.
+  useEffect(() => {
+    if (sendAsUsdt) { setSendFeeReserveH173K(0); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { extraSOL } = await estimateSendExtraSOL(connection, recipient, sponsorThisSend)
+        const est = await estimateAutoSOLCostH173K(extraSOL)
+        if (!cancelled) setSendFeeReserveH173K(est.estimateFailed ? 0 : (est.h173kForSwap || 0))
+      } catch { if (!cancelled) setSendFeeReserveH173K(0) }
+    })()
+    return () => { cancelled = true }
+  }, [sendAsUsdt, recipient, sponsorThisSend, connection, estimateAutoSOLCostH173K])
   
   // Get referrer and referral bonus info (bonus is paid separately, best-effort)
   const referrer = getReferrer()
@@ -1742,36 +1802,32 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       return
     }
 
-    // Pre-calculate sponsor amount + recipient ATA cost.
+    // Pre-calculate sponsor amount + recipient ATA cost (shared helper — same numbers
+    // the MAX button and the reserve hint use).
     // No sender cap here — withAutoSOL handles reserves via TARGET = replenishTo + swapTxCost + extraSOLNeeded.
     // After replenish sender has TARGET SOL, spends extraSOLNeeded, keeps replenishTo + swapTxCost as reserve.
-    const WSOL_ATA_RENT_SP   = 0.00204
-    const SOL_RENT_EXEMPT_SP = 0.00089088
-    const TX_BASE_FEE_SP     = 0.000005
-    const { swapFeeSol: recipientSwapFee } = getReplenishSettings()
-    const SWAP_FEE_SP = recipientSwapFee || 0.0001
+    const { sponsorAmt, recipientAtaRent } = await estimateSendExtraSOL(connection, recipient, sponsorThisSend)
 
-    // Check if recipient token ATA needs creating — costs rent paid by sender
-    let recipientAtaRent = 0
-    try {
-      const recipientPubkeyCheck = new PublicKey(recipient)
-      const recipientTokenAccountCheck = await getAssociatedTokenAddress(TOKEN_MINT, recipientPubkeyCheck)
-      await getAccount(connection, recipientTokenAccountCheck)
-    } catch {
-      recipientAtaRent = WSOL_ATA_RENT_SP
+    // ===== h173k RESERVED FOR SOL FEES =====
+    // withAutoSOL buys the SOL above with h173k, in a SEPARATE transaction that runs
+    // BEFORE the send. Without reserving that h173k, sending MAX would let the swap
+    // succeed and then leave the transfer itself short — the swap is not rolled back.
+    const estNormal = await estimateAutoSOLCostH173K(sponsorAmt + recipientAtaRent)
+    if (estNormal.willSwap && !estNormal.canSwap) {
+      showToast(t('send.errNeedSolDeposit'), 'error')
+      return
     }
-
-    let sponsorAmt = 0
-    if (sponsorThisSend) {
-      try {
-        const REQUIRED_SOL = SOL_RENT_EXEMPT_SP
-          + (WSOL_ATA_RENT_SP + SWAP_FEE_SP + TX_BASE_FEE_SP)
-          + (WSOL_ATA_RENT_SP + SWAP_FEE_SP + TX_BASE_FEE_SP)
-        const recipientPubkey = new PublicKey(recipient)
-        const recipientLamports = await connection.getBalance(recipientPubkey)
-        const recipientSOL = recipientLamports / LAMPORTS_PER_SOL
-        sponsorAmt = Math.max(0, REQUIRED_SOL - recipientSOL)
-      } catch { /* leave at 0 */ }
+    const feeReserveNormal = estNormal.estimateFailed ? 0 : (estNormal.h173kForSwap || 0)
+    setSendFeeReserveH173K(feeReserveNormal)
+    if (sendAmount + feeReserveNormal > balance) {
+      showToast(t('send.errAmountPlusSwap', {
+        amt: formatH173K(sendAmount),
+        swap: formatH173K(feeReserveNormal),
+        total: formatH173K(sendAmount + feeReserveNormal),
+        have: formatH173K(balance),
+        max: formatH173K(Math.max(0, balance - feeReserveNormal)),
+      }), 'error')
+      return
     }
     setSponsorAmtState(sponsorAmt)
     // extraSOLNeeded = everything this send will spend on SOL:
@@ -2040,12 +2096,17 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         <label className="form-label">{t('send.amountLabel')}</label>
         <div className="amount-input-wrapper">
           <input type="number" className="form-input" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} step="0.01" />
-          <button className="max-btn" onClick={() => setAmount(Math.max(0, balance - (sendAsUsdt ? usdtFeeReserveH173K : 0)).toString())}>MAX</button>
+          <button className="max-btn" onClick={() => setAmount(Math.max(0, balance - (sendAsUsdt ? usdtFeeReserveH173K : sendFeeReserveH173K)).toString())}>MAX</button>
         </div>
         <div className="form-hint-row">
           <span className="form-hint">{t('send.available', { n: formatH173K(balance) })}</span>
           {usdValue !== null && <span className="amount-usd-preview">{formatUSD(usdValue)}</span>}
         </div>
+        {!sendAsUsdt && sendFeeReserveH173K > 0 && (
+          <div className="form-hint">
+            {t('send.solReserve')}: {formatH173K(sendFeeReserveH173K)} h173k
+          </div>
+        )}
       </div>
 
       {sendAsUsdt && (() => {

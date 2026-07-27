@@ -186,6 +186,7 @@ export default {
     convertingToUsdt: "Konwertowanie h173k na USDT...",
     errNeedSolDeposit: "Za mało SOL, aby automatycznie przekonwertować h173k na opłaty. Wpłać najpierw odrobinę SOL.",
     errUsdtPlusSwap: "Potrzeba {total} h173k ({amt} do wysłania + {swap} zarezerwowane na opłaty SOL), a masz {have} h173k. Maksymalnie możesz wysłać: {max} h173k.",
+    errAmountPlusSwap: "Potrzeba {total} h173k ({amt} do wysłania + {swap} zarezerwowane na opłaty SOL), a masz {have} h173k. Maksymalnie możesz wysłać: {max} h173k.",
     impactLimit: "Limit price impact",
     impactWarning: "Ta wyp\u0142ata ma price impact {impact}%, czyli powy\u017cej ustawionego limitu {limit}%. Zwi\u0119ksz limit lub wy\u0142\u0105cz go w Ustawieniach \u2192 Wyp\u0142aty USDT, aby j\u0105 wykona\u0107.",
     impactBlocked: "Wyp\u0142ata zablokowana: price impact {impact}% przekracza ustawiony limit {limit}%. Zmie\u0144 to w Ustawieniach \u2192 Wyp\u0142aty USDT, aby transakcja przesz\u0142a.",
