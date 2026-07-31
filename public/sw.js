@@ -81,10 +81,26 @@ self.addEventListener('push', event => {
 // Notification click handler
 self.addEventListener('notificationclick', event => {
   event.notification.close()
-  
-  if (event.action === 'open' || !event.action) {
-    event.waitUntil(
-      clients.openWindow(event.notification.data || '/')
-    )
-  }
+  if (event.action && event.action !== 'open') return
+
+  // `data` is an object ({ url, from, group }); passing it straight to
+  // openWindow used to stringify it into a nonsense URL.
+  const data = event.notification.data || {}
+  const url = (typeof data === 'string' ? data : data.url) || '/'
+
+  event.waitUntil((async () => {
+    const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of windows) {
+      if ('focus' in client) {
+        await client.focus()
+        // The app is already running: tell it which chat to open instead of
+        // navigating, which would throw away its state.
+        if (data.from || data.group) {
+          client.postMessage({ type: 'h173k-open-chat', from: data.from, group: data.group })
+        }
+        return
+      }
+    }
+    await clients.openWindow(url)
+  })())
 })

@@ -1,106 +1,100 @@
 /**
  * H173K Wallet - End-to-End Encrypted Messenger
  *
- * Messages travel on-chain as Memo instructions attached to a tiny h173k
- * transfer (MSG_COST) sent to the recipient. The wallet scans its own h173k
- * token-account history together with the balance refresh, decrypts incoming
- * memos and groups them into conversation threads.
+ * Messages travel on chain as memo instructions attached to a tiny h173k
+ * transfer. The wallet reads those memos back, decrypts them and groups them
+ * into threads.
  *
- * KEY MODEL (hybrid):
- *  - Bootstrap keys: a curve25519 keypair derived from the Solana ed25519
- *    keypair (via ed2curve). Because the public key can be derived from any
- *    Solana address, the FIRST message ("request") can already be encrypted
- *    to a recipient we have never contacted before.
- *  - Dedicated keys: a randomly generated nacl.box keypair, created the first
- *    time the user enters the messenger and stored in localStorage. Each party
- *    shares its dedicated public key inside the first "request" message
- *    (the key exchange). Once exchanged, normal messages are encrypted with the
- *    dedicated keys.
+ * WHERE A CONVERSATION LIVES
+ *  - New individual conversations open on their OWN address. The side that
+ *    starts the conversation derives a dedicated address from its seed, tells
+ *    the other side about it inside the (encrypted) invitation, and from then
+ *    on both parties post to that address. A bot that scrapes wallet addresses
+ *    can only ever reach the invitation inbox, never the conversation.
+ *  - Conversations that already existed, and peers running an older build, keep
+ *    talking on the wallet address. That path is kept for backwards
+ *    compatibility only.
  *
- * Memo payload (plaintext envelope, JSON):
- *   { v:1, t:'req'|'msg', e:'addr'|'box', f:<senderAddr>, p:<senderDedicatedPub>,
- *     n:<nonceB64>, c:<cipherB64> }
- * Decrypted content: { nick, text }
+ * ANTI-SPAM FEE
+ *  Every wallet can demand h173k for each message addressed to it, on top of
+ *  the ordinary message cost and network fees. The requirement can apply to new
+ *  contacts, to everybody, or to individually marked contacts, and "no fee at
+ *  all" is the default. Senders learn the amount from the recipient's published
+ *  announcement and attach it automatically; on arrival the payment is verified
+ *  against the transaction, and messages that did not pay are filtered out.
+ *
+ * KEY MODEL (see msgcrypto.js)
+ *  - bootstrap keys, derivable from any address, carry the first contact;
+ *  - dedicated keys, exchanged in that first message, carry everything after.
  */
 
-import {
-  PublicKey,
-  Transaction,
-  TransactionInstruction,
-} from '@solana/web3.js'
+import { PublicKey } from '@solana/web3.js'
 import { translate } from '../i18n'
-import {
-  getAssociatedTokenAddress,
-  getAccount,
-  createAssociatedTokenAccountInstruction,
-  createTransferInstruction,
-} from '@solana/spl-token'
-import nacl from 'tweetnacl'
-import ed2curve from 'ed2curve'
-import bs58 from 'bs58'
-import { sha256 } from '@noble/hashes/sha256'
-import { TOKEN_MINT, TOKEN_DECIMALS } from '../constants'
+import { TOKEN_MINT } from '../constants'
 import { sessionWallet } from '../crypto/wallet'
 import { getP2PProfile, saveP2PProfile } from '../p2p/useP2P'
 
+import { getMyDedicatedPublicKey, decryptFrom } from './msgcrypto'
+import {
+  buildDirectEnvelope,
+  parseEnvelope,
+  stripMemoPrefix,
+  memoByteLength,
+  fitPayload,
+  memoRemaining,
+  MAX_MEMO_BYTES,
+} from './envelope'
+import { sendMemoTransaction, MEMO_PROGRAM_ID } from './tx'
+import { deriveConversationAddress, tokenAccountOf } from './channels'
+import {
+  getCursor, setCursor, forgetCursor, isFirstScan, migrateLegacyCursor,
+  getRotationStamps, touchRotation, pruneRotation,
+} from './cursors'
+import { showAppNotification } from './notify'
+import {
+  getMessengerScanLimit,
+  getSourcesPerRefresh,
+  getNotificationsEnabled,
+  getLegacyModeEnabled,
+  getRequiredFeeFrom,
+  sanitizeFee,
+  CHANNEL_SCAN_LIMIT,
+} from './prefs'
+import {
+  groupStore,
+  lastGroupTs,
+  scanGroup,
+  processIncomingJoinRequest,
+  acceptGroupInvitation,
+} from './groups'
+
+// ========== RE-EXPORTS (stable public surface) ==========
+export { MEMO_PROGRAM_ID }
+export { showAppNotification } from './notify'
+export {
+  getMessengerScanLimit,
+  setMessengerScanLimit,
+  MESSENGER_SCAN_OPTIONS,
+  DEFAULT_MESSENGER_SCAN,
+  getNotificationsEnabled,
+  setNotificationsEnabled,
+  getTxNotificationsEnabled,
+  setTxNotificationsEnabled,
+} from './prefs'
+
 // ========== CONSTANTS ==========
-export const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
-
-// Cost of one message, transferred to the recipient (per spec: 0.00001 h173k)
+// Cost of one message, transferred to the conversation (per spec: 0.00001 h173k)
 export const MSG_COST = 0.00001
-export const MSG_COST_LAMPORTS = Math.round(MSG_COST * Math.pow(10, TOKEN_DECIMALS))
 
-export const MAX_MESSAGE_LENGTH = 200          // characters
+export const MAX_MESSAGE_LENGTH = 200          // characters, ordinary message
+export const MAX_INVITE_LENGTH = 120           // the invitation also carries the address
 export const MAX_MESSAGES_PER_THREAD = 100     // stored per thread
-export const MAX_SCAN_PER_UPDATE = 100         // default signatures fetched per refresh
 
-// User-configurable: how many signatures to scan per refresh.
-export const MESSENGER_SCAN_OPTIONS = [100, 200, 300, 500, 800, 1000]
-export const DEFAULT_MESSENGER_SCAN = 100
-const SCAN_LIMIT_KEY = 'h173k_msg_scan_limit'
-const NOTIF_KEY = 'h173k_msg_notifications'
+// How many transactions we are willing to fetch in full to verify fee payments.
+const MAX_FEE_VERIFICATIONS = 20
 
-export function getMessengerScanLimit() {
-  try {
-    const v = parseInt(localStorage.getItem(SCAN_LIMIT_KEY), 10)
-    if (MESSENGER_SCAN_OPTIONS.includes(v)) return v
-  } catch {}
-  return DEFAULT_MESSENGER_SCAN
-}
-export function setMessengerScanLimit(n) {
-  if (!MESSENGER_SCAN_OPTIONS.includes(n)) return
-  try { localStorage.setItem(SCAN_LIMIT_KEY, String(n)) } catch {}
-}
-export function getNotificationsEnabled() {
-  try { return localStorage.getItem(NOTIF_KEY) === '1' } catch { return false }
-}
-export function setNotificationsEnabled(on) {
-  try { localStorage.setItem(NOTIF_KEY, on ? '1' : '0') } catch {}
-}
-
-const TX_NOTIF_KEY = 'h173k_tx_notifications'
-export function getTxNotificationsEnabled() {
-  try { return localStorage.getItem(TX_NOTIF_KEY) === '1' } catch { return false }
-}
-export function setTxNotificationsEnabled(on) {
-  try { localStorage.setItem(TX_NOTIF_KEY, on ? '1' : '0') } catch {}
-}
-
-const WSOL_ATA_RENT_SP = 0.00204               // rent for creating recipient token ATA
-
-// localStorage keys
 const THREADS_KEY = 'h173k_msg_threads'
-const CURSOR_KEY = 'h173k_msg_cursor'           // last decrypted+stored signature
-const NOTIFY_CURSOR_KEY = 'h173k_msg_notify_cursor' // last signature we emitted a notification for
-
-function getNotifyCursor() {
-  try { return localStorage.getItem(NOTIFY_CURSOR_KEY) || null } catch { return null }
-}
-function setNotifyCursor(sig) {
-  try { if (sig) localStorage.setItem(NOTIFY_CURSOR_KEY, sig) } catch {}
-}
-
-const PROTOCOL_VERSION = 1
+const NOTIFY_CURSOR_KEY = 'h173k_msg_notify_cursor'
 
 // ========== LOW-LEVEL STORAGE ==========
 function readJSON(key, fallback) {
@@ -115,9 +109,15 @@ function writeJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
 }
 
+function getNotifyCursor() {
+  try { return localStorage.getItem(NOTIFY_CURSOR_KEY) || null } catch { return null }
+}
+function setNotifyCursor(sig) {
+  try { if (sig) localStorage.setItem(NOTIFY_CURSOR_KEY, sig) } catch {}
+}
+
 // ========== PROFILE (our own nick) ==========
-// The messenger shares ONE nickname with the P2P marketplace (h173k_p2p_profile).
-// Setting it here updates the marketplace nickname and vice-versa.
+// The messenger shares ONE nickname with the P2P marketplace.
 const DEFAULT_PROFILE_CURRENCY = 'USD'
 
 export function getProfile() {
@@ -136,136 +136,9 @@ export function saveProfile(nick) {
   store._notify()
 }
 
-// ========== DEDICATED MESSAGING IDENTITY (box keypair) ==========
-// Derived DETERMINISTICALLY from the wallet seed (the Solana secret key) with a
-// domain separator. This means:
-//  - it survives clearing localStorage / reinstalling,
-//  - it's identical on any device restored from the same seed,
-//  - it is NOT derivable from the public address alone (depends on the secret +
-//    label), so the key exchange in the first message still carries meaning.
-const IDENTITY_LABEL = 'h173k_messenger_box_v1'
-let _identityCache = { addr: null, id: null }
-sessionWallet.onLock(() => { _identityCache = { addr: null, id: null } })
+export { getMyDedicatedPublicKey }
 
-function getIdentity() {
-  if (!sessionWallet.isUnlocked()) return null
-  const kp = sessionWallet.getKeypairSilent() // does NOT reset auto-lock
-  const addr = kp.publicKey.toBase58()
-  if (_identityCache.addr === addr && _identityCache.id) return _identityCache.id
-
-  const label = new TextEncoder().encode(IDENTITY_LABEL)
-  const material = new Uint8Array(kp.secretKey.length + label.length)
-  material.set(kp.secretKey, 0)
-  material.set(label, kp.secretKey.length)
-  const seed32 = sha256(material) // 32 bytes -> curve25519 box secret seed
-
-  const boxKp = nacl.box.keyPair.fromSecretKey(seed32)
-  const id = { pub: bs58.encode(boxKp.publicKey), sec: bs58.encode(boxKp.secretKey) }
-  _identityCache = { addr, id }
-  return id
-}
-
-export function getMyDedicatedPublicKey() {
-  const id = getIdentity()
-  return id ? id.pub : null
-}
-
-// ========== KEY DERIVATION HELPERS ==========
-// Cache the bootstrap (address-derived) secret to avoid recomputing every scan.
-let _bootstrapCache = { addr: null, secret: null }
-sessionWallet.onLock(() => { _bootstrapCache = { addr: null, secret: null } })
-
-function getBootstrapSecret() {
-  if (!sessionWallet.isUnlocked()) return null
-  const kp = sessionWallet.getKeypairSilent() // does NOT reset auto-lock
-  const addr = kp.publicKey.toBase58()
-  if (_bootstrapCache.addr === addr && _bootstrapCache.secret) {
-    return _bootstrapCache.secret
-  }
-  const secret = ed2curve.convertSecretKey(kp.secretKey) // 32 bytes
-  _bootstrapCache = { addr, secret }
-  return secret
-}
-
-function bootstrapPubFromAddress(address) {
-  try {
-    return ed2curve.convertPublicKey(new PublicKey(address).toBytes())
-  } catch {
-    return null
-  }
-}
-
-// ========== ENCRYPT / DECRYPT ==========
-/**
- * Encrypt a payload object for a recipient.
- * @param {object} payload - { nick, text }
- * @param {object} opts - { recipientAddress, peerDedicatedPub }
- * @returns {{ e:'addr'|'box', n:string, c:string }}
- */
-function encryptPayload(payload, { recipientAddress, peerDedicatedPub }) {
-  const msgBytes = new TextEncoder().encode(JSON.stringify(payload))
-  const nonce = nacl.randomBytes(nacl.box.nonceLength)
-
-  if (peerDedicatedPub) {
-    // We already exchanged dedicated keys -> use them.
-    const id = getIdentity()
-    if (!id) throw new Error('Wallet is locked')
-    const mySec = bs58.decode(id.sec)
-    const theirPub = bs58.decode(peerDedicatedPub)
-    const box = nacl.box(msgBytes, nonce, theirPub, mySec)
-    return { e: 'box', n: b64(nonce), c: b64(box) }
-  }
-
-  // Bootstrap: encrypt to the recipient's address-derived key.
-  const mySec = getBootstrapSecret()
-  const theirPub = bootstrapPubFromAddress(recipientAddress)
-  if (!mySec || !theirPub) throw new Error('Cannot derive encryption keys')
-  const box = nacl.box(msgBytes, nonce, theirPub, mySec)
-  return { e: 'addr', n: b64(nonce), c: b64(box) }
-}
-
-/**
- * Decrypt an incoming memo envelope. Returns payload object or null.
- */
-function decryptEnvelope(env) {
-  try {
-    const nonce = unb64(env.n)
-    const cipher = unb64(env.c)
-    if (env.e === 'box') {
-      const id = getIdentity()
-      if (!id || !env.p) return null
-      const mySec = bs58.decode(id.sec)
-      const theirPub = bs58.decode(env.p)
-      const opened = nacl.box.open(cipher, nonce, theirPub, mySec)
-      if (!opened) return null
-      return JSON.parse(new TextDecoder().decode(opened))
-    } else {
-      // 'addr' bootstrap
-      const mySec = getBootstrapSecret()
-      const theirPub = bootstrapPubFromAddress(env.f)
-      if (!mySec || !theirPub) return null
-      const opened = nacl.box.open(cipher, nonce, theirPub, mySec)
-      if (!opened) return null
-      return JSON.parse(new TextDecoder().decode(opened))
-    }
-  } catch {
-    return null
-  }
-}
-
-function b64(bytes) {
-  let s = ''
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i])
-  return btoa(s)
-}
-function unb64(str) {
-  const bin = atob(str)
-  const out = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
-  return out
-}
-
-// ========== THREAD STORE (in-memory + localStorage + pub/sub) ==========
+// ========== THREAD STORE ==========
 class MessengerStore {
   constructor() {
     this._listeners = []
@@ -273,21 +146,26 @@ class MessengerStore {
   }
   subscribe(cb) {
     this._listeners.push(cb)
-    return () => { this._listeners = this._listeners.filter(l => l !== cb) }
+    return () => { this._listeners = this._listeners.filter((l) => l !== cb) }
   }
   _notify() {
     this._persist()
-    this._listeners.forEach(cb => { try { cb() } catch (e) { console.error(e) } })
+    this._listeners.forEach((cb) => { try { cb() } catch (e) { console.error(e) } })
   }
   _persist() {
     writeJSON(THREADS_KEY, this._threads)
   }
   _emptyThread(address) {
     return {
-      address,
+      address,                 // peer's wallet address — the thread identity
       contactName: '',
       peerNick: '',
       peerPubKey: null,
+      channel: null,           // dedicated conversation address (null = legacy)
+      channelMine: false,      // true when we created it
+      channelConfirmed: false, // true once the peer has actually posted there
+      legacyPeer: false,       // peer runs a build without dedicated addresses
+      peerFee: null,           // h173k the peer wants per incoming message
       messages: [],
       unread: 0,
       handshakeSent: false,
@@ -298,19 +176,20 @@ class MessengerStore {
     return this._threads[address] || null
   }
   ensureThread(address) {
-    if (!this._threads[address]) {
-      this._threads[address] = this._emptyThread(address)
-    }
-    return this._threads[address]
+    if (!this._threads[address]) this._threads[address] = this._emptyThread(address)
+    // Fill in fields added by later versions.
+    const t = this._threads[address]
+    if (t.channel === undefined) t.channel = null
+    return t
   }
-  // All threads, most-recent first.
   getVisibleThreads() {
-    return Object.values(this._threads)
-      .sort((a, b) => lastTs(b) - lastTs(a))
+    return Object.values(this._threads).sort((a, b) => lastTs(b) - lastTs(a))
   }
   getTotalUnread() {
-    return Object.values(this._threads)
-      .reduce((sum, t) => sum + (t.unread || 0), 0)
+    const direct = Object.values(this._threads).reduce((sum, t) => sum + (t.unread || 0), 0)
+    let groups = 0
+    try { groups = groupStore.totalUnread() + groupStore.pendingCount() } catch {}
+    return direct + groups
   }
   addContact(address, contactName) {
     const t = this.ensureThread(address)
@@ -325,22 +204,29 @@ class MessengerStore {
     this._notify()
   }
   deleteThread(address) {
-    if (this._threads[address]) {
-      delete this._threads[address]
-      this._notify()
-    }
+    const t = this._threads[address]
+    if (!t) return
+    if (t.channel) forgetCursor(t.channel)
+    delete this._threads[address]
+    this._notify()
   }
   markRead(address) {
     const t = this._threads[address]
     if (!t) return
     if (t.unread) { t.unread = 0; this._notify() }
   }
+  setThreadFields(address, patch) {
+    const t = this.ensureThread(address)
+    Object.assign(t, patch)
+    this._notify()
+    return t
+  }
   trim(t) {
     if (t.messages.length > MAX_MESSAGES_PER_THREAD) {
       t.messages = t.messages.slice(t.messages.length - MAX_MESSAGES_PER_THREAD)
     }
   }
-  appendOutgoing(address, { text, sig, type }) {
+  appendOutgoing(address, { text, sig, type, reply }) {
     const t = this.ensureThread(address)
     t.messages.push({
       id: sig || ('out_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
@@ -349,6 +235,7 @@ class MessengerStore {
       ts: Date.now(),
       sig: sig || null,
       type: type || 'msg',
+      reply: reply || null,
     })
     t.handshakeSent = true
     this.trim(t)
@@ -356,18 +243,22 @@ class MessengerStore {
   }
   /**
    * Apply a batch of decrypted incoming messages.
-   * items: [{ from, peerPubKey, peerNick, text, ts, sig, type }]
+   * items: [{ from, peerPubKey, peerNick, text, ts, sig, type, unpaid, reply, viaChannel }]
    */
   applyIncoming(items) {
     const added = []
     let activeAddr = null
     try { activeAddr = window.__h173k_active_thread || null } catch {}
+
     for (const it of items) {
       const t = this.ensureThread(it.from)
-      // Dedup by signature
-      if (it.sig && t.messages.some(m => m.sig === it.sig)) continue
+      if (it.sig && t.messages.some((m) => m.sig === it.sig)) continue
       if (it.peerPubKey) t.peerPubKey = it.peerPubKey
       if (it.peerNick) t.peerNick = it.peerNick
+      if (it.peerFee != null) t.peerFee = it.peerFee
+      if (it.legacy) t.legacyPeer = true
+      if (it.viaChannel) t.channelConfirmed = true
+
       t.messages.push({
         id: it.sig || ('in_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
         dir: 'in',
@@ -375,21 +266,39 @@ class MessengerStore {
         ts: it.ts || Date.now(),
         sig: it.sig || null,
         type: it.type || 'msg',
+        reply: it.reply || null,
+        unpaid: !!it.unpaid,
+        graced: !!it.graced,
+        feeRequired: (it.unpaid || it.graced) ? it.feeRequired : undefined,
       })
-      // Only count as unread if the thread isn't currently open
-      if (activeAddr !== it.from) t.unread = (t.unread || 0) + 1
+
+      // Held-back messages are counted from the thread itself (see
+      // unpaidCount) rather than a running total, which would drift apart from
+      // the stored messages once the thread is trimmed.
+      if (!it.unpaid && activeAddr !== it.from) {
+        t.unread = (t.unread || 0) + 1
+      }
       this.trim(t)
-      added.push({
-        from: it.from,
-        name: (t.contactName && t.contactName.trim()) || t.peerNick || it.from,
-        text: it.text,
-        type: it.type || 'msg',
-        sig: it.sig || null,
-      })
+
+      if (!it.unpaid) {
+        added.push({
+          from: it.from,
+          name: (t.contactName && t.contactName.trim()) || t.peerNick || it.from,
+          text: it.text,
+          type: it.type || 'msg',
+          sig: it.sig || null,
+        })
+      }
     }
-    if (added.length) this._notify()
+    if (items.length) this._notify()
     return added
   }
+}
+
+/** Messages currently held back from this thread for not paying the fee. */
+export function unpaidCount(thread) {
+  if (!thread || !thread.messages) return 0
+  return thread.messages.reduce((n, m) => n + (m.unpaid ? 1 : 0), 0)
 }
 
 function lastTs(t) {
@@ -398,121 +307,643 @@ function lastTs(t) {
 }
 
 export const store = new MessengerStore()
+export { lastTs }
 
-// ========== MEMO PARSING ==========
-function stripMemoPrefix(memo) {
-  // getSignaturesForAddress returns memos formatted as "[<len>] <text>"
-  if (typeof memo !== 'string') return null
-  const m = memo.match(/^\[\d+\]\s?/)
-  return m ? memo.slice(m[0].length) : memo
-}
-
-function parseEnvelope(memoText) {
-  try {
-    const obj = JSON.parse(memoText)
-    if (!obj || obj.v !== PROTOCOL_VERSION) return null
-    if (!obj.f || !obj.n || !obj.c) return null
-    return obj
-  } catch {
-    return null
-  }
-}
-
-// ========== SCAN INCOMING (called with balance refresh) ==========
+// ========== CONVERSATION ADDRESS ==========
 /**
- * Scan the wallet's h173k token account for new message-bearing transfers.
- * Reads at most MAX_SCAN_PER_UPDATE new signatures, stopping at the last one
- * already processed. Returns the number of new messages applied.
+ * Decide where a message to `peerAddress` should be posted.
+ * Returns { target, announceChannel, isInvite, legacy, channel }.
+ *
+ *  - a fresh conversation gets its own address; until the peer has answered
+ *    there, the invitation still has to travel to their wallet, and it carries
+ *    the conversation address inside the encrypted payload;
+ *  - a peer on an older build (or a thread that predates this feature) keeps
+ *    talking on the wallet address.
  */
-export async function scanIncomingMessages(connection, publicKey) {
-  if (!connection || !publicKey) return 0
-  if (!sessionWallet.isUnlocked()) return 0
+export function resolveTarget(peerAddress) {
+  const t = store.getThread(peerAddress)
+  const legacyPeer = !!(t && t.legacyPeer)
+  const legacyThread = !!(t && !t.channel && t.messages && t.messages.length > 0)
 
-  const myAddress = publicKey.toBase58()
-  let tokenAccount
-  try {
-    tokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
-  } catch {
-    return 0
+  if (getLegacyModeEnabled() || legacyPeer || legacyThread) {
+    return { target: peerAddress, announceChannel: null, isInvite: false, legacy: true, channel: null }
   }
 
-  const cursor = (() => { try { return localStorage.getItem(CURSOR_KEY) || null } catch { return null } })()
+  let channel = t && t.channel
+  if (!channel) {
+    try { channel = deriveConversationAddress(peerAddress) } catch { channel = null }
+  }
+  if (!channel) {
+    // Wallet locked: nothing we can derive, fall back to the inbox path.
+    return { target: peerAddress, announceChannel: null, isInvite: true, legacy: false, channel: null }
+  }
 
+  if (t && t.channelConfirmed) {
+    return { target: channel, announceChannel: null, isInvite: false, legacy: false, channel }
+  }
+  // Not confirmed yet: keep inviting through the wallet inbox.
+  return { target: peerAddress, announceChannel: channel, isInvite: true, legacy: false, channel }
+}
+
+/**
+ * Adopt a conversation address announced by the peer. When both sides opened
+ * one at the same time, the lexicographically smaller address wins on both
+ * devices, so they converge without another round trip.
+ */
+function adoptChannel(thread, announced) {
+  if (!announced) return
+  try { new PublicKey(announced) } catch { return }
+  if (!thread.channel) {
+    thread.channel = announced
+    thread.channelMine = false
+    return
+  }
+  if (thread.channel === announced) return
+  if (thread.channelConfirmed) return
+  const winner = [thread.channel, announced].sort()[0]
+  if (winner !== thread.channel) {
+    forgetCursor(thread.channel)
+    thread.channel = announced
+    thread.channelMine = false
+  }
+}
+
+// ========== FEES ==========
+/**
+ * How the fee reaches the sender.
+ *
+ * The amount rides inside every message we send (`fee` in the payload), so a
+ * contact learns it from our very first reply and their wallet attaches it from
+ * then on. Nothing has to be looked up on chain.
+ *
+ * That leaves exactly one gap — the stranger's opening message, sent before
+ * they could possibly know the amount. Charging for it would deadlock the
+ * feature: we would hide the one message that has to get through for the reply
+ * (and with it the fee) to ever be sent. So the opening message is always let
+ * through, once per address; see `hasUsedFirstContactGrace`.
+ */
+
+/** Remember what a peer charges us, learned from a message they sent. */
+export function rememberPeerFee(address, fee) {
+  const clean = sanitizeFee(fee)
+  const t = store.getThread(address)
+  if (t && t.peerFee !== clean) {
+    t.peerFee = clean
+    store._notify()
+  }
+  return clean
+}
+
+/** What this peer will owe us for their next message — the figure we quote them. */
+export function feeQuotedTo(peerAddress) {
+  // Writing to somebody makes them a contact we have engaged with, so for the
+  // "new contacts only" rule their next message is already free. Individual
+  // amounts override the rule and are quoted whatever the mode.
+  return getRequiredFeeFrom(peerAddress, true)
+}
+
+/** What we charge this peer for the message they just sent. */
+export function requiredFeeFrom(address) {
+  return getRequiredFeeFrom(address, isKnownContact(address))
+}
+
+/** Have we ever written to this contact? Decides whether they count as "new". */
+function isKnownContact(address) {
+  const t = store.getThread(address)
+  if (!t) return false
+  return !!t.handshakeSent || (t.messages || []).some((m) => m.dir === 'out')
+}
+
+/**
+ * True when this address has already had its one free opening message, or does
+ * not need one because we contacted them first (our message carried the fee).
+ */
+export function hasUsedFirstContactGrace(address) {
+  const t = store.getThread(address)
+  if (!t) return false
+  if (isKnownContact(address)) return true          // we told them the amount already
+  return (t.messages || []).some((m) => m.dir === 'in')
+}
+
+/**
+ * Verify on chain how much h173k a transaction actually delivered to us.
+ * The declared amount in the envelope is only a hint; this is the check that
+ * makes the fee worth anything.
+ */
+async function verifyFeePayments(connection, myAddress, candidates) {
+  const results = new Map()
+  if (candidates.length === 0) return results
+  const slice = candidates.slice(0, MAX_FEE_VERIFICATIONS)
+  let txs = []
+  try {
+    txs = await connection.getParsedTransactions(
+      slice.map((c) => c.sig),
+      { maxSupportedTransactionVersion: 0 }
+    )
+  } catch {
+    // RPC refused: fall back to the declared amount rather than losing messages.
+    for (const c of candidates) results.set(c.sig, c.declared)
+    return results
+  }
+
+  const mint = TOKEN_MINT.toBase58()
+  slice.forEach((c, i) => {
+    const tx = txs[i]
+    if (!tx) { results.set(c.sig, c.declared); return }
+    let received = 0
+    try {
+      const pre = tx.meta?.preTokenBalances || []
+      const post = tx.meta?.postTokenBalances || []
+      const isMine = (b) => b.owner === myAddress && b.mint === mint
+      const amountAt = (list, idx) => {
+        const b = list.find((x) => x.accountIndex === idx && isMine(x))
+        return b ? Number(b.uiTokenAmount?.uiAmount || 0) : null
+      }
+      const indices = new Set([...pre, ...post].filter(isMine).map((b) => b.accountIndex))
+      for (const idx of indices) {
+        const before = amountAt(pre, idx)
+        const after = amountAt(post, idx)
+        if (after == null) continue
+        received += after - (before == null ? 0 : before)
+      }
+    } catch {
+      received = c.declared
+    }
+    results.set(c.sig, Math.max(0, received))
+  })
+  // Anything beyond the verification budget keeps the declared amount.
+  for (const c of candidates.slice(MAX_FEE_VERIFICATIONS)) results.set(c.sig, c.declared)
+  return results
+}
+
+// ========== SENDING ==========
+/**
+ * Assemble the payload for a direct message together with the envelope
+ * parameters it will be wrapped in. Shared by the sender and by the composer's
+ * remaining-room counter so the two can never disagree.
+ */
+export function buildDirectPayload({ peerAddress, myAddress, text, replyTo, routing, thread, fee }) {
+  const profile = getProfile()
+  const payload = { text }
+  if (profile && profile.nick) payload.nick = profile.nick
+  if (routing.announceChannel) payload.ch = routing.announceChannel
+  // Quote what THIS peer will owe, so individually set amounts are actually
+  // communicated instead of silently filtering the contact out for ever.
+  const myFee = feeQuotedTo(peerAddress)
+  if (myFee > 0) payload.fee = myFee
+  if (replyTo && replyTo.id) {
+    payload.r = {
+      i: String(replyTo.id).slice(0, 16),
+      t: String(replyTo.text || '').slice(0, 34),
+    }
+  }
+  const peerDedicatedPub = thread ? thread.peerPubKey : null
+  const isRequest = !thread || !thread.handshakeSent || !peerDedicatedPub || routing.isInvite
+  const envParams = {
+    type: isRequest ? 'req' : 'msg',
+    from: myAddress,
+    myBoxPub: getMyDedicatedPublicKey(),
+    feePaid: fee,
+  }
+  return { payload, envParams, peerDedicatedPub, isRequest }
+}
+
+/**
+ * Bytes still available for the message being typed. Negative means it will not
+ * fit and has to be shortened — the composer surfaces this directly instead of
+ * letting the send fail after the fact.
+ */
+export function remainingRoomFor({ peerAddress, publicKey, text, replyTo }) {
+  try {
+    const routing = resolveTarget(peerAddress)
+    const thread = store.getThread(peerAddress)
+    const { payload, envParams } = buildDirectPayload({
+      peerAddress,
+      myAddress: publicKey.toBase58(),
+      text: String(text || ''),
+      replyTo,
+      routing,
+      thread,
+      fee: (thread && thread.peerFee) || 0,
+    })
+    // `ch` is not droppable: without it the peer never learns the address.
+    return memoRemaining(payload, envParams)
+  } catch {
+    return MAX_MEMO_BYTES
+  }
+}
+
+/**
+ * Send an encrypted message to a peer.
+ *
+ * @param {object} args connection, publicKey, peerAddress, text, replyTo,
+ *                      withAutoSOL, feeOverride
+ * @returns {string} transaction signature
+ */
+export async function sendMessage({ connection, publicKey, peerAddress, text, replyTo, withAutoSOL, feeOverride }) {
+  try { new PublicKey(peerAddress) } catch { throw new Error('Invalid address') }
+
+  const routing = resolveTarget(peerAddress)
+  const limit = routing.isInvite ? MAX_INVITE_LENGTH : MAX_MESSAGE_LENGTH
+  const trimmed = String(text || '').slice(0, limit)
+  if (!trimmed.trim()) throw new Error('Empty message')
+
+  const thread = store.getThread(peerAddress)
+
+  // What the recipient charges us, as learned from their own messages. An
+  // unknown peer means we have never heard from them, so there is nothing to
+  // pay yet: their reply will tell us the amount.
+  const fee = (feeOverride != null)
+    ? sanitizeFee(feeOverride)
+    : sanitizeFee(thread && thread.peerFee)
+
+  const { payload: fullPayload, envParams, peerDedicatedPub } = buildDirectPayload({
+    peerAddress,
+    myAddress: publicKey.toBase58(),
+    text: trimmed,
+    replyTo,
+    routing,
+    thread,
+    fee,
+  })
+  const type = envParams.type
+
+  // Drop the optional fields rather than fail outright; only when the text
+  // itself is too long is there nothing left to do.
+  const payload = fitPayload(fullPayload, envParams)
+  if (!payload) throw new Error('MEMO_TOO_LONG')
+
+  const memo = buildDirectEnvelope({
+    type,
+    from: publicKey.toBase58(),
+    myBoxPub: getMyDedicatedPublicKey(),
+    payload,
+    recipientAddress: peerAddress,
+    peerDedicatedPub,
+    feePaid: fee,
+  })
+  if (memoByteLength(memo) > MAX_MEMO_BYTES) throw new Error('MEMO_TOO_LONG')
+
+  // Where the money goes:
+  //  - the message cost keeps the conversation address alive (or, for an
+  //    invitation, reaches the recipient's wallet);
+  //  - the anti-spam fee always goes to the recipient's wallet.
+  const transfers = []
+  if (routing.isInvite || routing.legacy) {
+    transfers.push({ to: peerAddress, amount: MSG_COST + fee })
+    // Open the conversation address in the same transaction so it is ready.
+    if (routing.announceChannel) transfers.push({ to: routing.announceChannel, amount: 0 })
+  } else {
+    transfers.push({ to: routing.target, amount: MSG_COST })
+    if (fee > 0) transfers.push({ to: peerAddress, amount: fee })
+  }
+
+  const signature = await sendMemoTransaction({ connection, publicKey, memo, transfers, withAutoSOL })
+
+  // Record the conversation address we just announced.
+  if (routing.channel) {
+    const t = store.ensureThread(peerAddress)
+    if (!t.channel) { t.channel = routing.channel; t.channelMine = true }
+  }
+  store.appendOutgoing(peerAddress, {
+    text: trimmed,
+    sig: signature,
+    type,
+    reply: payload.r ? { id: payload.r.i, text: payload.r.t } : null,
+  })
+  return signature
+}
+
+/** Start a conversation: create the thread and reserve its dedicated address. */
+export function startConversation(peerAddress, contactName) {
+  const t = store.ensureThread(peerAddress)
+  if (contactName != null && contactName !== '') {
+    t.contactName = String(contactName).trim().slice(0, 40)
+  }
+  if (!t.channel && !getLegacyModeEnabled() && (t.messages || []).length === 0) {
+    try {
+      t.channel = deriveConversationAddress(peerAddress)
+      t.channelMine = true
+    } catch { /* wallet locked — the address is derived on first send instead */ }
+  }
+  store._notify()
+  return t
+}
+
+// ========== SCAN PLANNING ==========
+/**
+ * How many of the per-refresh slots are reserved for the quiet tail.
+ * Roughly a fifth of the budget, at least one, never more than four — enough to
+ * keep the tail moving without eating into the chats actually in use.
+ */
+export function rotationSlotsFor(budget) {
+  if (budget <= 1) return 0
+  return Math.max(1, Math.min(4, Math.round(budget * 0.2)))
+}
+
+/**
+ * Decide which addresses to poll this refresh.
+ *
+ * A "source" is one address with its own history — a dedicated conversation
+ * address or a group address. Both kinds draw on the SAME budget, so a refresh
+ * costs the same number of RPC calls whether the user has twenty conversations
+ * and no groups or the other way round.
+ *
+ * The budget is split in two:
+ *  - most slots go to the most recently active chats, which is where new
+ *    messages almost always land;
+ *  - the rest rotate through everything else, least-recently-scanned first.
+ *
+ * Without the rotation a chat that drops below the cut-off can never climb back
+ * on its own: it is not scanned, so its last-message time never updates, so it
+ * stays below the cut-off. The reserved slots break that loop while keeping the
+ * number of RPC calls per refresh exactly the same.
+ *
+ * Pure function. `sources` are objects carrying at least { address, ts };
+ * `stamps` maps address to the time it was last scanned. Exported for testing.
+ */
+export function planSourceScan(sources, budget, stamps = {}) {
+  const usable = (sources || []).filter((s) => s && s.address)
+  if (usable.length <= budget) {
+    return { fresh: usable, rotating: [], skipped: [] }
+  }
+
+  const byRecency = usable.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0))
+  const rotateSlots = rotationSlotsFor(budget)
+  const freshCount = Math.max(0, budget - rotateSlots)
+
+  const fresh = byRecency.slice(0, freshCount)
+  const tail = byRecency.slice(freshCount)
+
+  // Least-recently-scanned first; never scanned (no stamp) sorts to the front.
+  // This ordering is derived entirely from persisted timestamps, so closing the
+  // app mid-rotation does not restart it: whatever was not reached still has
+  // the oldest stamp and comes first on the next launch.
+  const ordered = tail.slice().sort((a, b) => {
+    const sa = stamps[a.address] || 0
+    const sb = stamps[b.address] || 0
+    if (sa !== sb) return sa - sb
+    return (b.ts || 0) - (a.ts || 0)
+  })
+
+  return {
+    fresh,
+    rotating: ordered.slice(0, rotateSlots),
+    skipped: ordered.slice(rotateSlots),
+  }
+}
+
+/** Every address the messenger can pull history from, newest activity first. */
+export function collectScanSources() {
+  const direct = store.getVisibleThreads()
+    .filter((t) => t.channel)
+    .map((t) => ({ kind: 'direct', address: t.channel, ts: lastTs(t), thread: t }))
+
+  let groups = []
+  try {
+    groups = groupStore.all()
+      .filter((g) => g.address)
+      .map((g) => ({ kind: 'group', address: g.address, ts: lastGroupTs(g), group: g }))
+  } catch {}
+
+  return [...direct, ...groups].sort((a, b) => (b.ts || 0) - (a.ts || 0))
+}
+
+// ========== SCANNING ==========
+/**
+ * Read one address' history and turn the memos into decrypted items.
+ * `viaChannel` marks messages that arrived on a dedicated conversation address.
+ */
+async function scanSource(connection, sourceAddress, { limit, myAddress, viaChannel, peerAddress }) {
+  const ata = await tokenAccountOf(sourceAddress)
+  if (!ata) return { items: [], control: [], newest: null, firstTime: true }
+
+  const cursor = getCursor(sourceAddress)
+  const firstTime = isFirstScan(sourceAddress)
   let sigs
   try {
-    const opts = { limit: getMessengerScanLimit() }
+    const opts = { limit }
     if (cursor) opts.until = cursor
-    sigs = await connection.getSignaturesForAddress(tokenAccount, opts)
+    sigs = await connection.getSignaturesForAddress(ata, opts)
   } catch {
-    return 0
+    return { items: [], control: [], newest: null, firstTime }
   }
-  if (!sigs || sigs.length === 0) return 0
-
-  const newestSig = sigs[0].signature
-  const ordered = sigs.slice().reverse() // oldest -> newest
-
-  // Signatures we have NOT yet emitted any notification for (newer than the
-  // notify cursor). Used so we don't re-notify (with content) messages that
-  // were already announced generically while the wallet was locked.
-  const notifyCursor = getNotifyCursor()
-  const newSinceNotify = new Set()
-  for (const s of sigs) { // newest -> oldest
-    if (s.signature === notifyCursor) break
-    newSinceNotify.add(s.signature)
-  }
+  if (!sigs || sigs.length === 0) return { items: [], control: [], newest: null, firstTime }
 
   const items = []
-  for (const s of ordered) {
+  const control = []
+  for (const s of sigs.slice().reverse()) { // oldest -> newest
     const memoText = stripMemoPrefix(s.memo)
     if (!memoText) continue
     const env = parseEnvelope(memoText)
     if (!env) continue
-    if (env.f === myAddress) continue // our own outgoing message
-    const payload = decryptEnvelope(env)
+    if (env.f === myAddress) continue          // our own traffic
+    if (viaChannel && peerAddress && env.f !== peerAddress) continue // not our peer
+    if (env.t === 'grp') continue              // handled by the group scanner
+
+    if (env.t === 'jreq' || env.t === 'jok' || env.t === 'jno') {
+      const payload = decryptFrom(env)
+      if (payload) {
+        control.push({
+          type: env.t,
+          from: env.f,
+          payload: { ...payload, boxPub: env.p || null },
+          ts: s.blockTime ? s.blockTime * 1000 : Date.now(),
+          sig: s.signature,
+        })
+      }
+      continue
+    }
+    if (env.t === 'cfg') {
+      rememberPeerFee(env.f, env.fee)
+      continue
+    }
+
+    const payload = decryptFrom(env)
     if (!payload || typeof payload.text !== 'string') continue
     items.push({
       from: env.f,
       peerPubKey: env.p || null,
       peerNick: payload.nick || '',
+      peerFee: payload.fee != null ? sanitizeFee(payload.fee) : null,
+      announcedChannel: payload.ch || null,
       text: String(payload.text).slice(0, MAX_MESSAGE_LENGTH),
+      reply: payload.r ? { id: payload.r.i, text: payload.r.t } : null,
       ts: s.blockTime ? s.blockTime * 1000 : Date.now(),
       sig: s.signature,
       type: env.t === 'req' ? 'req' : 'msg',
+      declaredFee: sanitizeFee(env.x),
+      legacy: env.v === 1,
+      viaChannel: !!viaChannel,
     })
   }
+  return { items, control, newest: sigs[0].signature, firstTime }
+}
 
-  const added = store.applyIncoming(items)
-  // Notify (with full content) only for messages we haven't notified about yet,
-  // and not on the very first scan (no prior cursor) to avoid a backfill burst.
-  if (cursor) {
-    const toNotify = added.filter(a => a.sig && newSinceNotify.has(a.sig))
-    notifyNewMessages(toNotify)
+/**
+ * Full refresh: the wallet inbox, the active conversation addresses and every
+ * group. Called alongside the balance refresh, so it has to stay bounded — the
+ * number of conversation addresses polled per run is configurable.
+ */
+export async function scanIncomingMessages(connection, publicKey, options = {}) {
+  if (!connection || !publicKey) return 0
+  if (!sessionWallet.isUnlocked()) return 0
+
+  const myAddress = publicKey.toBase58()
+  migrateLegacyCursor(myAddress)
+
+  const notifyCursor = getNotifyCursor()
+  const collected = []
+  const controls = []
+
+  // --- 1. wallet inbox: invitations, legacy conversations, group admin traffic
+  const inbox = await scanSource(connection, myAddress, {
+    limit: getMessengerScanLimit(),
+    myAddress,
+    viaChannel: false,
+  })
+  collected.push(...inbox.items)
+  controls.push(...inbox.control)
+
+  // --- 2. conversation and group addresses, from one shared budget
+  const activeAddr = options.activeAddress || (() => {
+    try { return window.__h173k_active_thread || null } catch { return null }
+  })()
+  const activeGroupId = (() => {
+    try { return window.__h173k_active_group || null } catch { return null }
+  })()
+
+  const sources = collectScanSources()
+  pruneRotation(sources.map((s) => s.address))
+
+  const plan = planSourceScan(sources, getSourcesPerRefresh(), getRotationStamps())
+  const toScan = [...plan.fresh, ...plan.rotating]
+
+  // Whatever is open on screen is always polled, on top of the budget.
+  const active = sources.find((s) => (
+    (activeAddr && s.kind === 'direct' && s.thread.address === activeAddr) ||
+    (activeGroupId && s.kind === 'group' && s.group.id === activeGroupId)
+  ))
+  if (active && !toScan.includes(active)) toScan.push(active)
+
+  const channelNewest = []
+  for (const source of toScan) {
+    try {
+      if (source.kind === 'group') {
+        await scanGroup(connection, publicKey, source.group.id)
+      } else {
+        const res = await scanSource(connection, source.address, {
+          limit: CHANNEL_SCAN_LIMIT,
+          myAddress,
+          viaChannel: true,
+          peerAddress: source.thread.address,
+        })
+        collected.push(...res.items)
+        if (res.newest) channelNewest.push([source.address, res.newest])
+      }
+    } catch { /* one unreachable address must not break the refresh */ }
+
+    // Stamped one at a time, not in a batch at the end: closing the app
+    // mid-refresh then keeps the progress made so far, and the rotation picks
+    // up where it stopped instead of redoing the same addresses.
+    touchRotation([source.address])
   }
 
-  try { localStorage.setItem(CURSOR_KEY, newestSig) } catch {}
-  setNotifyCursor(newestSig)
+  // --- 3. fee filtering
+  //
+  // Order matters. The grace decision has to come FIRST, because it decides
+  // which messages are subject to a fee at all — and only those are worth
+  // spending an RPC round trip on. Deciding it after picking the verification
+  // set (as an earlier version did) left the second message from a stranger
+  // outside the verified set, so its self-declared amount was taken on trust.
+  const graceUsed = new Set()
+  const marked = collected.map((it) => {
+    const required = requiredFeeFrom(it.from)
+    if (required <= 0) return { ...it, owed: 0 }
+
+    // A stranger's opening message is never charged: they could not have known
+    // the amount, and hiding it would deadlock the mechanism — the reply that
+    // teaches them the fee would never be written. One message per address,
+    // tracked here too so a burst in a single batch cannot spend it twice.
+    if (!hasUsedFirstContactGrace(it.from) && !graceUsed.has(it.from)) {
+      graceUsed.add(it.from)
+      return { ...it, owed: 0, graced: true, feeRequired: required }
+    }
+    return { ...it, owed: required }
+  })
+
+  // The amount declared in the envelope is the sender's own claim, so it can
+  // never prove payment — but it can disprove it for free. Anyone who does not
+  // even claim to have covered the fee is filtered without an RPC round trip,
+  // which is both strictly correct and cheaper.
+  let verified = new Map()
+  const candidates = marked
+    .filter((it) => it.owed > 0 && it.sig && (it.declaredFee || 0) + 1e-9 >= it.owed)
+    .map((it) => ({ sig: it.sig, declared: it.declaredFee || 0 }))
+  if (candidates.length) {
+    verified = await verifyFeePayments(connection, myAddress, candidates)
+  }
+
+  const items = marked.map(({ owed, ...it }) => {
+    if (owed <= 0) return it
+    // A hair of tolerance for rounding at 9 decimals.
+    if ((it.declaredFee || 0) + 1e-9 < owed) return { ...it, unpaid: true, feeRequired: owed }
+
+    // KNOWN LIMITATION: when the chain lookup could not run — RPC failure, or
+    // more claimants in one refresh than MAX_FEE_VERIFICATIONS — the claim is
+    // taken at face value rather than hiding a message that may well be
+    // genuine. A sender who forges the declared amount gets through in that
+    // window, so the fee is a deterrent, not a guarantee.
+    const paid = verified.has(it.sig) ? verified.get(it.sig) : (it.declaredFee || 0)
+    const ok = paid + 1e-9 >= owed
+    return { ...it, unpaid: !ok, feeRequired: owed }
+  })
+
+  // --- 4. store the messages and adopt announced conversation addresses
+  const added = store.applyIncoming(items)
+  let adopted = false
+  for (const it of items) {
+    if (!it.announcedChannel) continue
+    const t = store.ensureThread(it.from)
+    adoptChannel(t, it.announcedChannel)
+    adopted = true
+  }
+  if (adopted) store._notify()
+
+  // --- 5. group control traffic (join requests and admissions)
+  for (const c of controls) {
+    try {
+      if (c.type === 'jreq') await processIncomingJoinRequest(connection, c)
+      else if (c.type === 'jok') acceptGroupInvitation(c.payload, c.from)
+    } catch { /* ignore a malformed control message */ }
+  }
+
+  // --- 6. notifications: only for genuinely new, paid messages, and never on
+  //        the very first scan (that would replay the whole backfill).
+  if (!inbox.firstTime && notifyCursor && added.length) {
+    notifyNewMessages(added)
+  }
+
+  // --- 7. cursors
+  if (inbox.newest) { setCursor(myAddress, inbox.newest); setNotifyCursor(inbox.newest) }
+  for (const [addr, sig] of channelNewest) setCursor(addr, sig)
+
   return items.length
 }
 
 // ========== LOCKED NOTIFICATION SCAN ==========
 /**
- * Lightweight scan used while the wallet is LOCKED. It cannot decrypt (no key),
- * so it only detects that new incoming message-bearing memos exist and fires a
- * content-less "new message" notification. Uses the public token-account
- * signature history only — no private key required.
+ * Lightweight scan used while the wallet is LOCKED. It cannot decrypt, so it
+ * only detects that new message-bearing memos exist and fires a content-less
+ * notification. Uses public history only — no private key required.
  */
 export async function scanLockedNotifications(connection, address) {
   if (!connection || !address) return 0
   if (!getNotificationsEnabled()) return 0
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return 0
 
-  let owner, tokenAccount
-  try {
-    owner = new PublicKey(address)
-    tokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, owner)
-  } catch {
-    return 0
-  }
+  const tokenAccount = await tokenAccountOf(address)
+  if (!tokenAccount) return 0
 
   const notifyCursor = getNotifyCursor()
   let sigs
@@ -532,13 +963,15 @@ export async function scanLockedNotifications(connection, address) {
     if (!memoText) continue
     const env = parseEnvelope(memoText)
     if (!env) continue
-    if (env.f === address) continue // our own outgoing
-    count++ // incoming message-bearing memo (content stays encrypted/unread)
+    if (env.f === address) continue
+    if (env.t === 'cfg') continue
+    count++
   }
 
-  // Only announce on incremental updates, not the first ever backfill.
   if (notifyCursor && count > 0) {
-    const title = count === 1 ? translate('messenger.newMessage') : translate('messenger.newMessages', { n: count })
+    const title = count === 1
+      ? translate('messenger.newMessage')
+      : translate('messenger.newMessages', { n: count })
     showAppNotification(title, translate('messenger.unlockToRead'), { tag: 'h173k-msg-locked' })
   }
 
@@ -546,9 +979,7 @@ export async function scanLockedNotifications(connection, address) {
   return count
 }
 
-// ========== LOCAL NOTIFICATIONS ==========
-const NOTIF_ICON = '/icons/icon-192x192.png'
-
+// ========== NOTIFICATIONS ==========
 function notifyNewMessages(added) {
   if (!added || added.length === 0) return
   if (!getNotificationsEnabled()) return
@@ -558,161 +989,9 @@ function notifyNewMessages(added) {
   try { activeAddr = window.__h173k_active_thread || null } catch {}
 
   for (const it of added) {
-    if (it.from === activeAddr) continue // don't notify for the conversation you're viewing
+    if (it.from === activeAddr) continue
     const title = it.name || it.from
     const body = it.type === 'req' ? translate('messenger.wantsToStart') : it.text
-    showNotification(title, body, it.from)
+    showAppNotification(title, body, { tag: 'h173k-msg-' + it.from, data: { from: it.from, url: '/' } })
   }
-}
-
-function showNotification(title, body, from) {
-  showAppNotification(title, body, { tag: 'h173k-msg-' + from, data: { from, url: '/' } })
-}
-
-/**
- * Display a local OS notification via the service worker (works on desktop and
- * mobile PWA), falling back to the Notification constructor. Caller is
- * responsible for checking the relevant enabled-toggle; this only checks that
- * notifications are permitted by the platform.
- */
-export function showAppNotification(title, body, { tag, data = {} } = {}) {
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-  const options = {
-    body,
-    icon: NOTIF_ICON,
-    badge: NOTIF_ICON,
-    data: { url: '/', ...data },
-    renotify: true,
-  }
-  if (tag) options.tag = tag
-  try {
-    if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
-      navigator.serviceWorker.ready
-        .then((reg) => reg.showNotification(title, options))
-        .catch(() => fallbackNotification(title, options))
-      return
-    }
-  } catch {}
-  fallbackNotification(title, options)
-}
-
-function fallbackNotification(title, options) {
-  try {
-    const n = new Notification(title, options)
-    n.onclick = () => {
-      try { window.focus() } catch {}
-      const from = options.data && options.data.from
-      if (from) { try { window.dispatchEvent(new CustomEvent('h173k-open-thread', { detail: from })) } catch {} }
-      n.close()
-    }
-  } catch { /* platform doesn't allow the Notification constructor */ }
-}
-
-// ========== SEND MESSAGE ==========
-/**
- * Build the memo envelope for an outgoing message.
- */
-function buildMemo({ type, fromAddress, payload, recipientAddress, peerDedicatedPub }) {
-  const enc = encryptPayload(payload, { recipientAddress, peerDedicatedPub })
-  const env = {
-    v: PROTOCOL_VERSION,
-    t: type,
-    e: enc.e,
-    f: fromAddress,
-    p: getMyDedicatedPublicKey(),
-    n: enc.n,
-    c: enc.c,
-  }
-  const json = JSON.stringify(env)
-  if (new TextEncoder().encode(json).length > 560) {
-    throw new Error('Message too long after encryption')
-  }
-  return json
-}
-
-/**
- * Send an encrypted message to a peer.
- * @param {object} args
- *   connection, publicKey, peerAddress, text, withAutoSOL (from useSwap)
- * @returns {string} transaction signature
- */
-export async function sendMessage({ connection, publicKey, peerAddress, text, withAutoSOL }) {
-  const trimmed = String(text || '').slice(0, MAX_MESSAGE_LENGTH)
-  if (!trimmed.trim()) throw new Error('Empty message')
-
-  let recipientPubkey
-  try { recipientPubkey = new PublicKey(peerAddress) } catch { throw new Error('Invalid address') }
-
-  const profile = getProfile()
-  const myNick = profile ? profile.nick : ''
-  const thread = store.getThread(peerAddress)
-  const peerDedicatedPub = thread ? thread.peerPubKey : null
-  // First message to a peer we have not exchanged keys with is a "request".
-  const isRequest = !thread || !thread.handshakeSent || !peerDedicatedPub
-  const type = isRequest ? 'req' : 'msg'
-
-  const memoString = buildMemo({
-    type,
-    fromAddress: publicKey.toBase58(),
-    payload: { nick: myNick, text: trimmed },
-    recipientAddress: peerAddress,
-    peerDedicatedPub,
-  })
-
-  // Determine if recipient token account must be created (sender pays rent).
-  let recipientAtaRent = 0
-  let recipientTokenAccount
-  try {
-    recipientTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, recipientPubkey)
-    try {
-      await getAccount(connection, recipientTokenAccount)
-    } catch {
-      recipientAtaRent = WSOL_ATA_RENT_SP
-    }
-  } catch {
-    throw new Error('Cannot resolve recipient token account')
-  }
-
-  const signature = await withAutoSOL(
-    async () => {
-      const senderTokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
-      const transaction = new Transaction()
-
-      // Create recipient token account if needed
-      try { await getAccount(connection, recipientTokenAccount) }
-      catch {
-        transaction.add(
-          createAssociatedTokenAccountInstruction(publicKey, recipientTokenAccount, recipientPubkey, TOKEN_MINT)
-        )
-      }
-
-      // The message cost transfer (carries the conversation)
-      transaction.add(
-        createTransferInstruction(senderTokenAccount, recipientTokenAccount, publicKey, MSG_COST_LAMPORTS)
-      )
-
-      // The encrypted memo
-      transaction.add(
-        new TransactionInstruction({
-          keys: [{ pubkey: publicKey, isSigner: true, isWritable: false }],
-          programId: MEMO_PROGRAM_ID,
-          data: Buffer.from(memoString, 'utf8'),
-        })
-      )
-
-      const { blockhash } = await connection.getLatestBlockhash()
-      transaction.recentBlockhash = blockhash
-      transaction.feePayer = publicKey
-
-      const signed = sessionWallet.signTransaction(transaction)
-      const sig = await connection.sendRawTransaction(signed.serialize())
-      await connection.confirmTransaction(sig, 'confirmed')
-      return sig
-    },
-    () => {},
-    recipientAtaRent
-  )
-
-  store.appendOutgoing(peerAddress, { text: trimmed, sig: signature, type })
-  return signature
 }

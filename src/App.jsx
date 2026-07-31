@@ -62,14 +62,12 @@ import {
   scanIncomingMessages,
   getNotificationsEnabled,
   setNotificationsEnabled,
-  getMessengerScanLimit,
-  setMessengerScanLimit,
-  MESSENGER_SCAN_OPTIONS,
   getTxNotificationsEnabled,
   setTxNotificationsEnabled,
   showAppNotification,
   scanLockedNotifications,
 } from './messenger/messenger'
+import { getGroupInviteFromURL, clearGroupInviteFromURL } from './messenger/groups'
 
 // Constants & Utils
 import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT, getUsdtPriceImpactGuard, saveUsdtPriceImpactGuard, clampUsdtPriceImpactPct, DEFAULT_MAX_USDT_PRICE_IMPACT_PCT, MIN_USDT_PRICE_IMPACT_PCT, MAX_USDT_PRICE_IMPACT_PCT, USDT_PRICE_IMPACT_STEP } from './constants'
@@ -400,17 +398,32 @@ function WalletApp({ connection, onRpcChange }) {
     return messengerStore.subscribe(update)
   }, [])
 
-  // Open the relevant conversation when a message notification is clicked.
+  // Open the relevant chat when a message notification is clicked. The click is
+  // handled by the service worker, which focuses this window and posts the
+  // target here rather than navigating and losing the app's state.
   useEffect(() => {
-    const openFrom = (address) => { if (address) openMessengerWith(address) }
-    const onWinEvent = (e) => openFrom(e.detail)
-    const onSwMessage = (e) => {
-      if (e.data && e.data.type === 'h173k-open-thread') openFrom(e.data.from)
+    const openChat = ({ from, group }) => {
+      if (group) {
+        setMessengerGroupTarget(group)
+        setMessengerTarget(null)
+        setCurrentView('messenger')
+      } else if (from) {
+        openMessengerWith(from)
+      }
     }
-    window.addEventListener('h173k-open-thread', onWinEvent)
+    const onThreadEvent = (e) => openChat({ from: e.detail })
+    const onGroupEvent = (e) => openChat({ group: e.detail })
+    const onSwMessage = (e) => {
+      if (!e.data) return
+      if (e.data.type === 'h173k-open-chat') openChat(e.data)
+      else if (e.data.type === 'h173k-open-thread') openChat({ from: e.data.from })
+    }
+    window.addEventListener('h173k-open-thread', onThreadEvent)
+    window.addEventListener('h173k-open-group', onGroupEvent)
     if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', onSwMessage)
     return () => {
-      window.removeEventListener('h173k-open-thread', onWinEvent)
+      window.removeEventListener('h173k-open-thread', onThreadEvent)
+      window.removeEventListener('h173k-open-group', onGroupEvent)
       if (navigator.serviceWorker) navigator.serviceWorker.removeEventListener('message', onSwMessage)
     }
   }, [openMessengerWith])
@@ -430,6 +443,23 @@ function WalletApp({ connection, onRpcChange }) {
   useEffect(() => {
     if (initialOfferLink) clearOfferLinkFromURL()
   }, [initialOfferLink])
+
+  // A group invitation link opens the messenger on the join screen. The link
+  // carries the admin address and the group's rules, never the group address.
+  const initialGroupInvite = useMemo(() => { try { return getGroupInviteFromURL() } catch { return null } }, [])
+  const [pendingGroupInvite, setPendingGroupInvite] = useState(() => initialGroupInvite)
+  const [messengerGroupTarget, setMessengerGroupTarget] = useState(null)
+
+  useEffect(() => {
+    if (initialGroupInvite) clearGroupInviteFromURL()
+  }, [initialGroupInvite])
+
+  useEffect(() => {
+    if (pendingGroupInvite && hasWallet && isUnlocked && connection) {
+      setMessengerTarget(null)
+      setCurrentView('messenger')
+    }
+  }, [pendingGroupInvite, hasWallet, isUnlocked, connection])
 
   // Once the wallet is usable, open the P2P marketplace so the linked offer can load.
   // The offer itself is fetched + shown inside P2PMarketplace (via the deepLink prop).
@@ -711,8 +741,17 @@ function WalletApp({ connection, onRpcChange }) {
       {currentView === 'messenger' && (
         <MessengerView
           connection={connection} publicKey={publicKey}
+          balance={balance}
           initialAddress={messengerTarget}
-          onBack={() => setCurrentView('main')} showToast={showToast}
+          initialInvite={pendingGroupInvite}
+          initialGroup={messengerGroupTarget}
+          onInviteConsumed={() => setPendingGroupInvite(null)}
+          onBack={() => {
+            setPendingGroupInvite(null)
+            setMessengerGroupTarget(null)
+            setCurrentView('main')
+          }}
+          showToast={showToast}
         />
       )}
       
@@ -3759,12 +3798,14 @@ function SponsorAccountsToggle({ showToast }) {
   )
 }
 
-// ========== MESSENGER SETTINGS ==========
-function MessengerSettings({ showToast }) {
+// ========== NOTIFICATION SETTINGS ==========
+// Only wallet-level notifications live here. Everything that belongs to the
+// messenger — message fees, group rules, sorting, scanning — now has its own
+// "Messenger settings" screen, reachable from the conversation list.
+function NotificationSettings({ showToast }) {
   const { t } = useTranslation()
   const [notif, setNotif] = useState(() => getNotificationsEnabled())
   const [txNotif, setTxNotif] = useState(() => getTxNotificationsEnabled())
-  const [limit, setLimit] = useState(() => getMessengerScanLimit())
 
   // Ensure the platform allows notifications, prompting if needed. Returns true if granted.
   const ensurePermission = async () => {
@@ -3805,11 +3846,6 @@ function MessengerSettings({ showToast }) {
     }
   }
 
-  const chooseLimit = (n) => {
-    setMessengerScanLimit(n); setLimit(n)
-    showToast(t('messengerSettings.scanningToast', { n }), 'success')
-  }
-
   return (
     <>
       <div className="settings-section">
@@ -3837,14 +3873,8 @@ function MessengerSettings({ showToast }) {
       <div className="settings-section">
         <h3>{t('messengerSettings.title')}</h3>
         <div className="settings-item" style={{ display: 'block' }}>
-          <div>{t('messengerSettings.entriesPerRefresh')}</div>
-          <div style={{ fontSize: '12px', opacity: 0.6, margin: '2px 0 10px' }}>
-            {t('messengerSettings.entriesDesc')}
-          </div>
-          <div className="messenger-scan-options">
-            {MESSENGER_SCAN_OPTIONS.map((n) => (
-              <button key={n} className={`scan-opt ${limit === n ? 'active' : ''}`} onClick={() => chooseLimit(n)}>{n}</button>
-            ))}
+          <div style={{ fontSize: '13px', opacity: 0.7, lineHeight: 1.5 }}>
+            {t('messengerSettings.movedNotice')}
           </div>
         </div>
       </div>
@@ -4494,7 +4524,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         </div>
       </div>
 
-      <MessengerSettings showToast={showToast} />
+      <NotificationSettings showToast={showToast} />
 
       <div className="settings-section danger">
         <h3>{t('settings.dangerZone')}</h3>

@@ -2,10 +2,13 @@
  * H173K Wallet - Messenger UI
  *
  * Screens:
- *  - Nick setup (first entry): choose the nickname shown to contacts.
- *  - Conversation list: add-contact field, list of threads, hide/rename.
- *  - Thread: encrypted conversation + composer, pull-to-refresh (mobile) /
- *    refresh button (desktop, hidden on mobile by CSS convention).
+ *  - Nick setup (first entry)
+ *  - Chat list: individual conversations and groups together, with sorting and
+ *    filtering available straight from the list, a "+" that opens either kind
+ *    of new chat, and the messenger's own settings next to it
+ *  - Thread: an individual conversation (its own dedicated address)
+ *  - Group screens (see GroupView.jsx)
+ *  - Messenger settings (see MessengerSettingsView.jsx)
  */
 
 import React, { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react'
@@ -14,35 +17,30 @@ import { useTranslation } from '../i18n'
 import { useSwap } from '../hooks/useSwap'
 import { sessionWallet } from '../crypto/wallet'
 import {
+  BackIcon, RefreshIcon, PlusIcon, EditIcon, TrashIcon, SendArrowIcon,
+  SettingsIcon, GroupIcon, PersonIcon, LinkIcon, ReplyIcon, CloseIcon, CoinIcon,
+} from './icons'
+import {
   store,
   getProfile,
   hasProfile,
   saveProfile,
   scanIncomingMessages,
   sendMessage,
+  startConversation,
+  resolveTarget,
+  requiredFeeFrom,
+  remainingRoomFor,
+  unpaidCount,
   MSG_COST,
   MAX_MESSAGE_LENGTH,
+  MAX_INVITE_LENGTH,
 } from './messenger'
-
-// ========== ICONS ==========
-function BackIcon({ size = 20 }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
-}
-function RefreshIcon({ size = 18 }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
-}
-function PlusIcon({ size = 20 }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-}
-function EditIcon({ size = 16 }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-}
-function TrashIcon({ size = 16 }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-}
-function SendArrowIcon({ size = 20 }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
-}
+import { groupStore } from './groups'
+import { buildChatList } from './chatlist'
+import { getSortMode, setSortMode, SORT_MODES, subscribePrefs } from './prefs'
+import MessengerSettingsView from './MessengerSettingsView'
+import { CreateGroupView, JoinGroupView, GroupChatView } from './GroupView'
 
 // ========== HELPERS ==========
 function shortAddr(a) {
@@ -53,8 +51,9 @@ function fmtTime(ts) {
   if (!ts) return ''
   const d = new Date(ts)
   const now = new Date()
-  const sameDay = d.toDateString() === now.toDateString()
-  if (sameDay) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
   return d.toLocaleDateString([], { day: '2-digit', month: '2-digit' }) + ' ' +
     d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
@@ -64,48 +63,127 @@ function displayName(t) {
   return shortAddr(t.address)
 }
 
-// Subscribe to the messenger store with useSyncExternalStore.
+/** Re-render whenever the threads, the groups or the preferences change. */
 function useMessengerVersion() {
   return useSyncExternalStore(
-    (cb) => store.subscribe(cb),
-    () => store.getVisibleThreads().length + ':' + store.getTotalUnread() + ':' + JSON.stringify(
-      store.getVisibleThreads().map(t => [t.address, t.messages.length, t.unread, t.contactName, t.peerNick])
-    )
+    (cb) => {
+      const un1 = store.subscribe(cb)
+      const un2 = groupStore.subscribe(cb)
+      const un3 = subscribePrefs(cb)
+      return () => { un1(); un2(); un3() }
+    },
+    () => {
+      const threads = store.getVisibleThreads()
+      const groups = groupStore.all()
+      return JSON.stringify([
+        getSortMode(),
+        threads.map((t) => [t.address, t.messages.length, t.unread, unpaidCount(t), t.contactName, t.peerNick, t.channelConfirmed]),
+        groups.map((g) => [g.id, g.messages.length, g.unread, Object.keys(g.pending || {}).length, g.name]),
+      ])
+    }
   )
 }
 
-// ========== MAIN MESSENGER VIEW ==========
-export default function MessengerView({ connection, publicKey, onBack, showToast, initialAddress }) {
+// ========== MAIN VIEW ==========
+export default function MessengerView({ connection, publicKey, balance, onBack, showToast, initialAddress, initialInvite, initialGroup, onInviteConsumed }) {
   const [needsNick, setNeedsNick] = useState(() => !hasProfile())
   const [editingNick, setEditingNick] = useState(false)
-  // If we arrived with a target peer and a nick is already set, open it directly.
-  const [view, setView] = useState(() => (initialAddress && hasProfile()) ? 'thread' : 'list')
+  const [view, setView] = useState(() => {
+    if (initialInvite) return 'joinGroup'
+    if (initialGroup) return 'group'
+    return (initialAddress && hasProfile()) ? 'thread' : 'list'
+  })
   const [activeAddress, setActiveAddress] = useState(() => initialAddress || null)
-  // Remember a pending target to open after the nick is chosen on first entry.
+  const [activeGroup, setActiveGroup] = useState(() => initialGroup || null)
   const pendingTarget = useRef(initialAddress || null)
 
-  // Re-render whenever the store changes.
   useMessengerVersion()
 
-  // Track which thread is open so background scans don't mark it unread.
+  // Track what is open so background scans don't mark it unread.
   useEffect(() => {
     try { window.__h173k_active_thread = (view === 'thread') ? activeAddress : null } catch {}
     return () => { try { window.__h173k_active_thread = null } catch {} }
   }, [view, activeAddress])
 
+  const openThread = useCallback((addr) => {
+    store.markRead(addr)
+    setActiveAddress(addr)
+    setView('thread')
+  }, [])
+  const openGroup = useCallback((id) => {
+    groupStore.markRead(id)
+    setActiveGroup(id)
+    setView('group')
+  }, [])
+
+  // A notification can name a group while the messenger is already open.
+  useEffect(() => {
+    if (initialGroup) openGroup(initialGroup)
+  }, [initialGroup, openGroup])
+
   if (needsNick) {
-    return <NickSetup onDone={() => {
-      setNeedsNick(false)
-      if (pendingTarget.current) {
-        store.markRead(pendingTarget.current)
-        setActiveAddress(pendingTarget.current)
-        setView('thread')
-      }
-    }} onBack={onBack} showToast={showToast} />
+    return (
+      <NickSetup
+        onDone={() => {
+          setNeedsNick(false)
+          if (initialInvite) { setView('joinGroup'); return }
+          if (initialGroup) { openGroup(initialGroup); return }
+          if (pendingTarget.current) openThread(pendingTarget.current)
+        }}
+        onBack={onBack}
+        showToast={showToast}
+      />
+    )
   }
 
   if (editingNick) {
     return <NickSetup isEdit onDone={() => setEditingNick(false)} onBack={() => setEditingNick(false)} showToast={showToast} />
+  }
+
+  if (view === 'settings') {
+    return (
+      <MessengerSettingsView
+        onBack={() => setView('list')}
+        showToast={showToast}
+      />
+    )
+  }
+
+  if (view === 'newGroup') {
+    return (
+      <CreateGroupView
+        connection={connection}
+        publicKey={publicKey}
+        onBack={() => setView('list')}
+        onCreated={(id) => openGroup(id)}
+        showToast={showToast}
+      />
+    )
+  }
+
+  if (view === 'joinGroup') {
+    return (
+      <JoinGroupView
+        connection={connection}
+        publicKey={publicKey}
+        balance={balance}
+        initialInvite={initialInvite}
+        onBack={() => { setView('list'); if (onInviteConsumed) onInviteConsumed() }}
+        showToast={showToast}
+      />
+    )
+  }
+
+  if (view === 'group' && activeGroup) {
+    return (
+      <GroupChatView
+        connection={connection}
+        publicKey={publicKey}
+        groupId={activeGroup}
+        onBack={() => { groupStore.markRead(activeGroup); setView('list'); setActiveGroup(null) }}
+        showToast={showToast}
+      />
+    )
   }
 
   if (view === 'thread' && activeAddress) {
@@ -121,12 +199,16 @@ export default function MessengerView({ connection, publicKey, onBack, showToast
   }
 
   return (
-    <ConversationList
+    <ChatList
       connection={connection}
       publicKey={publicKey}
       onBack={onBack}
-      onOpen={(addr) => { store.markRead(addr); setActiveAddress(addr); setView('thread') }}
+      onOpenThread={openThread}
+      onOpenGroup={openGroup}
       onEditNick={() => setEditingNick(true)}
+      onSettings={() => setView('settings')}
+      onNewGroup={() => setView('newGroup')}
+      onJoinGroup={() => setView('joinGroup')}
       showToast={showToast}
     />
   )
@@ -155,9 +237,7 @@ function NickSetup({ onDone, onBack, showToast, isEdit }) {
       <div className="nick-setup">
         <div className="nick-setup-icon">💬</div>
         <h3>{isEdit ? t('messenger.changeNick') : t('messenger.chooseNick')}</h3>
-        <p className="nick-setup-desc">
-          {t('messenger.nickDesc')}
-        </p>
+        <p className="nick-setup-desc">{t('messenger.nickDesc')}</p>
         <input
           className="messenger-input"
           type="text"
@@ -174,21 +254,22 @@ function NickSetup({ onDone, onBack, showToast, isEdit }) {
   )
 }
 
-// ========== CONVERSATION LIST ==========
-function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, showToast }) {
+// ========== CHAT LIST ==========
+function ChatList({ connection, publicKey, onBack, onOpenThread, onOpenGroup, onEditNick, onSettings, onNewGroup, onJoinGroup, showToast }) {
   const { t } = useTranslation()
   const [refreshing, setRefreshing] = useState(false)
   const myNick = (getProfile() && getProfile().nick) || ''
+  const [showMenu, setShowMenu] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
   const [newAddr, setNewAddr] = useState('')
   const [newName, setNewName] = useState('')
-  const [showAdd, setShowAdd] = useState(false)
   const [editAddr, setEditAddr] = useState(null)
   const [editName, setEditName] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(null)
 
-  const threads = store.getVisibleThreads()
+  const sortMode = getSortMode()
+  const items = buildChatList(sortMode)
 
-  // Pull-to-refresh
   const listRef = useRef(null)
   const touchStartY = useRef(0)
   const isPulling = useRef(false)
@@ -196,8 +277,7 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
 
   const doRefresh = useCallback(async () => {
     setRefreshing(true)
-    try { await scanIncomingMessages(connection, publicKey) }
-    catch (e) { /* keep quiet on background errors */ }
+    try { await scanIncomingMessages(connection, publicKey) } catch { /* quiet */ }
     setTimeout(() => setRefreshing(false), 400)
   }, [connection, publicKey])
 
@@ -217,15 +297,15 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
   }, [refreshing, doRefresh])
   const handleTouchEnd = useCallback(() => { isPulling.current = false; setPullProgress(0) }, [])
 
-  const addContact = () => {
+  const startNewConversation = () => {
     const addr = newAddr.trim()
     if (!addr) { showToast(t('messenger.enterAddress'), 'error'); return }
     try { new PublicKey(addr) } catch { showToast(t('send.invalidAddress'), 'error'); return }
     if (addr === publicKey.toBase58()) { showToast(t('messenger.cannotAddSelf'), 'error'); return }
-    store.addContact(addr, newName.trim())
+    startConversation(addr, newName.trim())
     setNewAddr(''); setNewName(''); setShowAdd(false)
     showToast(t('messenger.contactAdded'), 'success')
-    onOpen(addr)
+    onOpenThread(addr)
   }
 
   const saveEdit = () => {
@@ -249,8 +329,41 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
           <button className={`messenger-refresh-btn ${refreshing ? 'refreshing' : ''}`} onClick={doRefresh} disabled={refreshing} title={t('history.refresh')}>
             <RefreshIcon size={18} />
           </button>
-          <button className="messenger-add-btn" onClick={() => setShowAdd(s => !s)} title={t('messenger.addContact')}>
-            <PlusIcon size={20} />
+          <div className="messenger-plus-wrap">
+            <button className="messenger-add-btn" onClick={() => { setShowMenu((s) => !s); setShowAdd(false) }} title={t('messenger.newChat')}>
+              <PlusIcon size={20} />
+            </button>
+            {showMenu && (
+              <>
+                <div className="messenger-menu-backdrop" onClick={() => setShowMenu(false)} />
+                <div className="messenger-menu">
+                  <button className="messenger-menu-item" onClick={() => { setShowMenu(false); setShowAdd(true) }}>
+                    <PersonIcon size={17} />
+                    <span>
+                      <strong>{t('messenger.newDirect')}</strong>
+                      <em>{t('messenger.newDirectDesc')}</em>
+                    </span>
+                  </button>
+                  <button className="messenger-menu-item" onClick={() => { setShowMenu(false); onNewGroup() }}>
+                    <GroupIcon size={17} />
+                    <span>
+                      <strong>{t('messenger.newGroup')}</strong>
+                      <em>{t('messenger.newGroupDesc')}</em>
+                    </span>
+                  </button>
+                  <button className="messenger-menu-item" onClick={() => { setShowMenu(false); onJoinGroup() }}>
+                    <LinkIcon size={17} />
+                    <span>
+                      <strong>{t('messenger.joinGroup')}</strong>
+                      <em>{t('messenger.joinGroupDesc')}</em>
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <button className="messenger-add-btn" onClick={onSettings} title={t('messengerSettings.title')}>
+            <SettingsIcon size={19} />
           </button>
         </div>
       </div>
@@ -261,6 +374,19 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
         <button className="messenger-nick-edit" onClick={onEditNick} title={t('messenger.editNickTitle')}>
           <EditIcon size={15} /> {t('messenger.edit')}
         </button>
+      </div>
+
+      {/* Sorting and filtering, straight from the list. */}
+      <div className="messenger-sort-bar">
+        {SORT_MODES.map((mode) => (
+          <button
+            key={mode}
+            className={`messenger-sort-chip ${sortMode === mode ? 'active' : ''}`}
+            onClick={() => setSortMode(mode)}
+          >
+            {t(`messenger.sort.${mode}`)}
+          </button>
+        ))}
       </div>
 
       {(pullProgress > 0 || refreshing) && (
@@ -287,52 +413,40 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
             maxLength={40}
             placeholder={t('messenger.namePlaceholder')}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') addContact() }}
+            onKeyDown={(e) => { if (e.key === 'Enter') startNewConversation() }}
           />
-          <button className="btn btn-primary" onClick={addContact}>{t('messenger.addAndMessage')}</button>
+          <p className="msg-settings-hint">{t('messenger.newAddressNote')}</p>
+          <button className="btn btn-primary" onClick={startNewConversation}>{t('messenger.addAndMessage')}</button>
         </div>
       )}
 
       <div className="conversation-list">
-        {threads.length === 0 && (
+        {items.length === 0 && (
           <div className="messenger-empty">
             <div className="messenger-empty-icon">✉️</div>
-            <p>{t('messenger.noConversations')}</p>
+            <p>{t(sortMode === 'groupsOnly' ? 'messenger.noGroups' : 'messenger.noConversations')}</p>
             <p className="messenger-empty-sub">{t('messenger.noConversationsSub')}</p>
           </div>
         )}
 
-        {threads.map((th) => {
-          const last = th.messages[th.messages.length - 1]
-          return (
-            <div key={th.address} className="conversation-item" onClick={() => onOpen(th.address)}>
-              <div className="conversation-avatar">{displayName(th).charAt(0).toUpperCase()}</div>
-              <div className="conversation-main">
-                <div className="conversation-top">
-                  <span className="conversation-name">{displayName(th)}</span>
-                  {last && <span className="conversation-time">{fmtTime(last.ts)}</span>}
-                </div>
-                <div className="conversation-bottom">
-                  <span className="conversation-preview">
-                    {last ? (last.dir === 'out' ? t('messenger.youPrefix') : '') + last.text : t('messenger.noMessagesPreview')}
-                  </span>
-                  {th.unread > 0 && <span className="conversation-unread">{th.unread > 99 ? '99+' : th.unread}</span>}
-                </div>
-                {th.peerNick && th.contactName && (
-                  <div className="conversation-nick">@{th.peerNick}</div>
-                )}
-              </div>
-              <div className="conversation-actions" onClick={(e) => e.stopPropagation()}>
-                <button className="conversation-action" title={t('messenger.editName')} onClick={() => { setEditAddr(th.address); setEditName(th.contactName || '') }}>
-                  <EditIcon size={15} />
-                </button>
-                <button className="conversation-action danger" title={t('messenger.deleteConversation')} onClick={() => setConfirmDelete(th.address)}>
-                  <TrashIcon size={15} />
-                </button>
-              </div>
-            </div>
+        {items.map((item) => item.kind === 'group'
+          ? (
+            <GroupRow
+              key={item.key}
+              group={item.group}
+              onOpen={() => onOpenGroup(item.group.id)}
+            />
           )
-        })}
+          : (
+            <ThreadRow
+              key={item.key}
+              thread={item.thread}
+              onOpen={() => onOpenThread(item.thread.address)}
+              onRename={() => { setEditAddr(item.thread.address); setEditName(item.thread.contactName || '') }}
+              onDelete={() => setConfirmDelete(item.thread.address)}
+            />
+          )
+        )}
       </div>
 
       {editAddr && (
@@ -357,14 +471,13 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
           </div>
         </div>
       )}
+
       {confirmDelete && (
         <div className="messenger-modal-overlay" onClick={() => setConfirmDelete(null)}>
           <div className="messenger-modal" onClick={(e) => e.stopPropagation()}>
             <h3>{t('messenger.deleteConversation')}</h3>
             <p className="messenger-modal-sub">{shortAddr(confirmDelete)}</p>
-            <p className="messenger-delete-warning">
-              {t('messenger.deleteWarning')}
-            </p>
+            <p className="messenger-delete-warning">{t('messenger.deleteWarning')}</p>
             <div className="messenger-modal-actions">
               <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>{t('common.cancel')}</button>
               <button className="btn btn-danger" onClick={() => {
@@ -379,14 +492,92 @@ function ConversationList({ connection, publicKey, onBack, onOpen, onEditNick, s
     </div>
   )
 }
+
+function ThreadRow({ thread, onOpen, onRename, onDelete }) {
+  const { t } = useTranslation()
+  const last = thread.messages[thread.messages.length - 1]
+  return (
+    <div className="conversation-item" onClick={onOpen}>
+      <div className="conversation-avatar">{displayName(thread).charAt(0).toUpperCase()}</div>
+      <div className="conversation-main">
+        <div className="conversation-top">
+          <span className="conversation-name">{displayName(thread)}</span>
+          {last && <span className="conversation-time">{fmtTime(last.ts)}</span>}
+        </div>
+        <div className="conversation-bottom">
+          <span className="conversation-preview">
+            {last ? (last.dir === 'out' ? t('messenger.youPrefix') : '') + last.text : t('messenger.noMessagesPreview')}
+          </span>
+          {thread.unread > 0 && <span className="conversation-unread">{thread.unread > 99 ? '99+' : thread.unread}</span>}
+        </div>
+        <div className="conversation-tags">
+          {thread.channel && thread.channelConfirmed && (
+            <span className="conversation-tag">{t('messenger.ownAddressTag')}</span>
+          )}
+          {thread.legacyPeer && <span className="conversation-tag legacy">{t('messenger.legacyTag')}</span>}
+          {unpaidCount(thread) > 0 && <span className="conversation-tag warn">{t('messenger.unpaidTag', { n: unpaidCount(thread) })}</span>}
+          {thread.peerNick && thread.contactName && <span className="conversation-nick">@{thread.peerNick}</span>}
+        </div>
+      </div>
+      <div className="conversation-actions" onClick={(e) => e.stopPropagation()}>
+        <button className="conversation-action" title={t('messenger.editName')} onClick={onRename}>
+          <EditIcon size={15} />
+        </button>
+        <button className="conversation-action danger" title={t('messenger.deleteConversation')} onClick={onDelete}>
+          <TrashIcon size={15} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function GroupRow({ group, onOpen }) {
+  const { t } = useTranslation()
+  const last = group.messages[group.messages.length - 1]
+  const pending = Object.keys(group.pending || {}).length
+  return (
+    <div className="conversation-item group" onClick={onOpen}>
+      <div className="conversation-avatar group"><GroupIcon size={18} /></div>
+      <div className="conversation-main">
+        <div className="conversation-top">
+          <span className="conversation-name">{group.name}</span>
+          {last && <span className="conversation-time">{fmtTime(last.ts)}</span>}
+        </div>
+        <div className="conversation-bottom">
+          <span className="conversation-preview">
+            {last
+              ? (last.dir === 'out' ? t('messenger.youPrefix') : (last.nick ? last.nick + ': ' : '')) + last.text
+              : t('messenger.noMessagesPreview')}
+          </span>
+          {group.unread > 0 && <span className="conversation-unread">{group.unread > 99 ? '99+' : group.unread}</span>}
+        </div>
+        <div className="conversation-tags">
+          <span className="conversation-tag">{t('messenger.groupTag')}</span>
+          {group.isAdmin && <span className="conversation-tag">{t('groups.adminTag')}</span>}
+          {pending > 0 && <span className="conversation-tag warn">{t('groups.pendingTag', { n: pending })}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ========== DIRECT THREAD ==========
 function ThreadView({ connection, publicKey, address, onBack, showToast }) {
   const { t } = useTranslation()
   const [refreshing, setRefreshing] = useState(false)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [replyTo, setReplyTo] = useState(null)
+  const [showUnpaid, setShowUnpaid] = useState(false)
   const { withAutoSOL } = useSwap(connection, sessionWallet)
 
-  const thread = store.getThread(address) || { address, messages: [], contactName: '', peerNick: '', peerPubKey: null }
+  const thread = store.getThread(address) || {
+    address, messages: [], contactName: '', peerNick: '', peerPubKey: null,
+  }
+  const routing = resolveTarget(address)
+  const limit = routing.isInvite ? MAX_INVITE_LENGTH : MAX_MESSAGE_LENGTH
+  const myFee = requiredFeeFrom(address)
+  const peerFee = thread.peerFee || 0
 
   const scrollRef = useRef(null)
   const touchStartY = useRef(0)
@@ -395,14 +586,13 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
 
   const doRefresh = useCallback(async () => {
     setRefreshing(true)
-    try { await scanIncomingMessages(connection, publicKey); store.markRead(address) }
-    catch (e) { /* quiet */ }
+    try { await scanIncomingMessages(connection, publicKey, { activeAddress: address }); store.markRead(address) }
+    catch { /* quiet */ }
     setTimeout(() => setRefreshing(false), 400)
   }, [connection, publicKey, address])
 
   useEffect(() => { doRefresh() }, [doRefresh])
 
-  // Auto-scroll to bottom on new messages.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [thread.messages.length])
@@ -424,25 +614,39 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
   const send = async () => {
     const trimmed = text.trim()
     if (!trimmed) return
-    if (trimmed.length > MAX_MESSAGE_LENGTH) { showToast(t('messenger.maxChars', { n: MAX_MESSAGE_LENGTH }), 'error'); return }
+    if (trimmed.length > limit) { showToast(t('messenger.maxChars', { n: limit }), 'error'); return }
     setSending(true)
     try {
-      await sendMessage({ connection, publicKey, peerAddress: address, text: trimmed, withAutoSOL })
+      await sendMessage({
+        connection, publicKey, peerAddress: address, text: trimmed,
+        replyTo: replyTo ? { id: replyTo.id, text: replyTo.text } : null,
+        withAutoSOL,
+      })
       setText('')
+      setReplyTo(null)
       showToast(t('messenger.messageSent'), 'success')
     } catch (err) {
-      if (err.message && (err.message.includes('Wallet is locked') || !sessionWallet.isUnlocked())) {
-        showToast(t('common.sessionExpired'), 'error')
-      } else {
-        showToast(t('messenger.failedSend', { msg: err.message }), 'error')
-      }
+      const msg = String(err.message || '')
+      if (msg === 'MEMO_TOO_LONG') showToast(t('messenger.tooLong'), 'error')
+      else if (msg.includes('Wallet is locked') || !sessionWallet.isUnlocked()) showToast(t('common.sessionExpired'), 'error')
+      else showToast(t('messenger.failedSend', { msg }), 'error')
     } finally {
       setSending(false)
     }
   }
 
   const title = displayName(thread)
-  const remaining = MAX_MESSAGE_LENGTH - text.length
+  // The real limit is the memo size in bytes, not the character count: an
+  // accented or non-Latin alphabet costs 2-3 bytes per character.
+  const remaining = remainingRoomFor({
+    peerAddress: address,
+    publicKey,
+    text,
+    replyTo: replyTo ? { id: replyTo.id, text: replyTo.text } : null,
+  })
+  const overflowing = remaining < 0
+  const visible = thread.messages.filter((m) => showUnpaid || !m.unpaid)
+  const hiddenCount = thread.messages.filter((m) => m.unpaid).length
 
   return (
     <div className="messenger-view thread-view">
@@ -450,12 +654,30 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
         <button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button>
         <div className="thread-title-block">
           <span className="thread-title">{title}</span>
-          {thread.peerNick ? <span className="thread-subtitle">@{thread.peerNick} · {shortAddr(address)}</span>
-            : <span className="thread-subtitle">{shortAddr(address)}</span>}
+          <span className="thread-subtitle">
+            {thread.peerNick ? `@${thread.peerNick} · ` : ''}{shortAddr(address)}
+          </span>
         </div>
         <button className={`messenger-refresh-btn ${refreshing ? 'refreshing' : ''}`} onClick={doRefresh} disabled={refreshing} title={t('history.refresh')}>
           <RefreshIcon size={18} />
         </button>
+      </div>
+
+      {/* Where this conversation lives and what it costs. */}
+      <div className="thread-info-bar">
+        {routing.legacy ? (
+          <span className="thread-info-chip legacy">{t('messenger.onWalletAddress')}</span>
+        ) : routing.isInvite ? (
+          <span className="thread-info-chip">{t('messenger.invitePending')}</span>
+        ) : (
+          <span className="thread-info-chip ok">{t('messenger.onOwnAddress')}</span>
+        )}
+        {peerFee > 0 && (
+          <span className="thread-info-chip warn"><CoinIcon size={12} /> {t('messenger.peerCharges', { n: peerFee })}</span>
+        )}
+        {myFee > 0 && (
+          <span className="thread-info-chip">{t('messenger.youCharge', { n: myFee })}</span>
+        )}
       </div>
 
       <div
@@ -472,34 +694,68 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
           </div>
         )}
 
-        {thread.messages.length === 0 && (
+        {visible.length === 0 && (
           <div className="thread-empty">
             <p>{t('messenger.noMessages')}</p>
             <p className="thread-empty-sub">{t('messenger.firstMessageNote', { n: MSG_COST })}</p>
           </div>
         )}
 
-        {thread.messages.map((m) => (
-          <div key={m.id} className={`message-bubble ${m.dir === 'out' ? 'out' : 'in'}`}>
-            {m.type === 'req' && <div className="message-tag">{m.dir === 'out' ? t('messenger.requestSent') : t('messenger.request')}</div>}
+        {visible.map((m) => (
+          <div key={m.id} className={`message-bubble ${m.dir === 'out' ? 'out' : 'in'} ${m.unpaid ? 'unpaid' : ''}`}>
+            {m.type === 'req' && (
+              <div className="message-tag">{m.dir === 'out' ? t('messenger.requestSent') : t('messenger.request')}</div>
+            )}
+            {m.unpaid && <div className="message-tag warn">{t('messenger.unpaidTagFull', { n: m.feeRequired })}</div>}
+            {m.graced && <div className="message-tag">{t('messenger.firstContactFree')}</div>}
+            {m.reply && (
+              <div className="message-quote">
+                <span className="message-quote-text">{m.reply.text}</span>
+              </div>
+            )}
             <div className="message-text">{m.text}</div>
-            <div className="message-meta">{fmtTime(m.ts)}</div>
+            <div className="message-meta">
+              <button className="message-reply-btn" onClick={() => setReplyTo(m)} title={t('groups.reply')}>
+                <ReplyIcon size={13} />
+              </button>
+              {fmtTime(m.ts)}
+            </div>
           </div>
         ))}
+
+        {hiddenCount > 0 && (
+          <button className="thread-unpaid-toggle" onClick={() => setShowUnpaid((s) => !s)}>
+            {showUnpaid
+              ? t('messenger.hideUnpaid')
+              : t('messenger.showUnpaid', { n: hiddenCount })}
+          </button>
+        )}
       </div>
+
+      {replyTo && (
+        <div className="reply-bar">
+          <ReplyIcon size={14} />
+          <div className="reply-bar-body">
+            <span className="reply-bar-text">{replyTo.text}</span>
+          </div>
+          <button className="reply-bar-close" onClick={() => setReplyTo(null)}><CloseIcon size={14} /></button>
+        </div>
+      )}
 
       <div className="thread-composer">
         <textarea
           className="thread-input"
           value={text}
-          maxLength={MAX_MESSAGE_LENGTH}
+          maxLength={limit}
           placeholder={t('messenger.typeMessage')}
           rows={1}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
         />
-        <span className="thread-charcount">{remaining}</span>
-        <button className="thread-send-btn" onClick={send} disabled={sending || !text.trim()}>
+        <span className={`thread-charcount ${overflowing ? 'over' : ''}`} title={t('messenger.bytesLeft')}>
+          {remaining}
+        </span>
+        <button className="thread-send-btn" onClick={send} disabled={sending || !text.trim() || overflowing}>
           <SendArrowIcon size={20} />
         </button>
       </div>
