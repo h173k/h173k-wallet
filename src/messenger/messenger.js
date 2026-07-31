@@ -166,6 +166,7 @@ class MessengerStore {
       channelConfirmed: false, // true once the peer has actually posted there
       legacyPeer: false,       // peer runs a build without dedicated addresses
       peerFee: null,           // h173k the peer wants per incoming message
+      quotedFee: null,         // h173k we last told THEM we want (null = never said)
       messages: [],
       unread: 0,
       handshakeSent: false,
@@ -402,9 +403,46 @@ export function feeQuotedTo(peerAddress) {
   return getRequiredFeeFrom(peerAddress, true)
 }
 
-/** What we charge this peer for the message they just sent. */
+/** What our settings say this peer should pay — the figure we want. */
 export function requiredFeeFrom(address) {
   return getRequiredFeeFrom(address, isKnownContact(address))
+}
+
+/**
+ * What we actually hold this peer to, which is never more than we told them.
+ *
+ * Raising the fee on a conversation that is already running would otherwise
+ * break it silently: our side would start filtering immediately, while the
+ * other side only learns the new amount from our next message — and we cannot
+ * write that message, because their replies are already hidden. So a rise only
+ * takes effect once it has been announced, which is exactly the message that
+ * announces it. A reduction applies at once, since it can never disadvantage
+ * the sender.
+ *
+ * `quotedFee` is null when we have never written to this contact. A stranger is
+ * then covered by the first-contact allowance instead; a contact we talked to
+ * before this rule existed is not charged until we quote them afresh.
+ */
+export function enforcedFeeFrom(address) {
+  const wanted = requiredFeeFrom(address)
+  if (wanted <= 0) return 0
+  const t = store.getThread(address)
+  if (!t || t.quotedFee == null) {
+    // Never quoted. Strangers fall to the first-contact allowance; established
+    // contacts (upgraded from an older build) are not repriced behind their back.
+    return isKnownContact(address) ? 0 : wanted
+  }
+  return Math.min(wanted, t.quotedFee)
+}
+
+/** True when a fee rise is set but has not been announced to this peer yet. */
+export function feeRiseUnannounced(address) {
+  const wanted = requiredFeeFrom(address)
+  if (wanted <= 0) return false
+  const t = store.getThread(address)
+  if (!t) return false
+  if (t.quotedFee == null) return isKnownContact(address)
+  return wanted > t.quotedFee
 }
 
 /** Have we ever written to this contact? Decides whether they count as "new". */
@@ -488,9 +526,12 @@ export function buildDirectPayload({ peerAddress, myAddress, text, replyTo, rout
   if (profile && profile.nick) payload.nick = profile.nick
   if (routing.announceChannel) payload.ch = routing.announceChannel
   // Quote what THIS peer will owe, so individually set amounts are actually
-  // communicated instead of silently filtering the contact out for ever.
+  // communicated instead of silently filtering the contact out for ever. A drop
+  // to zero is announced too, as long as they might still believe otherwise —
+  // otherwise they would keep overpaying.
   const myFee = feeQuotedTo(peerAddress)
-  if (myFee > 0) payload.fee = myFee
+  const lastQuoted = thread ? thread.quotedFee : null
+  if (myFee > 0 || (lastQuoted != null && lastQuoted > 0)) payload.fee = myFee
   if (replyTo && replyTo.id) {
     payload.r = {
       i: String(replyTo.id).slice(0, 16),
@@ -505,7 +546,7 @@ export function buildDirectPayload({ peerAddress, myAddress, text, replyTo, rout
     myBoxPub: getMyDedicatedPublicKey(),
     feePaid: fee,
   }
-  return { payload, envParams, peerDedicatedPub, isRequest }
+  return { payload, envParams, peerDedicatedPub, isRequest, myFee }
 }
 
 /**
@@ -557,7 +598,7 @@ export async function sendMessage({ connection, publicKey, peerAddress, text, re
     ? sanitizeFee(feeOverride)
     : sanitizeFee(thread && thread.peerFee)
 
-  const { payload: fullPayload, envParams, peerDedicatedPub } = buildDirectPayload({
+  const { payload: fullPayload, envParams, peerDedicatedPub, myFee } = buildDirectPayload({
     peerAddress,
     myAddress: publicKey.toBase58(),
     text: trimmed,
@@ -600,11 +641,11 @@ export async function sendMessage({ connection, publicKey, peerAddress, text, re
 
   const signature = await sendMemoTransaction({ connection, publicKey, memo, transfers, withAutoSOL })
 
-  // Record the conversation address we just announced.
-  if (routing.channel) {
-    const t = store.ensureThread(peerAddress)
-    if (!t.channel) { t.channel = routing.channel; t.channelMine = true }
-  }
+  // Record the conversation address we just announced, and the amount we just
+  // quoted — from here on that is the most we may hold this peer to.
+  const sent = store.ensureThread(peerAddress)
+  if (routing.channel && !sent.channel) { sent.channel = routing.channel; sent.channelMine = true }
+  sent.quotedFee = myFee
   store.appendOutgoing(peerAddress, {
     text: trimmed,
     sig: signature,
@@ -858,7 +899,7 @@ export async function scanIncomingMessages(connection, publicKey, options = {}) 
   // outside the verified set, so its self-declared amount was taken on trust.
   const graceUsed = new Set()
   const marked = collected.map((it) => {
-    const required = requiredFeeFrom(it.from)
+    const required = enforcedFeeFrom(it.from)
     if (required <= 0) return { ...it, owed: 0 }
 
     // A stranger's opening message is never charged: they could not have known

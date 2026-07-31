@@ -911,6 +911,98 @@ check('message and payment always fit in one transaction', () => {
 })
 
 // =====================================================================
+section('13. Repricing an existing conversation')
+
+function freshThread(addr, fields) {
+  localStorage.clear()
+  messenger.store._threads = {}
+  messenger.store._threads[addr] = {
+    address: addr, messages: [], contactName: '', peerNick: '', peerPubKey: null,
+    channel: null, channelMine: false, channelConfirmed: false, legacyPeer: false,
+    peerFee: null, quotedFee: null, unread: 0, handshakeSent: false, createdAt: now,
+    ...fields,
+  }
+  return messenger.store._threads[addr]
+}
+
+check('a rise does not bind until it has been announced', () => {
+  // We have been talking, having quoted nothing.
+  freshThread(B, { handshakeSent: true, quotedFee: 0, messages: [{ id: '1', dir: 'out', ts: now }] })
+  prefs.saveFeePolicy({ mode: 'off', amount: 0, perContact: { [B]: 50 } })
+
+  eq(messenger.requiredFeeFrom(B), 50, 'the setting itself is 50')
+  eq(messenger.enforcedFeeFrom(B), 0,
+    'but they were told 0 - filtering them now would break the conversation silently')
+  ok(messenger.feeRiseUnannounced(B), 'the UI has to say the rise is not live yet')
+})
+
+check('once announced, the rise binds', () => {
+  freshThread(B, { handshakeSent: true, quotedFee: 50, messages: [{ id: '1', dir: 'out', ts: now }] })
+  prefs.saveFeePolicy({ mode: 'off', amount: 0, perContact: { [B]: 50 } })
+  eq(messenger.enforcedFeeFrom(B), 50)
+  ok(!messenger.feeRiseUnannounced(B))
+})
+
+check('a reduction applies immediately', () => {
+  freshThread(B, { handshakeSent: true, quotedFee: 50, messages: [{ id: '1', dir: 'out', ts: now }] })
+  prefs.saveFeePolicy({ mode: 'off', amount: 0, perContact: { [B]: 5 } })
+  eq(messenger.enforcedFeeFrom(B), 5, 'never hold somebody to more than the current price')
+  ok(!messenger.feeRiseUnannounced(B))
+  // Somebody still paying the old, higher amount must obviously still pass.
+  ok(50 >= messenger.enforcedFeeFrom(B))
+})
+
+check('a stranger is still charged, covered by the first-contact allowance', () => {
+  localStorage.clear()
+  messenger.store._threads = {}
+  prefs.saveFeePolicy({ mode: 'new', amount: 50, perContact: {} })
+  eq(messenger.enforcedFeeFrom(C), 50, 'the anti-spam rule must not be weakened')
+  ok(!messenger.hasUsedFirstContactGrace(C), 'their opening message still gets through')
+})
+
+check('a conversation carried over from an older build is not repriced behind their back', () => {
+  // Upgraded thread: we have written to them, but no record of what we quoted.
+  freshThread(B, { handshakeSent: true, quotedFee: null, messages: [{ id: '1', dir: 'out', ts: now }] })
+  prefs.saveFeePolicy({ mode: 'all', amount: 30, perContact: {} })
+  eq(messenger.enforcedFeeFrom(B), 0, 'unknown quote means do not enforce yet')
+  ok(messenger.feeRiseUnannounced(B), 'and say so')
+})
+
+check('sending records what was quoted', () => {
+  freshThread(B, { handshakeSent: true, quotedFee: 0 })
+  prefs.saveFeePolicy({ mode: 'off', amount: 0, perContact: { [B]: 50 } })
+  const routing = messenger.resolveTarget(B)
+  const { payload, myFee } = messenger.buildDirectPayload({
+    peerAddress: B, myAddress: A, text: 'hi', routing,
+    thread: messenger.store.getThread(B), fee: 0,
+  })
+  eq(myFee, 50)
+  eq(payload.fee, 50, 'the amount has to travel with the message')
+})
+
+check('a drop to zero is announced while they might still think otherwise', () => {
+  freshThread(B, { handshakeSent: true, quotedFee: 50 })
+  prefs.saveFeePolicy({ mode: 'off', amount: 0, perContact: {} })
+  const routing = messenger.resolveTarget(B)
+  const { payload } = messenger.buildDirectPayload({
+    peerAddress: B, myAddress: A, text: 'hi', routing,
+    thread: messenger.store.getThread(B), fee: 0,
+  })
+  eq(payload.fee, 0, 'without this they would keep overpaying for ever')
+})
+
+check('nothing is announced when there is nothing to say', () => {
+  freshThread(B, { handshakeSent: true, quotedFee: 0 })
+  prefs.saveFeePolicy({ mode: 'off', amount: 0, perContact: {} })
+  const routing = messenger.resolveTarget(B)
+  const { payload } = messenger.buildDirectPayload({
+    peerAddress: B, myAddress: A, text: 'hi', routing,
+    thread: messenger.store.getThread(B), fee: 0,
+  })
+  ok(payload.fee === undefined, 'no point spending memo bytes on an unchanged zero')
+})
+
+// =====================================================================
 console.log('\n' + '='.repeat(52))
 if (failures.length === 0) {
   console.log(`ALL ${passed} CHECKS PASSED`)

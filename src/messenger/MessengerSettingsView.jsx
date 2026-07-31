@@ -309,6 +309,7 @@ export default function MessengerSettingsView({ onBack, showToast }) {
               autoFocus
             />
             <p className="msg-settings-hint">{t('messengerSettings.contactFeeHint')}</p>
+            <p className="msg-settings-hint">{t('messengerSettings.feeRiseHint')}</p>
             <div className="messenger-modal-actions">
               <button className="btn btn-secondary" onClick={() => setContactEdit(null)}>{t('common.cancel')}</button>
               <button className="btn btn-primary" onClick={saveContactFee}>{t('common.save')}</button>

@@ -30,6 +30,7 @@ import {
   startConversation,
   resolveTarget,
   requiredFeeFrom,
+  feeRiseUnannounced,
   remainingRoomFor,
   unpaidCount,
   MSG_COST,
@@ -578,6 +579,9 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
   const limit = routing.isInvite ? MAX_INVITE_LENGTH : MAX_MESSAGE_LENGTH
   const myFee = requiredFeeFrom(address)
   const peerFee = thread.peerFee || 0
+  // A rise only binds once it has been announced, so say so plainly rather than
+  // letting the user think it is already in force.
+  const riseUnannounced = feeRiseUnannounced(address)
 
   const scrollRef = useRef(null)
   const touchStartY = useRef(0)
@@ -677,6 +681,9 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
         )}
         {myFee > 0 && (
           <span className="thread-info-chip">{t('messenger.youCharge', { n: myFee })}</span>
+        )}
+        {riseUnannounced && (
+          <span className="thread-info-chip warn">{t('messenger.feeNotAnnounced')}</span>
         )}
       </div>
 
