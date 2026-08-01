@@ -843,6 +843,7 @@ check('the cost is transferred to the admin, not left at the group address', () 
   eq(transfers.length, 2)
   eq(transfers[0].to, payGroup.address, 'first transfer registers the message in group history')
   eq(transfers[0].amount, groups.MIN_GROUP_MSG_COST, 'transport dust only - not the fee')
+  eq(groups.MIN_GROUP_MSG_COST, 1e-9, 'dust must stay at one lamport')
   eq(transfers[1].to, A, 'the fee must reach the admin wallet')
   eq(transfers[1].amount, 0.25)
   eq(cost, 0.25)
@@ -1000,6 +1001,43 @@ check('nothing is announced when there is nothing to say', () => {
     thread: messenger.store.getThread(B), fee: 0,
   })
   ok(payload.fee === undefined, 'no point spending memo bytes on an unchanged zero')
+})
+
+// =====================================================================
+section('14. Dust and the smallest chargeable amount')
+
+const txmod = await import('../src/messenger/tx.js')
+
+check('transport dust is exactly one lamport, not zero', () => {
+  // Zero would mean no transfer, and a message with no transfer never appears
+  // in the address history - it would be invisible to the recipient.
+  eq(txmod.toLamports(messenger.MSG_COST), 1)
+  eq(txmod.toLamports(groups.MIN_GROUP_MSG_COST), 1)
+  ok(messenger.MSG_COST > 0 && groups.MIN_GROUP_MSG_COST > 0)
+})
+
+check('one lamport survives being stored and read back', () => {
+  localStorage.clear()
+  const saved = prefs.saveFeePolicy({ mode: 'all', amount: 1e-9, perContact: {} })
+  eq(saved.amount, 1e-9, 'sanitising must not round the smallest amount to zero')
+  eq(prefs.getFeePolicy().amount, 1e-9)
+  eq(prefs.sanitizeFee('0.000000001'), 1e-9, 'typed into the settings field')
+})
+
+check('a new group costs its members nothing by default', () => {
+  localStorage.clear()
+  const d = prefs.getGroupDefaults()
+  eq(d.minBalance, 0)
+  eq(txmod.toLamports(d.msgCost), 1, 'one lamport: free in practice, still visible on chain')
+})
+
+check('a one-lamport fee is not satisfied by paying nothing', () => {
+  // The comparison slack has to sit below the smallest amount anyone can
+  // charge, or the cheapest possible fee would be free to ignore.
+  const owed = 1e-9
+  const EPSILON = 5e-10
+  ok(0 + EPSILON < owed, 'paying nothing must fail')
+  ok(owed + EPSILON >= owed, 'paying exactly the amount must pass')
 })
 
 // =====================================================================

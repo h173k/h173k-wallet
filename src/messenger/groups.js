@@ -50,7 +50,11 @@ import { getP2PProfile } from '../p2p/useP2P'
 export const MAX_GROUP_NAME_LENGTH = 40
 export const MAX_GROUP_MESSAGE_LENGTH = 150
 export const MAX_MESSAGES_PER_GROUP = 150
-export const MIN_GROUP_MSG_COST = 0.00001   // must be > 0 so the transfer shows up in history
+// Transport dust for a group post: settles at the group address purely so the
+// transaction appears in the group's history. One lamport at 9 decimals — the
+// smallest non-zero amount, since a zero transfer would leave the message
+// invisible. The cost the admin sets is a separate transfer to their wallet.
+export const MIN_GROUP_MSG_COST = 0.000000001
 export const INVITE_LINK_PARAM = 'join'
 export const REPLY_PREVIEW_LENGTH = 34
 

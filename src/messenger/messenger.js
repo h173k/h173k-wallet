@@ -83,8 +83,18 @@ export {
 } from './prefs'
 
 // ========== CONSTANTS ==========
-// Cost of one message, transferred to the conversation (per spec: 0.00001 h173k)
-export const MSG_COST = 0.00001
+/**
+ * Transport dust: the transfer that makes a message-carrying transaction show
+ * up in the history of the address it is addressed to. It is not a fee — it is
+ * how the message becomes visible at all — so it is set to the smallest amount
+ * the token can express, one lamport at 9 decimals.
+ *
+ * The dust does NOT reach the recipient's wallet: for an individual chat it
+ * settles at the conversation address, whose key belongs to whoever opened the
+ * conversation. Anything the recipient is actually meant to earn travels
+ * separately, as the anti-spam fee, straight to their wallet.
+ */
+export const MSG_COST = 0.000000001
 
 export const MAX_MESSAGE_LENGTH = 200          // characters, ordinary message
 export const MAX_INVITE_LENGTH = 120           // the invitation also carries the address
@@ -92,6 +102,16 @@ export const MAX_MESSAGES_PER_THREAD = 100     // stored per thread
 
 // How many transactions we are willing to fetch in full to verify fee payments.
 const MAX_FEE_VERIFICATIONS = 20
+
+/**
+ * Slack allowed when comparing fee amounts, to absorb floating-point error in
+ * values carried as decimals.
+ *
+ * Half of one lamport at 9 decimals. It has to be smaller than the smallest
+ * amount anyone can actually charge: at a full lamport, a fee of exactly one
+ * lamport would be satisfied by paying nothing at all.
+ */
+const FEE_EPSILON = 5e-10
 
 const THREADS_KEY = 'h173k_msg_threads'
 const NOTIFY_CURSOR_KEY = 'h173k_msg_notify_cursor'
@@ -919,7 +939,7 @@ export async function scanIncomingMessages(connection, publicKey, options = {}) 
   // which is both strictly correct and cheaper.
   let verified = new Map()
   const candidates = marked
-    .filter((it) => it.owed > 0 && it.sig && (it.declaredFee || 0) + 1e-9 >= it.owed)
+    .filter((it) => it.owed > 0 && it.sig && (it.declaredFee || 0) + FEE_EPSILON >= it.owed)
     .map((it) => ({ sig: it.sig, declared: it.declaredFee || 0 }))
   if (candidates.length) {
     verified = await verifyFeePayments(connection, myAddress, candidates)
@@ -927,8 +947,7 @@ export async function scanIncomingMessages(connection, publicKey, options = {}) 
 
   const items = marked.map(({ owed, ...it }) => {
     if (owed <= 0) return it
-    // A hair of tolerance for rounding at 9 decimals.
-    if ((it.declaredFee || 0) + 1e-9 < owed) return { ...it, unpaid: true, feeRequired: owed }
+    if ((it.declaredFee || 0) + FEE_EPSILON < owed) return { ...it, unpaid: true, feeRequired: owed }
 
     // KNOWN LIMITATION: when the chain lookup could not run — RPC failure, or
     // more claimants in one refresh than MAX_FEE_VERIFICATIONS — the claim is
@@ -936,7 +955,7 @@ export async function scanIncomingMessages(connection, publicKey, options = {}) 
     // genuine. A sender who forges the declared amount gets through in that
     // window, so the fee is a deterrent, not a guarantee.
     const paid = verified.has(it.sig) ? verified.get(it.sig) : (it.declaredFee || 0)
-    const ok = paid + 1e-9 >= owed
+    const ok = paid + FEE_EPSILON >= owed
     return { ...it, unpaid: !ok, feeRequired: owed }
   })
 

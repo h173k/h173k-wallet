@@ -215,7 +215,11 @@ export function setLegacyModeEnabled(on) {
 
 // ========== GROUP DEFAULTS ==========
 const GROUP_DEFAULTS_KEY = 'h173k_msg_group_defaults'
-export const DEFAULT_GROUP_DEFAULTS = { minBalance: 0, msgCost: 0.00001 }
+// Suggested when creating a group. Both are set so that a new group costs its
+// members nothing beyond network fees: the admin raises them deliberately if
+// they want to charge, rather than charging by accident because a default was
+// left in place.
+export const DEFAULT_GROUP_DEFAULTS = { minBalance: 0, msgCost: 0.000000001 }
 
 export function getGroupDefaults() {
   const d = readJSON(GROUP_DEFAULTS_KEY, null)
