@@ -1,5 +1,5 @@
 // AUTO-GENERATED — DO NOT EDIT BY HAND
-// Dedicated H173K P2P marketplace addresses, one per ISO-4217 currency.
+// Dedicated h173k P2P marketplace addresses, one per ISO-4217 currency.
 // Every address:
 //   - keeps the immutable prefix "h173kP2P"
 //   - is a valid Solana address (base58 decoding to exactly 32 bytes)

@@ -1,6 +1,6 @@
-# H173K Wallet PWA
+# h173k Wallet PWA
 
-A dedicated Progressive Web App wallet for H173K tokens on Solana blockchain.
+A dedicated Progressive Web App wallet for h173k tokens on Solana blockchain.
 
 ## Features
 
@@ -12,13 +12,13 @@ A dedicated Progressive Web App wallet for H173K tokens on Solana blockchain.
 - **Auto-lock**: Automatic wallet lock after inactivity
 
 ### 💰 Wallet Functions
-- **Send H173K**: Transfer tokens with QR code scanning
-- **Receive H173K**: Generate QR codes for receiving payments
+- **Send h173k**: Transfer tokens with QR code scanning
+- **Receive h173k**: Generate QR codes for receiving payments
 - **Balance Display**: Real-time balance with USD conversion
 - **Transaction History**: View past transactions with Solscan links
 
 ### ⛽ SOL Management
-- **Auto-replenish**: Automatically swap H173K to SOL when needed for transaction fees
+- **Auto-replenish**: Automatically swap h173k to SOL when needed for transaction fees
 - **Low balance warning**: Alerts when SOL balance is too low
 - **Jupiter Integration**: Best swap rates via Jupiter aggregator
 
@@ -102,7 +102,7 @@ This wallet uses the same derivation path as Phantom:
 m/44'/501'/0'/0'
 ```
 
-You can import your H173K Wallet seed phrase into Phantom (or vice versa) and access the same wallet.
+You can import your h173k Wallet seed phrase into Phantom (or vice versa) and access the same wallet.
 
 ## Configuration
 
@@ -115,7 +115,7 @@ export const DEFAULT_RPC_ENDPOINT = 'your-rpc-url'
 ```
 
 ### Token Configuration
-The wallet is configured for H173K token:
+The wallet is configured for h173k token:
 ```javascript
 export const TOKEN_MINT = new PublicKey('173AvoJNQoWsaR1wdYTMNLUqZc1b7d4SzB2ZZRZVyz3')
 export const TOKEN_DECIMALS = 9

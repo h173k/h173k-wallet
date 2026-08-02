@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Memo envelope format.
+ * h173k Wallet - Memo envelope format.
  *
  * Everything the messenger puts on chain is one JSON envelope inside a Solana
  * memo. The envelope itself is plaintext (it has to be readable by the two

@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - h173k <-> USDT Raydium CPMM pool swap.
+ * h173k Wallet - h173k <-> USDT Raydium CPMM pool swap.
  *
  * This hook powers two features:
  *   1. Auto-conversion of any incoming USDT into h173k (full balance, no slippage limit).
@@ -166,7 +166,7 @@ export function useUsdtSwap(connection, wallet) {
 
   /**
    * Quote a swap in either direction.
-   * @param {'H173KtoUSDT'|'USDTtoH173K'} direction
+   * @param {'h173ktoUSDT'|'USDTtoH173K'} direction
    * @param {number} inputAmount - human amount of the INPUT token
    * @returns {Promise<{inputAmount, outputAmount, priceImpact, inputRaw, outputRaw, pool}>}
    */
@@ -175,7 +175,7 @@ export function useUsdtSwap(connection, wallet) {
     const { h173kReserve, usdtReserve } = await fetchReserves(pool)
 
     let inputRaw, reserveIn, reserveOut, outDecimals
-    if (direction === 'H173KtoUSDT') {
+    if (direction === 'h173ktoUSDT') {
       inputRaw = BigInt(Math.floor(inputAmount * Math.pow(10, TOKEN_DECIMALS)))
       reserveIn = h173kReserve
       reserveOut = usdtReserve
@@ -238,7 +238,7 @@ export function useUsdtSwap(connection, wallet) {
 
   /**
    * Execute a swap on the USDT pool.
-   * @param {'H173KtoUSDT'|'USDTtoH173K'} dir
+   * @param {'h173ktoUSDT'|'USDTtoH173K'} dir
    * @param {bigint|number} amountInRaw
    * @param {bigint|number} minOutRaw  - 0 means "no slippage limit" (fill at any price)
    * @returns {Promise<{signature, outputDeltaRaw}>} outputDeltaRaw = actual output received (raw)
@@ -252,7 +252,7 @@ export function useUsdtSwap(connection, wallet) {
     const userUSDT = await getAssociatedTokenAddress(USDT_MINT, wallet.publicKey)
 
     let userInputAccount, userOutputAccount, inputVault, outputVault, inputMint, outputMint, outputMintPk
-    if (dir === 'H173KtoUSDT') {
+    if (dir === 'h173ktoUSDT') {
       userInputAccount = userH173K
       userOutputAccount = userUSDT
       inputVault = pool.h173kVault
@@ -385,7 +385,7 @@ export function useUsdtSwap(connection, wallet) {
   const convertH173KtoUSDT = useCallback(async (h173kAmount) => {
     if (!wallet?.publicKey) throw new Error('Wallet not connected')
     const amountInRaw = BigInt(Math.floor(h173kAmount * Math.pow(10, TOKEN_DECIMALS)))
-    const { signature, outputDeltaRaw } = await executeSwap('H173KtoUSDT', amountInRaw, 0)
+    const { signature, outputDeltaRaw } = await executeSwap('h173ktoUSDT', amountInRaw, 0)
     return {
       signature,
       usdtReceivedRaw: outputDeltaRaw,

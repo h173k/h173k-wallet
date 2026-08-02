@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Cryptographic Wallet Module (SECURITY FIXED)
+ * h173k Wallet - Cryptographic Wallet Module (SECURITY FIXED)
  * Uses browser-native libraries: @scure/bip39, @noble/hashes, tweetnacl
  * Compatible with Phantom/Solflare seed phrase format (BIP39 + BIP44)
  * 

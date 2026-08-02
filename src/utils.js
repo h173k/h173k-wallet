@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Utility Functions
+ * h173k Wallet - Utility Functions
  */
 
 import { PublicKey } from '@solana/web3.js'

@@ -225,7 +225,7 @@ export function getAutoLockSeconds() {
 export function saveAutoLockSeconds(seconds) {
   try { localStorage.setItem(AUTO_LOCK_KEY, String(seconds)) } catch {}
 }
-// ========== H173K DISPLAY DECIMAL SETTINGS ==========
+// ========== h173k DISPLAY DECIMAL SETTINGS ==========
 const H173K_DECIMALS_KEY = 'h173k_display_decimals'
 export const DEFAULT_H173K_DECIMALS = 6
 

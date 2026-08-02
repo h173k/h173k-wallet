@@ -18,9 +18,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icons/*.png'],
       manifest: {
-        name: 'H173K Wallet',
-        short_name: 'H173K',
-        description: 'Dedicated PWA wallet for H173K tokens on Solana',
+        name: 'h173k Wallet',
+        short_name: 'h173k',
+        description: 'Dedicated PWA wallet for h173k tokens on Solana',
         theme_color: '#000000',
         background_color: '#000000',
         display: 'standalone',
@@ -42,6 +42,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // The generated worker pulls in our own handlers from here. This is the
+        // only route custom service worker code takes into the build — a file
+        // dropped in public/ named sw.js would just be overwritten by the
+        // generated worker and never run in production.
         importScripts: ['/sw-notifications.js']
       }
     })

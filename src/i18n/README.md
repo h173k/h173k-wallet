@@ -1,6 +1,6 @@
 # i18n — Internationalization
 
-Lightweight, dependency-free translation layer for the H173K Wallet.
+Lightweight, dependency-free translation layer for the h173k Wallet.
 
 ## Structure
 

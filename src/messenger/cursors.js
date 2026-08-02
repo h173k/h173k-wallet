@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Scan cursors.
+ * h173k Wallet - Scan cursors.
  *
  * The messenger reads several independent histories: the wallet inbox (where
  * invitations, join requests and fees land) plus one address per conversation

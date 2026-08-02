@@ -1,5 +1,5 @@
 /* ============================================
-   H173K Wallet PWA - Main Stylesheet
+   h173k Wallet PWA - Main Stylesheet
    ============================================ */
 
 /* === CSS Variables === */
@@ -4249,17 +4249,6 @@ body {
   gap: 6px;
 }
 
-.message-reply-btn {
-  background: transparent;
-  border: none;
-  padding: 0;
-  color: inherit;
-  opacity: 0.6;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-}
-.message-reply-btn:hover { opacity: 1; }
 
 .thread-unpaid-toggle {
   align-self: center;
@@ -4514,3 +4503,80 @@ body {
 }
 
 .thread-charcount.over { color: var(--color-error); font-weight: var(--font-medium); }
+
+/* ============================================
+   Per-message action menu (reply / tip)
+   ============================================ */
+
+.msg-actions { position: relative; display: inline-flex; }
+
+/* 32px box with a 44px touch area bled outward via ::before — big enough for a
+   fingertip without pushing the message footer taller. */
+.msg-actions-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), background var(--transition-fast);
+}
+.msg-actions-trigger::before {
+  content: '';
+  position: absolute;
+  top: -6px; right: -6px; bottom: -6px; left: -6px;
+}
+.msg-actions-trigger:hover,
+.msg-actions-trigger[aria-expanded='true'] {
+  opacity: 1;
+  background: var(--color-white-10);
+}
+.message-bubble.out .msg-actions-trigger:hover,
+.message-bubble.out .msg-actions-trigger[aria-expanded='true'] {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.msg-actions-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 168px;
+  padding: 4px;
+  background: #111;
+  border: 1px solid var(--color-white-20);
+  border-radius: var(--border-radius-md);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.msg-actions.align-end .msg-actions-menu { left: auto; right: 0; }
+
+.msg-actions-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;            /* full-width row: a comfortable tap target */
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--color-white);
+  font-family: var(--font-main);
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.msg-actions-item:hover,
+.msg-actions-item:focus-visible { background: var(--color-white-10); outline: none; }
+.msg-actions-item svg { flex-shrink: 0; opacity: 0.75; }

@@ -1,4 +1,4 @@
-// AUTO-GENERATED — H173K P2P supported currencies (ISO 4217 active list)
+// AUTO-GENERATED — h173k P2P supported currencies (ISO 4217 active list)
 // Each currency maps to a dedicated, hardcoded on-chain address in ./addresses.js
 
 export const CURRENCIES = [

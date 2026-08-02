@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - React Hooks for Wallet Management
+ * h173k Wallet - React Hooks for Wallet Management
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -198,7 +198,7 @@ export function useTokenBalance(connection, publicKey) {
     setError(null)
     
     try {
-      // Fetch H173K balance
+      // Fetch h173k balance
       const tokenAccount = await getAssociatedTokenAddress(
         TOKEN_MINT,
         publicKey

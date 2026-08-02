@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Messenger UI
+ * h173k Wallet - Messenger UI
  *
  * Screens:
  *  - Nick setup (first entry)
@@ -18,7 +18,7 @@ import { useSwap } from '../hooks/useSwap'
 import { sessionWallet } from '../crypto/wallet'
 import {
   BackIcon, RefreshIcon, PlusIcon, EditIcon, TrashIcon, SendArrowIcon,
-  SettingsIcon, GroupIcon, PersonIcon, LinkIcon, ReplyIcon, CloseIcon, CoinIcon, TipIcon,
+  SettingsIcon, GroupIcon, PersonIcon, LinkIcon, ReplyIcon, CloseIcon, CoinIcon,
 } from './icons'
 import {
   store,
@@ -40,6 +40,7 @@ import {
 import { groupStore } from './groups'
 import { buildChatList } from './chatlist'
 import { getSortMode, setSortMode, SORT_MODES, subscribePrefs } from './prefs'
+import MessageActions from './MessageActions'
 import MessengerSettingsView from './MessengerSettingsView'
 import { CreateGroupView, JoinGroupView, GroupChatView } from './GroupView'
 
@@ -733,14 +734,11 @@ function ThreadView({ connection, publicKey, address, onBack, showToast, onTip }
             )}
             <div className="message-text">{m.text}</div>
             <div className="message-meta">
-              <button className="message-reply-btn" onClick={() => setReplyTo(m)} title={t('groups.reply')}>
-                <ReplyIcon size={13} />
-              </button>
-              {m.dir === 'in' && onTip && (
-                <button className="message-reply-btn" onClick={() => onTip(address)} title={t('messenger.tip')}>
-                  <TipIcon size={13} />
-                </button>
-              )}
+              <MessageActions
+                align={m.dir === 'out' ? 'end' : 'start'}
+                onReply={() => setReplyTo(m)}
+                onTip={(m.dir === 'in' && onTip) ? () => onTip(address) : null}
+              />
               {fmtTime(m.ts)}
             </div>
           </div>

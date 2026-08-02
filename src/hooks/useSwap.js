@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Direct Raydium CPMM Pool Swap
+ * h173k Wallet - Direct Raydium CPMM Pool Swap
  * Swaps directly on Raydium CPMM pool without external API
  */
 
@@ -23,7 +23,7 @@ import {
 } from '@solana/spl-token'
 import { TOKEN_MINT, TOKEN_DECIMALS, getReplenishSettings } from '../constants'
 
-// H173K-SOL Pool ID (CPMM type)
+// h173k-SOL Pool ID (CPMM type)
 const POOL_ID = new PublicKey('8A7r3ZT7nXjtghKKnmVhrwnApJHG4tpvBF9BDCBmHWqr')
 
 // Wrapped SOL Mint
@@ -39,7 +39,7 @@ const POOL_CONFIG = {
   token0Vault: new PublicKey('8cK4Bh1FUrnJR8ax41HFeNzs9GTJXY6a7QJECAHSjCHM'),    // offset 72-103
   token1Vault: new PublicKey('8yMT1LSnB8jXjb7bmZpfD684DUe5M8KJsntVQoG5TcdY'),    // offset 104-135
   lpMint: new PublicKey('3JC5J6GHZXW2J2D4qc5pC87T8qCTJh84cmVofehaaGJz'),         // offset 136-167
-  token0Mint: TOKEN_MINT,                                                         // H173K - offset 168-199
+  token0Mint: TOKEN_MINT,                                                         // h173k - offset 168-199
   token1Mint: WSOL_MINT,                                                          // WSOL - offset 200-231
   observationKey: new PublicKey('DbajbtNyRaTSgvKQHJA3paU1B83aWFqmKLwoQLkSpciJ')  // offset 296-327
 }
@@ -116,13 +116,13 @@ export function useSwap(connection, wallet) {
         ...POOL_CONFIG,
         token0Reserve: BigInt(vault0Balance.value.amount),
         token1Reserve: BigInt(vault1Balance.value.amount),
-        // H173K is token0 in this pool
+        // h173k is token0 in this pool
         isH173KToken0: POOL_CONFIG.token0Mint.equals(TOKEN_MINT)
       }
       
       console.log('Token 0 Reserve:', pool.token0Reserve.toString())
       console.log('Token 1 Reserve:', pool.token1Reserve.toString())
-      console.log('Is H173K Token 0:', pool.isH173KToken0)
+      console.log('Is h173k Token 0:', pool.isH173KToken0)
       
       setPoolInfo(pool)
       return pool
@@ -149,7 +149,7 @@ export function useSwap(connection, wallet) {
   }, [])
   
   /**
-   * Get swap quote (H173K -> SOL)
+   * Get swap quote (h173k -> SOL)
    */
   const getSwapQuote = useCallback(async (inputAmount, slippagePct = 1) => {
     setLoading(true)
@@ -193,7 +193,7 @@ export function useSwap(connection, wallet) {
   }, [poolInfo, fetchPoolData, calculateOutput])
   
   /**
-   * Get swap quote (SOL -> H173K)
+   * Get swap quote (SOL -> h173k)
    */
   const getSwapQuoteSOLtoH173K = useCallback(async (solAmount, slippagePct = 1) => {
     setLoading(true)
@@ -336,7 +336,7 @@ export function useSwap(connection, wallet) {
         needsWSOLClose = true
         
       } else {
-        // SOL -> H173K
+        // SOL -> h173k
         userInputAccount = userWSOLAccount
         userOutputAccount = userH173KAccount
         
@@ -494,7 +494,7 @@ export function useSwap(connection, wallet) {
   }, [connection, wallet, createCPMMSwapInstruction])
   
   /**
-   * Calculate how much H173K needed for target SOL
+   * Calculate how much h173k needed for target SOL
    */
   const calculateSwapForSOL = useCallback(async (targetSOL) => {
     let pool = poolInfo
@@ -587,7 +587,7 @@ export function useSwap(connection, wallet) {
       const h173kBalance = Number(tokenBalance.value.uiAmount)
       
       if (h173kNeeded > h173kBalance) {
-        throw new Error(`Insufficient H173K. Need ${h173kNeeded.toFixed(9)}, have ${h173kBalance.toFixed(9)}`)
+        throw new Error(`Insufficient h173k. Need ${h173kNeeded.toFixed(9)}, have ${h173kBalance.toFixed(9)}`)
       }
       
       const result = await executeSwap(quote, 'H173KtoSOL')
@@ -608,7 +608,7 @@ export function useSwap(connection, wallet) {
   }, [connection, wallet, calculateSwapForSOL, executeSwap])
   
   /**
-   * Convert SOL to H173K
+   * Convert SOL to h173k
    */
   const convertSOLtoH173K = useCallback(async (solAmount) => {
     if (!wallet?.publicKey) {
@@ -637,7 +637,7 @@ export function useSwap(connection, wallet) {
   }, [wallet, getSwapQuoteSOLtoH173K, executeSwap])
   
   /**
-   * Swap H173K to get more SOL
+   * Swap h173k to get more SOL
    * @param {number} targetSOL - How much SOL to get
    * @returns {Object} - Swap result
    */
@@ -678,22 +678,22 @@ export function useSwap(connection, wallet) {
     // lands at `targetSOL` AFTER fees instead of below it.
     const grossTarget = targetSOL + swapCost
 
-    // Calculate how much H173K we need to swap (for the gross output)
+    // Calculate how much h173k we need to swap (for the gross output)
     const { h173kNeeded, quote } = await calculateSwapForSOL(grossTarget)
     
-    // Check H173K balance
+    // Check h173k balance
     const tokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, wallet.publicKey)
     const tokenBalance = await connection.getTokenAccountBalance(tokenAccount)
     const h173kBalance = Number(tokenBalance.value.uiAmount)
     
-    console.log(`🪙 H173K needed: ${h173kNeeded.toFixed(9)}, H173K balance: ${h173kBalance.toFixed(9)}`)
+    console.log(`🪙 h173k needed: ${h173kNeeded.toFixed(9)}, h173k balance: ${h173kBalance.toFixed(9)}`)
     
     if (h173kNeeded > h173kBalance) {
       throw new Error(`NO_H173K:Insufficient h173k to get more SOL. Need ${h173kNeeded.toFixed(9)} h173k, have ${h173kBalance.toFixed(9)} h173k. Please add more h173k to your wallet.`)
     }
     
     // Execute swap
-    console.log(`🔄 Executing swap: ${h173kNeeded.toFixed(9)} H173K -> ~${targetSOL.toFixed(4)} SOL...`)
+    console.log(`🔄 Executing swap: ${h173kNeeded.toFixed(9)} h173k -> ~${targetSOL.toFixed(4)} SOL...`)
     
     const result = await executeSwap(quote, 'H173KtoSOL')
     console.log(`✅ Swap complete! Got ${result.outputAmount.toFixed(6)} SOL`)
@@ -1007,7 +1007,7 @@ export function useSwap(connection, wallet) {
 }
 
 /**
- * Get current H173K/SOL price from pool
+ * Get current h173k/SOL price from pool
  */
 export async function getH173KPrice(connection) {
   try {

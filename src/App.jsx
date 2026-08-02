@@ -1,6 +1,6 @@
 /**
- * H173K Wallet - PWA Cryptocurrency Wallet
- * Single-token wallet dedicated to H173K on Solana
+ * h173k Wallet - PWA Cryptocurrency Wallet
+ * Single-token wallet dedicated to h173k on Solana
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
@@ -143,7 +143,7 @@ function InstallPromptScreen({ offerLink }) {
     <div className="install-prompt-screen">
       <div className="install-content">
         <div className="install-logo">
-          <img src="/logo.png" alt="H173K" className="logo-img large" />
+          <img src="/logo.png" alt="h173k" className="logo-img large" />
         </div>
         <h1 className="install-title">{t('install.title')}</h1>
         <p className="install-subtitle">
@@ -845,7 +845,7 @@ function LoadingScreen({ message }) {
   return (
     <div className="loading-screen">
       <div className="loading-content">
-        <div className="loading-logo"><img src="/logo.png" alt="H173K" className="logo-img large" /></div>
+        <div className="loading-logo"><img src="/logo.png" alt="h173k" className="logo-img large" /></div>
         <div className="loading-spinner" />
         <p className="loading-text">{message}</p>
       </div>
@@ -962,7 +962,7 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
         
         {step === 'rpc' && (
           <div className="onboarding-step">
-            <div className="onboarding-logo"><img src="/logo.png" alt="H173K" className="logo-img large" /></div>
+            <div className="onboarding-logo"><img src="/logo.png" alt="h173k" className="logo-img large" /></div>
             <h1 className="onboarding-title">{t('onboarding.rpcTitle')}</h1>
             <p className="onboarding-subtitle">{t('onboarding.rpcSubtitle')}</p>
             {error && <div className="error-message">{error}</div>}
@@ -989,7 +989,7 @@ function OnboardingFlow({ onComplete, showToast, pendingReferral, onRpcChange })
         
         {step === 'welcome' && (
           <div className="onboarding-step">
-            <div className="onboarding-logo"><img src="/logo.png" alt="H173K" className="logo-img large" /></div>
+            <div className="onboarding-logo"><img src="/logo.png" alt="h173k" className="logo-img large" /></div>
             <h1 className="onboarding-title">{t('onboarding.welcomeTitle')}</h1>
             <p className="onboarding-subtitle">{t('onboarding.welcomeSubtitle')}</p>
             <div className="onboarding-actions">
@@ -1140,7 +1140,7 @@ function LockScreen({ onUnlock, showToast }) {
   return (
     <div className="lock-screen">
       <div className="lock-content">
-        <div className="lock-logo"><img src="/logo.png" alt="H173K" className="logo-img" /></div>
+        <div className="lock-logo"><img src="/logo.png" alt="h173k" className="logo-img" /></div>
         <h2 className="lock-title">{t('lock.title')}</h2>
         <div className="pin-display">
           {[...Array(6)].map((_, i) => <div key={i} className={`pin-dot ${pin.length > i ? 'filled' : ''}`} />)}
@@ -1591,7 +1591,7 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       
       {/* Logo */}
       <div className="main-logo">
-        <img src="/logo.png" alt="H173K" className="logo-img" />
+        <img src="/logo.png" alt="h173k" className="logo-img" />
       </div>
       
       <div className="balance-card">
@@ -1762,7 +1762,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       // Quote the h173k -> USDT conversion for the entered amount.
       if (amt && amt > 0) {
         try {
-          const q = await getUsdtQuote('H173KtoUSDT', amt)
+          const q = await getUsdtQuote('h173ktoUSDT', amt)
           if (!cancelled) setUsdtQuote({ outputAmount: q.outputAmount, priceImpact: q.priceImpact })
         } catch { if (!cancelled) setUsdtQuote(null) }
       } else if (!cancelled) {
@@ -1831,7 +1831,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       if (guard.enabled) {
         let quotedImpact = null
         try {
-          const q = await getUsdtQuote('H173KtoUSDT', sendAmount)
+          const q = await getUsdtQuote('h173ktoUSDT', sendAmount)
           setUsdtQuote({ outputAmount: q.outputAmount, priceImpact: q.priceImpact })
           quotedImpact = q.priceImpact
         } catch {
@@ -1933,7 +1933,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         if (guard.enabled) {
           let finalImpact
           try {
-            const q = await getUsdtQuote('H173KtoUSDT', sendAmount)
+            const q = await getUsdtQuote('h173ktoUSDT', sendAmount)
             finalImpact = q.priceImpact
           } catch {
             showToast(t('send.impactQuoteFailed'), 'error')
@@ -2343,7 +2343,7 @@ function HistoryView({ connection, publicKey, onBack, h173kDecimals }) {
         return results
       }
       
-      // 1. Fetch H173K token transactions
+      // 1. Fetch h173k token transactions
       const tokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
       const tokenSignatures = await connection.getSignaturesForAddress(tokenAccount, { limit: 20 })
       

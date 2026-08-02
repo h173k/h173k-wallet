@@ -9,18 +9,11 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './App.css'
 
-// Service Worker registration for PWA
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then(registration => {
-        console.log('SW registered:', registration.scope)
-      })
-      .catch(error => {
-        console.log('SW registration failed:', error)
-      })
-  })
-}
+// The service worker is registered by VitePWA, which injects its own script
+// into index.html at build time. Registering '/sw.js' by hand here as well used
+// to suggest that public/sw.js was the worker in use, when in production that
+// path is the generated workbox bundle. Custom worker code lives in
+// public/sw-notifications.js (see vite.config.js -> workbox.importScripts).
 
 // Prevent zoom on iOS
 document.addEventListener('gesturestart', function (e) {

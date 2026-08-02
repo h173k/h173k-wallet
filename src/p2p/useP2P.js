@@ -1,5 +1,5 @@
 /**
- * H173K P2P Marketplace — core logic
+ * h173k P2P Marketplace — core logic
  *
  * Offers are published as on-chain MEMO messages attached to a tiny h173k transfer
  * sent to a per-currency, keyless address (see ./addresses.js). The transfer amount

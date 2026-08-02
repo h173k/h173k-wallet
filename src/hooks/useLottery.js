@@ -1,5 +1,5 @@
 /**
- * H173K Wallet — Lottery hook (Win h173k)
+ * h173k Wallet — Lottery hook (Win h173k)
  *
  * Obsługuje commit-reveal z lib.rs:
  *   1. commitGuess  — losuje sekret + typ, wpłaca opłatę do vaultu

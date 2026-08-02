@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - End-to-End Encrypted Messenger
+ * h173k Wallet - End-to-End Encrypted Messenger
  *
  * Messages travel on chain as memo instructions attached to a tiny h173k
  * transfer. The wallet reads those memos back, decrypts them and groups them

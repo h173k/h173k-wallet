@@ -1,5 +1,5 @@
 /**
- * H173K Wallet — Lottery screen (Win h173k)
+ * h173k Wallet — Lottery screen (Win h173k)
  *
  * Zawiera: bęben (slot reel) z logo h173k między emoji, wybór trybu (swipe),
  * swipe-to-spin, prompt powitalny, potwierdzenie kosztu, panel informacyjny

@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Local (OS) notifications for the messenger.
+ * h173k Wallet - Local (OS) notifications for the messenger.
  * Kept in its own module so both the direct-message and the group code can use
  * it without importing each other.
  */

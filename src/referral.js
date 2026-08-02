@@ -1,5 +1,5 @@
 /**
- * Referral System for H173K Wallet
+ * Referral System for h173k Wallet
  * 
  * - Stores referrer address when wallet is created or imported with referral link
  * - Calculates referral bonus amount based on current h173k price

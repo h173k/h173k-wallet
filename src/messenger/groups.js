@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Encrypted group chats.
+ * h173k Wallet - Encrypted group chats.
  *
  * ADDRESS
  * A group never lives on anybody's wallet address. The admin's wallet derives a

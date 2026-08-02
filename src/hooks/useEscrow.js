@@ -39,7 +39,7 @@ import { getH173KPrice } from './useSwap'
  * Priority: 1. Provided price, 2. Last known price from localStorage, 3. Direct pool price
  * @param {Connection} connection - Solana connection
  * @param {number|null} providedPrice - Price passed as parameter
- * @returns {Promise<number|null>} Price in SOL per H173K token
+ * @returns {Promise<number|null>} Price in SOL per h173k token
  */
 async function getReferralPrice(connection, providedPrice) {
   // 1. Use provided price if available

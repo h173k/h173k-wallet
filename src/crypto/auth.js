@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Authentication Module (SECURITY FIXED)
+ * h173k Wallet - Authentication Module (SECURITY FIXED)
  * Supports PIN code and biometric authentication
  * 
  * POPRAWKI BEZPIECZEŃSTWA:
@@ -238,13 +238,13 @@ export async function setupBiometric(userPassword) {
       publicKey: {
         challenge,
         rp: {
-          name: 'H173K Wallet',
+          name: 'h173k Wallet',
           id: window.location.hostname
         },
         user: {
           id: new Uint8Array(16),
           name: 'h173k-user',
-          displayName: 'H173K Wallet User'
+          displayName: 'h173k Wallet User'
         },
         pubKeyCredParams: [
           { alg: -7, type: 'public-key' },   // ES256

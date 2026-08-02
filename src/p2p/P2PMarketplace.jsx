@@ -1,5 +1,5 @@
 /**
- * H173K P2P Marketplace — UI
+ * h173k P2P Marketplace — UI
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'

@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Messenger cryptographic primitives.
+ * h173k Wallet - Messenger cryptographic primitives.
  *
  * Split out of messenger.js so that the group module and the direct-message
  * module can share the same identity/encryption code without creating an

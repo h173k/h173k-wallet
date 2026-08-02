@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Messenger preferences.
+ * h173k Wallet - Messenger preferences.
  *
  * Everything the user can configure about the messenger lives here and is
  * surfaced in the dedicated "Messenger settings" screen (reachable from the

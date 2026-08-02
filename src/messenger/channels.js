@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Dedicated conversation addresses ("channels").
+ * h173k Wallet - Dedicated conversation addresses ("channels").
  *
  * WHY
  * Talking on the wallet address means anybody who knows that address can drop

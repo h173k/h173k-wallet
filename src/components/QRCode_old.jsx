@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - QR Code Components
+ * h173k Wallet - QR Code Components
  * Scanner and Generator for addresses
  */
 
@@ -276,7 +276,7 @@ function isValidSolanaAddress(str) {
 }
 
 /**
- * Check if it's a valid Solana Pay or H173K URL
+ * Check if it's a valid Solana Pay or h173k URL
  */
 function isValidPaymentURL(str) {
   try {

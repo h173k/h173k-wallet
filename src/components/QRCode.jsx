@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - QR Code Components
+ * h173k Wallet - QR Code Components
  * Scanner and Generator for addresses
  * 
  * FIXES:

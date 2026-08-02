@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Chat list assembly.
+ * h173k Wallet - Chat list assembly.
  *
  * Individual conversations and groups share one list, so the ordering and
  * filtering rules live here rather than inside the view: the same function

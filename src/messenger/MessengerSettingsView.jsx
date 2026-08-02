@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Messenger settings.
+ * h173k Wallet - Messenger settings.
  *
  * Every messenger option lives here rather than in the wallet's global
  * settings: the fee charged for incoming messages, group defaults, the chat

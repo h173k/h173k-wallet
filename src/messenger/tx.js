@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Messenger transaction builder.
+ * h173k Wallet - Messenger transaction builder.
  *
  * Every messenger action is one transaction: a memo (the encrypted envelope)
  * plus one or more tiny h173k transfers. Which transfers depends on the action:

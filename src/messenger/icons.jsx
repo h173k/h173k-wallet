@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Messenger icons.
+ * h173k Wallet - Messenger icons.
  * Plain inline SVG, stroke-based, matching the rest of the wallet.
  */
 import React from 'react'

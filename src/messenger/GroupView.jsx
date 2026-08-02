@@ -1,5 +1,5 @@
 /**
- * H173K Wallet - Group chat screens.
+ * h173k Wallet - Group chat screens.
  *
  *  CreateGroupView  admin sets the name, the h173k a member must hold to join
  *                   and the cost of a message inside the group
@@ -15,8 +15,9 @@ import { useSwap } from '../hooks/useSwap'
 import { sessionWallet } from '../crypto/wallet'
 import {
   BackIcon, RefreshIcon, SendArrowIcon, ReplyIcon, CloseIcon, CheckIcon,
-  LinkIcon, CopyIcon, TrashIcon, SettingsIcon, GroupIcon, TipIcon,
+  LinkIcon, CopyIcon, TrashIcon, SettingsIcon, GroupIcon,
 } from './icons'
+import MessageActions from './MessageActions'
 import {
   groupStore,
   createGroup,
@@ -446,14 +447,11 @@ export function GroupChatView({ connection, publicKey, groupId, onBack, showToas
             )}
             <div className="message-text">{m.text}</div>
             <div className="message-meta">
-              <button className="message-reply-btn" onClick={() => setReplyTo(m)} title={t('groups.reply')}>
-                <ReplyIcon size={13} />
-              </button>
-              {m.dir === 'in' && m.from && onTip && (
-                <button className="message-reply-btn" onClick={() => onTip(m.from)} title={t('messenger.tip')}>
-                  <TipIcon size={13} />
-                </button>
-              )}
+              <MessageActions
+                align={m.dir === 'out' ? 'end' : 'start'}
+                onReply={() => setReplyTo(m)}
+                onTip={(m.dir === 'in' && m.from && onTip) ? () => onTip(m.from) : null}
+              />
               {fmtTime(m.ts)}
             </div>
           </div>
