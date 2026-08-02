@@ -739,7 +739,7 @@ function ThreadView({ connection, publicKey, address, onBack, showToast, onTip }
                 onReply={() => setReplyTo(m)}
                 onTip={(m.dir === 'in' && onTip) ? () => onTip(address) : null}
               />
-              {fmtTime(m.ts)}
+              <span className="message-time">{fmtTime(m.ts)}</span>
             </div>
           </div>
         ))}

@@ -452,7 +452,7 @@ export function GroupChatView({ connection, publicKey, groupId, onBack, showToas
                 onReply={() => setReplyTo(m)}
                 onTip={(m.dir === 'in' && m.from && onTip) ? () => onTip(m.from) : null}
               />
-              {fmtTime(m.ts)}
+              <span className="message-time">{fmtTime(m.ts)}</span>
             </div>
           </div>
         ))}

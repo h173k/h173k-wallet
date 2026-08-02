@@ -35,9 +35,33 @@ function MoreIcon({ size = 16 }) {
 export default function MessageActions({ onReply, onTip, align = 'start' }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  // Which way the menu unfolds. Decided per opening, not fixed: a menu that
+  // always opened upwards ran off the top of the screen on the first message in
+  // the thread, putting Reply out of reach.
+  const [drop, setDrop] = useState('up')
   const wrapRef = useRef(null)
 
   const close = useCallback(() => setOpen(false), [])
+
+  /**
+   * Open towards the middle of the viewport: a trigger in the top half unfolds
+   * downwards, one in the bottom half upwards. Whichever side is chosen is by
+   * definition the side with more room, so the menu is always fully visible.
+   */
+  const toggle = useCallback((e) => {
+    e.stopPropagation()
+    setOpen((wasOpen) => {
+      if (wasOpen) return false
+      try {
+        const rect = wrapRef.current.getBoundingClientRect()
+        const viewportMiddle = (window.visualViewport?.height || window.innerHeight) / 2
+        setDrop(rect.top < viewportMiddle ? 'down' : 'up')
+      } catch {
+        setDrop('up')
+      }
+      return true
+    })
+  }, [])
 
   // Close on an outside tap, on Escape, and on scroll — a menu anchored to a
   // bubble would otherwise drift away from it as the thread moves.
@@ -71,13 +95,13 @@ export default function MessageActions({ onReply, onTip, align = 'start' }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t('messenger.messageActions')}
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }}
+        onClick={toggle}
       >
         <MoreIcon size={16} />
       </button>
 
       {open && (
-        <div className="msg-actions-menu" role="menu">
+        <div className={`msg-actions-menu drop-${drop}`} role="menu">
           <button type="button" className="msg-actions-item" role="menuitem" onClick={run(onReply)}>
             <ReplyIcon size={15} />
             <span>{t('groups.reply')}</span>
