@@ -674,6 +674,7 @@ export default {
     unpaidTag: "{n} odrzuconych",
     unpaidTagFull: "Nie opłacono wymaganej opłaty ({n} h173k)",
     firstContactFree: "Pierwszy kontakt — opłata pominięta",
+    tip: "Wyślij napiwek",
     feeNotAnnounced: "Nowa stawka zacznie obowiązywać po Twojej następnej wiadomości",
     onOwnAddress: "Rozmowa na dedykowanym adresie",
     onWalletAddress: "Rozmowa na adresie portfela (tryb zgodności)",

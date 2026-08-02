@@ -63,6 +63,10 @@ export function CheckIcon({ size = 16 }) {
 export function CoinIcon({ size = 16 }) {
   return <svg {...base(size)}><circle cx="12" cy="12" r="9" /><path d="M15 9.5a2.5 2.5 0 0 0-2.5-1.5h-1a2 2 0 0 0 0 4h1a2 2 0 0 1 0 4h-1A2.5 2.5 0 0 1 9 14.5" /><line x1="12" y1="6" x2="12" y2="18" /></svg>
 }
+/** Tip: a coin being handed over. */
+export function TipIcon({ size = 15 }) {
+  return <svg {...base(size)}><circle cx="12" cy="8" r="5" /><path d="M9.5 8h5" /><path d="M12 5.5v5" /><path d="M5 20.5c1.8-2.3 4.2-3.5 7-3.5s5.2 1.2 7 3.5" /></svg>
+}
 export function CopyIcon({ size = 15 }) {
   return <svg {...base(size)}><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
 }

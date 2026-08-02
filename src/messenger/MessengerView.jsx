@@ -18,7 +18,7 @@ import { useSwap } from '../hooks/useSwap'
 import { sessionWallet } from '../crypto/wallet'
 import {
   BackIcon, RefreshIcon, PlusIcon, EditIcon, TrashIcon, SendArrowIcon,
-  SettingsIcon, GroupIcon, PersonIcon, LinkIcon, ReplyIcon, CloseIcon, CoinIcon,
+  SettingsIcon, GroupIcon, PersonIcon, LinkIcon, ReplyIcon, CloseIcon, CoinIcon, TipIcon,
 } from './icons'
 import {
   store,
@@ -86,7 +86,7 @@ function useMessengerVersion() {
 }
 
 // ========== MAIN VIEW ==========
-export default function MessengerView({ connection, publicKey, balance, onBack, showToast, initialAddress, initialInvite, initialGroup, onInviteConsumed }) {
+export default function MessengerView({ connection, publicKey, balance, onBack, showToast, initialAddress, initialInvite, initialGroup, onInviteConsumed, onTip }) {
   const [needsNick, setNeedsNick] = useState(() => !hasProfile())
   const [editingNick, setEditingNick] = useState(false)
   const [view, setView] = useState(() => {
@@ -105,6 +105,15 @@ export default function MessengerView({ connection, publicKey, balance, onBack, 
     try { window.__h173k_active_thread = (view === 'thread') ? activeAddress : null } catch {}
     return () => { try { window.__h173k_active_thread = null } catch {} }
   }, [view, activeAddress])
+
+  // Tipping leaves the messenger, so hand over the chat to return to. The
+  // caller passes the recipient; the context comes from whatever is open.
+  const handleTip = useCallback((address) => {
+    if (!onTip) return
+    if (view === 'group' && activeGroup) onTip(address, { group: activeGroup })
+    else if (activeAddress) onTip(address, { thread: activeAddress })
+    else onTip(address)
+  }, [onTip, view, activeGroup, activeAddress])
 
   const openThread = useCallback((addr) => {
     store.markRead(addr)
@@ -181,6 +190,7 @@ export default function MessengerView({ connection, publicKey, balance, onBack, 
         connection={connection}
         publicKey={publicKey}
         groupId={activeGroup}
+        onTip={handleTip}
         onBack={() => { groupStore.markRead(activeGroup); setView('list'); setActiveGroup(null) }}
         showToast={showToast}
       />
@@ -193,6 +203,7 @@ export default function MessengerView({ connection, publicKey, balance, onBack, 
         connection={connection}
         publicKey={publicKey}
         address={activeAddress}
+        onTip={handleTip}
         onBack={() => { store.markRead(activeAddress); setView('list'); setActiveAddress(null) }}
         showToast={showToast}
       />
@@ -563,7 +574,7 @@ function GroupRow({ group, onOpen }) {
 }
 
 // ========== DIRECT THREAD ==========
-function ThreadView({ connection, publicKey, address, onBack, showToast }) {
+function ThreadView({ connection, publicKey, address, onBack, showToast, onTip }) {
   const { t } = useTranslation()
   const [refreshing, setRefreshing] = useState(false)
   const [text, setText] = useState('')
@@ -725,6 +736,11 @@ function ThreadView({ connection, publicKey, address, onBack, showToast }) {
               <button className="message-reply-btn" onClick={() => setReplyTo(m)} title={t('groups.reply')}>
                 <ReplyIcon size={13} />
               </button>
+              {m.dir === 'in' && onTip && (
+                <button className="message-reply-btn" onClick={() => onTip(address)} title={t('messenger.tip')}>
+                  <TipIcon size={13} />
+                </button>
+              )}
               {fmtTime(m.ts)}
             </div>
           </div>

@@ -15,7 +15,7 @@ import { useSwap } from '../hooks/useSwap'
 import { sessionWallet } from '../crypto/wallet'
 import {
   BackIcon, RefreshIcon, SendArrowIcon, ReplyIcon, CloseIcon, CheckIcon,
-  LinkIcon, CopyIcon, TrashIcon, SettingsIcon, GroupIcon,
+  LinkIcon, CopyIcon, TrashIcon, SettingsIcon, GroupIcon, TipIcon,
 } from './icons'
 import {
   groupStore,
@@ -287,7 +287,7 @@ export function JoinGroupView({ connection, publicKey, balance, initialInvite, o
 }
 
 // ========== GROUP CHAT ==========
-export function GroupChatView({ connection, publicKey, groupId, onBack, showToast }) {
+export function GroupChatView({ connection, publicKey, groupId, onBack, showToast, onTip }) {
   const { t } = useTranslation()
   const { withAutoSOL } = useSwap(connection, sessionWallet)
   const [refreshing, setRefreshing] = useState(false)
@@ -449,6 +449,11 @@ export function GroupChatView({ connection, publicKey, groupId, onBack, showToas
               <button className="message-reply-btn" onClick={() => setReplyTo(m)} title={t('groups.reply')}>
                 <ReplyIcon size={13} />
               </button>
+              {m.dir === 'in' && m.from && onTip && (
+                <button className="message-reply-btn" onClick={() => onTip(m.from)} title={t('messenger.tip')}>
+                  <TipIcon size={13} />
+                </button>
+              )}
               {fmtTime(m.ts)}
             </div>
           </div>

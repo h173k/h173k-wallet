@@ -374,6 +374,10 @@ function WalletApp({ connection, onRpcChange }) {
   })
   // When set, the messenger opens directly on this peer's thread (e.g. from P2P).
   const [messengerTarget, setMessengerTarget] = useState(null)
+  const [sendTarget, setSendTarget] = useState(null)
+  // Where to go once a tip has been sent (or abandoned): back to the chat it
+  // was started from, rather than dropping the user on the home screen.
+  const [sendReturn, setSendReturn] = useState(null)
   // Last seen h173k balance, used to detect incoming transfers for notifications.
   const prevH173kRef = useRef(null)
   // Holds the latest USDT auto-convert routine so fetchBalances can invoke it on every
@@ -390,6 +394,34 @@ function WalletApp({ connection, onRpcChange }) {
     setMessengerTarget(address)
     setCurrentView('messenger')
   }, [])
+
+  // Open the send screen with the recipient already filled in — used by the
+  // messenger's "tip" action. Only the address is carried over; the amount and
+  // every validation step stay exactly as they are for a normal transfer.
+  const openSendWith = useCallback((address, returnTo) => {
+    if (!address) return
+    setSendTarget(address)
+    setSendReturn(returnTo || null)
+    setCurrentView('send')
+  }, [])
+
+  // Leaving the send screen: return to the chat the tip came from, if any.
+  const leaveSend = useCallback(() => {
+    const back = sendReturn
+    setSendTarget(null)
+    setSendReturn(null)
+    if (back && back.group) {
+      setMessengerGroupTarget(back.group)
+      setMessengerTarget(null)
+      setCurrentView('messenger')
+    } else if (back && back.thread) {
+      setMessengerGroupTarget(null)
+      setMessengerTarget(back.thread)
+      setCurrentView('messenger')
+    } else {
+      setCurrentView('main')
+    }
+  }, [sendReturn])
 
   // Keep the envelope badge in sync with the messenger store.
   useEffect(() => {
@@ -721,7 +753,9 @@ function WalletApp({ connection, onRpcChange }) {
         <SendView
           connection={connection} publicKey={publicKey} balance={balance}
           solBalance={solBalance} price={price} toUSD={toUSD}
-          onBack={() => setCurrentView('main')} showToast={showToast} onRefresh={fetchBalances}
+          initialRecipient={sendTarget}
+          onBack={leaveSend}
+          showToast={showToast} onRefresh={fetchBalances}
         />
       )}
       
@@ -745,6 +779,7 @@ function WalletApp({ connection, onRpcChange }) {
           initialAddress={messengerTarget}
           initialInvite={pendingGroupInvite}
           initialGroup={messengerGroupTarget}
+          onTip={openSendWith}
           onInviteConsumed={() => setPendingGroupInvite(null)}
           onBack={() => {
             setPendingGroupInvite(null)
@@ -1663,9 +1698,11 @@ async function estimateSendExtraSOL(connection, recipientStr, sponsorEnabled) {
 }
 
 // ========== SEND VIEW ==========
-function SendView({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onRefresh }) {
+function SendView({ connection, publicKey, balance, solBalance, price, toUSD, onBack, showToast, onRefresh, initialRecipient }) {
   const { t } = useTranslation()
-  const [recipient, setRecipient] = useState('')
+  // Prefilled when arriving from a messenger tip. Nothing else is pre-set: the
+  // amount, the confirmation step and all validation behave as usual.
+  const [recipient, setRecipient] = useState(initialRecipient || '')
   const [amount, setAmount] = useState('')
   const [loading, setLoading] = useState(false)
   const [showScanner, setShowScanner] = useState(false)

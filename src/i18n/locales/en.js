@@ -677,6 +677,7 @@ export default {
     unpaidTag: "{n} filtered",
     unpaidTagFull: "Required fee not paid ({n} h173k)",
     firstContactFree: "First contact \u2014 fee waived",
+    tip: "Send a tip",
     feeNotAnnounced: "The new amount applies from your next message on",
     onOwnAddress: "Conversation on its dedicated address",
     onWalletAddress: "Conversation on the wallet address (compatibility mode)",
