@@ -27,6 +27,8 @@ import {
   SOURCES_PER_REFRESH_OPTIONS,
   getNotificationsEnabled,
   setNotificationsEnabled,
+  getNotifyPingsEnabled,
+  setNotifyPingsEnabled,
   getLegacyModeEnabled,
   setLegacyModeEnabled,
   getGroupDefaults,
@@ -48,6 +50,7 @@ export default function MessengerSettingsView({ onBack, showToast }) {
   const [scanLimit, setScanLimit] = useState(() => getMessengerScanLimit())
   const [sources, setSources] = useState(() => getSourcesPerRefresh())
   const [notif, setNotif] = useState(() => getNotificationsEnabled())
+  const [pings, setPings] = useState(() => getNotifyPingsEnabled())
   const [legacy, setLegacy] = useState(() => getLegacyModeEnabled())
   const [groupDefaults, setGroupDefaults] = useState(() => getGroupDefaults())
   const [contactEdit, setContactEdit] = useState(null) // { address, value }
@@ -249,6 +252,21 @@ export default function MessengerSettingsView({ onBack, showToast }) {
               <div className="msg-settings-hint">{t('notifications.newMessagesDesc')}</div>
             </div>
             <span className={`badge ${notif ? 'enabled' : ''}`}>{notif ? t('common.on') : t('common.off')}</span>
+          </div>
+
+          <div
+            className="msg-toggle-row"
+            onClick={() => {
+              const next = !pings
+              setNotifyPingsEnabled(next); setPings(next)
+              showToast(next ? t('messengerSettings.pingsOn') : t('messengerSettings.pingsOff'), next ? 'success' : 'info')
+            }}
+          >
+            <div>
+              <div>{t('messengerSettings.pings')}</div>
+              <div className="msg-settings-hint">{t('messengerSettings.pingsDesc')}</div>
+            </div>
+            <span className={`badge ${pings ? 'enabled' : ''}`}>{pings ? t('common.on') : t('common.off')}</span>
           </div>
         </div>
 

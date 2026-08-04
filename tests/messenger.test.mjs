@@ -1041,6 +1041,178 @@ check('a one-lamport fee is not satisfied by paying nothing', () => {
 })
 
 // =====================================================================
+section('15. Notification pings')
+
+const pings = await import('../src/messenger/pings.js')
+const txm = await import('../src/messenger/tx.js')
+
+check('pings are on unless switched off', () => {
+  localStorage.clear()
+  ok(prefs.getNotifyPingsEnabled(), 'default must be on')
+  prefs.setNotifyPingsEnabled(false)
+  ok(!prefs.getNotifyPingsEnabled())
+  prefs.setNotifyPingsEnabled(true)
+  ok(prefs.getNotifyPingsEnabled())
+})
+
+check('a group message nudges the members it knows', () => {
+  const g = {
+    id: 'gp', address: 'GroupAddr1111111111111111111111111111111', admin: A,
+    msgCost: 0, members: { [B]: {}, [C]: {} },
+  }
+  const targets = groups.groupPingCandidates(g, B)
+  ok(targets.includes(A), 'the admin should be notified')
+  ok(targets.includes(C))
+  ok(!targets.includes(B), 'never ping yourself')
+
+  const { transfers } = groups.buildGroupTransfers({ group: g, myAddress: B, pingTargets: targets })
+  const toC = transfers.find((tr) => tr.to === C)
+  ok(toC && toC.optional, 'a ping must be optional so it never creates an account')
+  eq(toC.amount, groups.MIN_GROUP_MSG_COST, 'one lamport is enough to be noticed')
+})
+
+check('the admin is not pinged twice when the cost already pays them', () => {
+  const g = {
+    id: 'gp', address: 'GroupAddr1111111111111111111111111111111', admin: A,
+    msgCost: 0.5, members: { [C]: {} },
+  }
+  const { transfers } = groups.buildGroupTransfers({
+    group: g, myAddress: B, pingTargets: groups.groupPingCandidates(g, B),
+  })
+  const toAdmin = transfers.filter((tr) => tr.to === A)
+  eq(toAdmin.length, 1, 'one transfer to the admin, not a payment plus a ping')
+  eq(toAdmin[0].amount, 0.5, 'and it is the real payment')
+})
+
+check('pings never create a token account', () => {
+  const g = {
+    id: 'gp', address: 'GroupAddr1111111111111111111111111111111', admin: A,
+    msgCost: 0, members: { [C]: {}, [B]: {} },
+  }
+  const { transfers } = groups.buildGroupTransfers({
+    group: g, myAddress: B, pingTargets: groups.groupPingCandidates(g, B),
+  })
+  // Rent is ~0.002 SOL per account; a 20-member group would otherwise make one
+  // message cost more than the tokens being sent. The group address and the
+  // admin payment are the only transfers allowed to create an account.
+  for (const tr of transfers) {
+    if (tr.to === g.address || tr.to === A) continue
+    ok(tr.optional, 'every ping must be optional: ' + tr.to)
+  }
+})
+
+check('the size estimate is exact, not a guess', () => {
+  const memo = 'x'.repeat(300)
+  const measured = txm.estimateTransactionSize(memo, 3)
+  ok(measured > 0 && measured < pings.PACKET_LIMIT)
+  // one more transfer must cost more bytes
+  ok(txm.estimateTransactionSize(memo, 4) > measured)
+})
+
+check('the ping budget shrinks as the message grows', () => {
+  const big = pings.pingBudget(txm.estimateTransactionSize('x'.repeat(560), 2), 30)
+  const small = pings.pingBudget(txm.estimateTransactionSize('x'.repeat(60), 2), 30)
+  ok(small > big, 'a short message should leave room for more recipients')
+  ok(big >= 1, 'even the longest message should reach somebody')
+})
+
+check('a budgeted transaction stays inside the packet limit', () => {
+  for (const memoLen of [560, 400, 200, 60]) {
+    const memo = 'x'.repeat(memoLen)
+    const base = txm.estimateTransactionSize(memo, 2)
+    const budget = pings.pingBudget(base, 40)
+    const real = txm.estimateTransactionSize(memo, 2 + budget)
+    ok(real <= pings.PACKET_LIMIT,
+      `memo ${memoLen}B with ${budget} pings -> ${real}B exceeds ${pings.PACKET_LIMIT}B`)
+  }
+})
+
+check('a large group is rotated through instead of always the same few', () => {
+  localStorage.clear()
+  const members = Array.from({ length: 25 }, (_, i) => 'member' + i)
+  const stamps = {}
+  const reached = new Set()
+  for (let round = 0; round < 10; round++) {
+    const picked = pings.selectPingTargets(members, 5, stamps)
+    eq(picked.length, 5, 'the budget must be spent in full')
+    for (const m of picked) { reached.add(m); stamps[m] = round + 1 }
+  }
+  eq(reached.size, members.length, 'everybody should be reached within a few messages')
+})
+
+check('never-pinged members go first', () => {
+  const members = ['a', 'b', 'c', 'd']
+  const stamps = { a: 100, b: 200, d: 50 } // c has never been pinged
+  eq(pings.selectPingTargets(members, 1, stamps), ['c'])
+  eq(pings.selectPingTargets(members, 2, stamps), ['c', 'd'])
+})
+
+check('everybody is pinged when they all fit', () => {
+  const members = ['a', 'b', 'c']
+  eq(pings.selectPingTargets(members, 10, {}).sort(), ['a', 'b', 'c'])
+})
+
+check('rotation state is stored per group and dropped on leaving', () => {
+  localStorage.clear()
+  pings.touchPingStamps('g1', ['a', 'b'], 42)
+  pings.touchPingStamps('g2', ['a'], 7)
+  eq(pings.getPingStamps('g1'), { a: 42, b: 42 })
+  eq(pings.getPingStamps('g2'), { a: 7 }, 'groups must not share rotation state')
+  pings.forgetPingStamps('g1')
+  eq(pings.getPingStamps('g1'), {})
+  eq(pings.getPingStamps('g2'), { a: 7 })
+})
+
+// The flag is only worth anything if the send path honours it, so exercise
+// sendMemoTransaction itself against a fake chain rather than trusting shape.
+const splmod = await import('@solana/spl-token')
+const { TOKEN_MINT: MINT } = await import('../src/constants.js')
+const web3 = await import('@solana/web3.js')
+
+const withAccount = Keypair.generate().publicKey.toBase58()
+const withoutAccount = Keypair.generate().publicKey.toBase58()
+const existingAta = (await splmod.getAssociatedTokenAddress(MINT, new web3.PublicKey(withAccount))).toBase58()
+
+useIdentity(alice)
+let builtTx = null
+const realSign = sessionWallet.signTransaction
+sessionWallet.signTransaction = (t) => { builtTx = t; return { serialize: () => Buffer.from('x') } }
+
+await txm.sendMemoTransaction({
+  connection: {
+    async getMultipleAccountsInfo(atas) {
+      return atas.map((a) => (a.toBase58() === existingAta ? { lamports: 1 } : null))
+    },
+    async getAccount() { throw new Error('missing') },
+    async getLatestBlockhash() { return { blockhash: '11111111111111111111111111111111' } },
+    async sendRawTransaction() { return 'SIG' },
+    async confirmTransaction() { return {} },
+  },
+  publicKey: alice.publicKey,
+  memo: '{"v":2}',
+  transfers: [
+    { to: withAccount, amount: 1e-9, optional: true },
+    { to: withoutAccount, amount: 1e-9, optional: true },
+  ],
+  withAutoSOL: async (fn) => fn(),
+})
+sessionWallet.signTransaction = realSign
+
+check('a ping to an address with no token account is dropped', () => {
+  const programs = builtTx.instructions.map((i) => i.programId.toBase58())
+  const created = programs.filter((p) => p === splmod.ASSOCIATED_TOKEN_PROGRAM_ID.toBase58()).length
+  const transfers = programs.filter((p) => p === splmod.TOKEN_PROGRAM_ID.toBase58()).length
+  eq(created, 0, 'creating an account costs ~0.002 SOL - never do it for a ping')
+  eq(transfers, 1, 'only the address that already has an account is paid')
+})
+
+check('malformed addresses cannot reach the transaction', () => {
+  eq(pings.validPingTargets(['not-an-address', '', null, B, B], A), [B],
+    'invalid entries dropped, duplicates collapsed')
+  eq(pings.validPingTargets([A], A), [], 'and never ourselves')
+})
+
+// =====================================================================
 console.log('\n' + '='.repeat(52))
 if (failures.length === 0) {
   console.log(`ALL ${passed} CHECKS PASSED`)

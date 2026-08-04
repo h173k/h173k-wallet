@@ -101,6 +101,37 @@ export function setTxNotificationsEnabled(on) {
   emit()
 }
 
+// ========== NOTIFICATION PINGS ==========
+/**
+ * A workaround for the fact that a PWA cannot check for messages while it is
+ * closed (no Background Sync on iOS, and Web Push would need a server that
+ * could see who talks to whom).
+ *
+ * Since conversations live on their own addresses, a message moves no tokens to
+ * the recipient's wallet, so nothing shows up there. With pings enabled the
+ * sender also transfers one lamport of h173k to each recipient's wallet
+ * address, in the same transaction. Any wallet app holding the same seed — one
+ * with working push notifications — then reports an incoming transfer, which
+ * tells the person to open the messenger.
+ *
+ * On by default; the cost is one lamport plus a few bytes of transaction, and
+ * the alternative is silently missing messages.
+ */
+const PINGS_KEY = 'h173k_msg_notify_pings'
+
+export function getNotifyPingsEnabled() {
+  try {
+    const v = localStorage.getItem(PINGS_KEY)
+    return v === null ? true : v === '1'
+  } catch {
+    return true
+  }
+}
+export function setNotifyPingsEnabled(on) {
+  try { localStorage.setItem(PINGS_KEY, on ? '1' : '0') } catch {}
+  emit()
+}
+
 // ========== ANTI-SPAM FEE ==========
 /**
  * How much h173k a sender must attach for their message to count as delivered.

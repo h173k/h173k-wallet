@@ -57,6 +57,7 @@ import {
   getNotificationsEnabled,
   getLegacyModeEnabled,
   getRequiredFeeFrom,
+  getNotifyPingsEnabled,
   sanitizeFee,
   CHANNEL_SCAN_LIMIT,
 } from './prefs'
@@ -650,13 +651,23 @@ export async function sendMessage({ connection, publicKey, peerAddress, text, re
   //    invitation, reaches the recipient's wallet);
   //  - the anti-spam fee always goes to the recipient's wallet.
   const transfers = []
+  let reachesTheirWallet = false
   if (routing.isInvite || routing.legacy) {
     transfers.push({ to: peerAddress, amount: MSG_COST + fee })
+    reachesTheirWallet = true
     // Open the conversation address in the same transaction so it is ready.
     if (routing.announceChannel) transfers.push({ to: routing.announceChannel, amount: 0 })
   } else {
     transfers.push({ to: routing.target, amount: MSG_COST })
-    if (fee > 0) transfers.push({ to: peerAddress, amount: fee })
+    if (fee > 0) { transfers.push({ to: peerAddress, amount: fee }); reachesTheirWallet = true }
+  }
+
+  // Notification ping: a conversation on its own address moves nothing to the
+  // recipient's wallet, so a wallet app with push has nothing to report. One
+  // lamport there gives them something to notice. Skipped when the transaction
+  // already pays their wallet — that transfer is the notification.
+  if (!reachesTheirWallet && getNotifyPingsEnabled()) {
+    transfers.push({ to: peerAddress, amount: MSG_COST, optional: true })
   }
 
   const signature = await sendMemoTransaction({ connection, publicKey, memo, transfers, withAutoSOL })

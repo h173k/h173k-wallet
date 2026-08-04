@@ -39,10 +39,14 @@ import {
   buildGroupEnvelope, buildDirectEnvelope, parseEnvelope, stripMemoPrefix,
   memoByteLength, fitPayload, memoRemaining, MAX_MEMO_BYTES,
 } from './envelope'
-import { sendMemoTransaction, createTokenAccountFor } from './tx'
+import { sendMemoTransaction, createTokenAccountFor, estimateTransactionSize } from './tx'
+import {
+  pingBudget, selectPingTargets, validPingTargets,
+  getPingStamps, touchPingStamps, forgetPingStamps,
+} from './pings'
 import { deriveGroupAddress, tokenAccountOf, balanceOf } from './channels'
 import { getCursor, setCursor, forgetCursor, isFirstScan } from './cursors'
-import { getNotificationsEnabled, CHANNEL_SCAN_LIMIT, sanitizeFee } from './prefs'
+import { getNotificationsEnabled, CHANNEL_SCAN_LIMIT, sanitizeFee, getNotifyPingsEnabled } from './prefs'
 import { showAppNotification } from './notify'
 import { getP2PProfile } from '../p2p/useP2P'
 
@@ -236,6 +240,7 @@ export function rotateInviteCode(groupId) {
 }
 
 export function leaveGroup(groupId) {
+  forgetPingStamps(groupId)
   groupStore.remove(groupId)
 }
 
@@ -553,17 +558,42 @@ export function acceptGroupInvitation(payload, adminAddress) {
  */
 
 /**
+ * Everyone in the group we could notify: the admin plus every member we know
+ * about, minus ourselves.
+ *
+ * A member's list is built from messages they have actually seen, so it is
+ * necessarily partial — only the admin knows the full roster. That is a
+ * limitation of the ping, not a bug: somebody who has never posted stays
+ * unknown until they do, and will not be notified before that.
+ */
+export function groupPingCandidates(group, myAddress) {
+  const everyone = [group.admin, ...Object.keys(group.members || {})]
+  return validPingTargets(everyone, myAddress)
+}
+
+/**
  * Build the transfers for one group message. Pure, so the amounts can be
  * checked without touching the network.
+ *
+ * @param {string[]} pingTargets wallet addresses to notify (already budgeted)
  */
-export function buildGroupTransfers({ group, myAddress }) {
+export function buildGroupTransfers({ group, myAddress, pingTargets = [] }) {
   const cost = Math.max(MIN_GROUP_MSG_COST, sanitizeFee(group.msgCost))
   const transfers = [
     // Transport: puts the transaction in the group's history so members see it.
     { to: group.address, amount: MIN_GROUP_MSG_COST },
   ]
+  const paidDirectly = new Set()
   if (cost > 0 && group.admin && group.admin !== myAddress) {
     transfers.push({ to: group.admin, amount: cost })
+    paidDirectly.add(group.admin)
+  }
+
+  // Notification pings. The admin is skipped when the message cost already
+  // reaches their wallet — that transfer notifies them by itself.
+  for (const addr of pingTargets) {
+    if (addr === myAddress || paidDirectly.has(addr)) continue
+    transfers.push({ to: addr, amount: MIN_GROUP_MSG_COST, optional: true })
   }
   return { transfers, cost }
 }
@@ -642,8 +672,27 @@ export async function sendGroupMessage({ connection, publicKey, groupId, text, r
   })
   if (memoByteLength(memo) > MAX_MEMO_BYTES) throw new Error('MEMO_TOO_LONG')
 
-  const { transfers } = buildGroupTransfers({ group, myAddress: publicKey.toBase58() })
+  const myAddress = publicKey.toBase58()
+
+  // How many members can be notified depends on how long this message is: every
+  // transfer eats into the same 1232-byte packet. Measure the message-only
+  // transaction, spend what is left on pings, and rotate through the group over
+  // successive messages so a large group is not permanently split into the
+  // notified and the ignored.
+  let pingTargets = []
+  if (getNotifyPingsEnabled()) {
+    const candidates = groupPingCandidates(group, myAddress)
+    if (candidates.length) {
+      const base = buildGroupTransfers({ group, myAddress })
+      const baseSize = estimateTransactionSize(memo, base.transfers.length)
+      const budget = pingBudget(baseSize, candidates.length)
+      pingTargets = selectPingTargets(candidates, budget, getPingStamps(groupId))
+    }
+  }
+
+  const { transfers } = buildGroupTransfers({ group, myAddress, pingTargets })
   const sig = await sendMemoTransaction({ connection, publicKey, memo, transfers, withAutoSOL })
+  if (pingTargets.length) touchPingStamps(groupId, pingTargets)
 
   groupStore.appendLocal(groupId, {
     id: sig,
