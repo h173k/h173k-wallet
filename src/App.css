@@ -4590,3 +4590,91 @@ body {
 .msg-actions-item:hover,
 .msg-actions-item:focus-visible { background: var(--color-white-10); outline: none; }
 .msg-actions-item svg { flex-shrink: 0; opacity: 0.75; }
+
+/* === Staking (Send view) === */
+.checkbox-row--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.checkbox-row--disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+.staking-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.stake-sub-checkbox {
+  padding-left: 28px;
+}
+.staking-group .form-input:disabled,
+.send-view .form-input:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.staking-card {
+  background: var(--color-white-05);
+  border-radius: var(--border-radius-md);
+  padding: 12px 14px;
+}
+.staking-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.staking-card-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.staking-card-apy {
+  font-size: 13px;
+  color: var(--color-accent, #4ade80);
+  font-weight: 600;
+}
+.staking-refresh-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--color-white-10);
+  color: var(--color-white-70);
+  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.staking-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.staking-rows {
+  margin-top: 8px;
+}
+.staking-rows .deposit-row {
+  padding: 6px 0;
+  font-size: 13px;
+}
+.staking-profit {
+  color: var(--color-accent, #4ade80);
+}
+.staking-updated {
+  margin-top: 6px;
+  font-size: 11px;
+}
+.staking-error {
+  color: var(--color-error);
+}
+.stake-btn-row {
+  display: flex;
+  gap: 10px;
+}
+.stake-btn-row .btn-action {
+  flex: 1 1 0;
+  padding-left: 8px;
+  padding-right: 8px;
+  font-size: 16px;
+}
+.stake-confirm-hint {
+  margin: 8px 0 12px;
+}

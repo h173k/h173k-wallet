@@ -49,6 +49,14 @@ import { useEscrowProgram, payReferralBonusSafe } from './hooks/useEscrow'
 
 // Lottery (Win h173k)
 import LotteryView from './lottery/LotteryView'
+import {
+  fetchStakingState, lookupBonusCode, sendStake, sendUnstake, sendClaimProfit,
+  stakingErrorName, USER_STAKE_RENT_SOL,
+} from './staking/staking'
+import {
+  positionSummary, computeApy, sharesToUnstake, sharesForAmount, simulateSync,
+  parseAmountToRaw, rawToNumber, rawToInputString, U64_MAX, MIN_APY,
+} from './staking/stakingMath'
 import './lottery/lottery.css'
 
 // P2P Marketplace
@@ -1752,6 +1760,210 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const { getQuote: getUsdtQuote, estimateSendAsUsdtSOL } = usdtSwap
   const usdValue = toUSD && amount ? toUSD(parseFloat(amount) || 0) : null
 
+  // ===== STAKING =====
+  // Contract data is read ONLY: once when this screen opens, on the refresh button,
+  // and right before an action the user confirmed. No polling, and no transaction is
+  // ever sent just to read values (pending bonuses are simulated locally).
+  const [stakeState, setStakeState] = useState(null)       // fetchStakingState() result
+  const [stakeLoading, setStakeLoading] = useState(false)
+  const [stakeLoadFailed, setStakeLoadFailed] = useState(false)
+  const [stakeMode, setStakeMode] = useState(null)         // null | 'stake' | 'add' | 'unstake'
+  const [bonusCode, setBonusCode] = useState('')
+  const [stakeFeeReserveH173K, setStakeFeeReserveH173K] = useState(0)
+  const [stakeConfirm, setStakeConfirm] = useState(null)   // pending action shown on the confirm screen
+  const [stakeDone, setStakeDone] = useState(null)         // { action, amount, sig }
+  const [stakeBusy, setStakeBusy] = useState(false)        // preparing an action (fresh read)
+
+  const loadStaking = useCallback(async () => {
+    if (!connection || !publicKey) return null
+    setStakeLoading(true)
+    try {
+      const s = await fetchStakingState(connection, publicKey)
+      setStakeState(s)
+      setStakeLoadFailed(false)
+      return s
+    } catch (e) {
+      console.error('Staking read failed:', e)
+      setStakeLoadFailed(true)
+      return null
+    } finally {
+      setStakeLoading(false)
+    }
+  }, [connection, publicKey])
+
+  // One read when the Send screen opens (needed to know Stake vs Unstake and to show APY).
+  useEffect(() => { loadStaking() }, [loadStaking])
+
+  const stakingAvailable = !!stakeState?.available
+  const stakingAllowed = stakingAvailable && !stakeState.isAdmin
+  const stakeSummary = useMemo(
+    () => (stakingAvailable ? positionSummary(stakeState.pool, stakeState.user) : null),
+    [stakingAvailable, stakeState]
+  )
+  const apyInfo = useMemo(() => (stakingAvailable ? computeApy(stakeState.pool) : null), [stakingAvailable, stakeState])
+  const isStaker = !!stakeSummary && stakeSummary.shares > 0n
+  // Bonus code field: first stake always; Add stake only once the previous bonus has
+  // ended (cap reached or never had one) — the contract allows one active bonus at a time.
+  const bonusCodeEnabled = stakeMode === 'stake' || (stakeMode === 'add' && !!stakeSummary && !stakeSummary.bonusActive)
+  const rawNum = (raw) => rawToNumber(raw, TOKEN_DECIMALS)
+  const fmtPct = (x) => formatNumber(x * 100, 2)
+
+  // A mode that no longer fits the position (e.g. after a refresh) is cleared.
+  useEffect(() => {
+    if (stakeMode === 'stake' && isStaker) setStakeMode(null)
+    if ((stakeMode === 'add' || stakeMode === 'unstake') && !isStaker) setStakeMode(null)
+  }, [stakeMode, isStaker])
+
+  const toggleStakeMode = (mode, checked) => {
+    setStakeMode(checked ? mode : null)
+    if (checked) {
+      // Staking checkboxes switch the other send options off.
+      setSendAsUsdt(false)
+      setSponsorOnce(false)
+    }
+  }
+
+  // h173k that withAutoSOL may spend buying SOL for a stake (first stake pays the
+  // UserStake account rent). Same idea as sendFeeReserveH173K for normal sends.
+  const stakeExtraSOL = stakingAvailable && !stakeState.user.exists ? USER_STAKE_RENT_SOL : 0
+  useEffect(() => {
+    if (stakeMode !== 'stake' && stakeMode !== 'add') { setStakeFeeReserveH173K(0); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const est = await estimateAutoSOLCostH173K(stakeExtraSOL)
+        if (!cancelled) setStakeFeeReserveH173K(est.estimateFailed ? 0 : (est.h173kForSwap || 0))
+      } catch { if (!cancelled) setStakeFeeReserveH173K(0) }
+    })()
+    return () => { cancelled = true }
+  }, [stakeMode, stakeExtraSOL, estimateAutoSOLCostH173K])
+
+  const prepareStake = async () => {
+    const amountRaw = parseAmountToRaw(amount, TOKEN_DECIMALS)
+    if (!amountRaw || amountRaw <= 0n) { showToast(t('main.enterValidAmount'), 'error'); return }
+    const amountNum = rawNum(amountRaw)
+    setStakeBusy(true)
+    try {
+      const fresh = await loadStaking()
+      if (!fresh?.available) { showToast(t('staking.loadFailed'), 'error'); return }
+      if (fresh.isAdmin) { showToast(t('staking.adminCannotStake'), 'error'); return }
+      const extraSOL = fresh.user.exists ? 0 : USER_STAKE_RENT_SOL
+      const est = await estimateAutoSOLCostH173K(extraSOL)
+      if (est.willSwap && !est.canSwap) { showToast(t('send.errNeedSolDeposit'), 'error'); return }
+      const feeReserve = est.estimateFailed ? 0 : (est.h173kForSwap || 0)
+      setStakeFeeReserveH173K(feeReserve)
+      if (amountNum + feeReserve > balance) {
+        showToast(t('send.errAmountPlusSwap', {
+          amt: formatH173K(amountNum), swap: formatH173K(feeReserve),
+          total: formatH173K(amountNum + feeReserve), have: formatH173K(balance),
+          max: formatH173K(Math.max(0, balance - feeReserve)),
+        }), 'error')
+        return
+      }
+      const { pool: syncedPool } = simulateSync(fresh.pool, fresh.user)
+      if (sharesForAmount(syncedPool, amountRaw) === 0n) { showToast(t('staking.errors.TooSmallDeposit'), 'error'); return }
+
+      let bonus = null
+      const code = bonusCode.trim()
+      const codeAllowed = stakeMode === 'stake' || (stakeMode === 'add' && !simulateSync(fresh.pool, fresh.user).user.bonusActive)
+      if (codeAllowed && code) {
+        if (simulateSync(fresh.pool, fresh.user).user.bonusActive) {
+          showToast(t('staking.errors.BonusAlreadyActive'), 'error'); return
+        }
+        const found = await lookupBonusCode(connection, fresh.poolPda, publicKey, code)
+        if (!found) { showToast(t('staking.errors.InvalidCode'), 'error'); return }
+        bonus = { code, pda: found.pda, bonusBps: found.bonusBps, bonusCap: found.bonusCap }
+      }
+      setStakeConfirm({ action: stakeMode, amountRaw, bonus, extraSOL })
+    } catch (e) {
+      console.error('prepareStake:', e)
+      showToast(t('send.txFailed', { msg: e.message }), 'error')
+    } finally { setStakeBusy(false) }
+  }
+
+  const prepareUnstake = async () => {
+    setStakeBusy(true)
+    try {
+      const fresh = await loadStaking()
+      if (!fresh?.available) { showToast(t('staking.loadFailed'), 'error'); return }
+      const sum = positionSummary(fresh.pool, fresh.user)
+      if (sum.shares === 0n) { showToast(t('staking.errors.InsufficientShares'), 'error'); return }
+      let plan
+      if (!amount || !amount.trim()) {
+        plan = { shares: U64_MAX, expected: sum.value, all: true }
+      } else {
+        const amountRaw = parseAmountToRaw(amount, TOKEN_DECIMALS)
+        if (!amountRaw || amountRaw <= 0n) { showToast(t('main.enterValidAmount'), 'error'); return }
+        try { plan = sharesToUnstake(fresh.pool, fresh.user, amountRaw) } catch (e) {
+          if (e.message === 'EXCEEDS') {
+            showToast(t('staking.errExceeds', { n: formatH173K(rawNum(sum.value)) }), 'error'); return
+          }
+          throw e
+        }
+      }
+      setStakeConfirm({
+        action: 'unstake', shares: plan.shares, expected: plan.expected, all: plan.all,
+        remaining: plan.all ? 0n : sum.value - plan.expected, endsBonus: plan.all && sum.bonusActive,
+      })
+    } catch (e) {
+      console.error('prepareUnstake:', e)
+      showToast(t('send.txFailed', { msg: e.message }), 'error')
+    } finally { setStakeBusy(false) }
+  }
+
+  const prepareClaim = async () => {
+    setStakeBusy(true)
+    try {
+      const fresh = await loadStaking()
+      if (!fresh?.available) { showToast(t('staking.loadFailed'), 'error'); return }
+      const sum = positionSummary(fresh.pool, fresh.user)
+      if (sum.claimable === 0n) { showToast(t('staking.errors.NoProfit'), 'error'); return }
+      setStakeConfirm({ action: 'claim', expected: sum.claimable, remaining: sum.value - sum.claimable })
+    } catch (e) {
+      console.error('prepareClaim:', e)
+      showToast(t('send.txFailed', { msg: e.message }), 'error')
+    } finally { setStakeBusy(false) }
+  }
+
+  const executeStakeAction = async () => {
+    const c = stakeConfirm
+    if (!c || !stakeState?.available) return
+    setLoading(true)
+    try {
+      const onSwap = (swapInfo) => {
+        if (swapInfo.status === 'swapping') showToast(t('send.swappingH173kForSol'), 'info')
+        else if (swapInfo.status === 'swapped') {
+          showToast(t('main.swappedForSol', { h: formatSmartNumber(swapInfo.h173kUsed), s: swapInfo.solReceived.toFixed(4) }), 'info')
+          if (onRefresh) onRefresh()
+        }
+      }
+      let sig
+      if (c.action === 'stake' || c.action === 'add') {
+        sig = await withAutoSOL(() => sendStake(connection, sessionWallet, stakeState, c.amountRaw, c.bonus), onSwap, c.extraSOL || 0)
+      } else if (c.action === 'unstake') {
+        sig = await withAutoSOL(() => sendUnstake(connection, sessionWallet, stakeState, c.shares), onSwap, 0)
+      } else {
+        sig = await withAutoSOL(() => sendClaimProfit(connection, sessionWallet, stakeState), onSwap, 0)
+      }
+      setStakeDone({ action: c.action, amount: rawNum(c.amountRaw ?? c.expected ?? 0n), sig })
+      setStakeConfirm(null)
+      showToast(t('send.txSent'), 'success')
+      loadStaking()
+      onRefresh()
+    } catch (err) {
+      console.error('Staking error:', err)
+      const name = stakingErrorName(err)
+      if (err.message?.includes('Wallet is locked') || !sessionWallet.isUnlocked()) {
+        showToast(t('common.sessionExpired'), 'error')
+      } else if (name && t(`staking.errors.${name}`) !== `staking.errors.${name}`) {
+        showToast(t(`staking.errors.${name}`), 'error')
+      } else {
+        showToast(t('send.txFailed', { msg: err.message }), 'error')
+      }
+    } finally { setLoading(false) }
+  }
+
+
   // Live estimate for USDT mode: probable USDT output + price impact (the "slippage"
   // shown in the UI), plus the h173k that would be reserved to buy SOL for fees.
   useEffect(() => {
@@ -2073,6 +2285,60 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     finally { setLoading(false) }
   }
   
+  if (stakeDone) {
+    const titles = { stake: 'staking.successStake', add: 'staking.successAdd', unstake: 'staking.successUnstake', claim: 'staking.successClaim' }
+    return (
+      <div className="send-view">
+        <div className="success-card">
+          <div className="success-icon">✓</div>
+          <h2>{t(titles[stakeDone.action])}</h2>
+          <p className="success-amount">{stakeDone.action === 'unstake' || stakeDone.action === 'claim' ? '≈ ' : ''}{formatH173K(stakeDone.amount)} h173k</p>
+          <a href={`https://solscan.io/tx/${stakeDone.sig}`} target="_blank" rel="noopener noreferrer" className="tx-link">{t('send.viewOnSolscan')}</a>
+          <button className="btn btn-primary" onClick={onBack}>{t('common.done')}</button>
+        </div>
+      </div>
+    )
+  }
+
+  if (stakeConfirm) {
+    const c = stakeConfirm
+    const titles = { stake: 'staking.confirmStakeTitle', add: 'staking.confirmAddTitle', unstake: 'staking.confirmUnstakeTitle', claim: 'staking.confirmClaimTitle' }
+    const isDeposit = c.action === 'stake' || c.action === 'add'
+    return (
+      <div className="send-view">
+        <div className="view-header"><button className="back-btn" onClick={() => setStakeConfirm(null)} disabled={loading}><BackIcon size={16} /> {t('common.back')}</button><h2>{t(titles[c.action])}</h2></div>
+        <div className="confirm-card">
+          {isDeposit ? (
+            <div className="confirm-row"><span className="confirm-label">{t('staking.amountToStake')}</span><span className="confirm-value">{formatH173K(rawNum(c.amountRaw))} h173k</span></div>
+          ) : (
+            <div className="confirm-row"><span className="confirm-label">{t('staking.youReceive')}</span><span className="confirm-value">≈ {formatH173K(rawNum(c.expected))} h173k</span></div>
+          )}
+          {c.bonus && (
+            <div className="confirm-row referral-row">
+              <span className="confirm-label">{t('staking.bonusCodeRow')}</span>
+              <span className="confirm-value referral-value">{t('staking.bonusTerms', { pct: formatNumber(c.bonus.bonusBps / 100, 2), cap: formatH173K(rawNum(c.bonus.bonusCap)) })}</span>
+            </div>
+          )}
+          {!isDeposit && (
+            <div className="confirm-row"><span className="confirm-label">{t('staking.remainingStake')}</span><span className="confirm-value">≈ {formatH173K(rawNum(c.remaining || 0n))} h173k</span></div>
+          )}
+          {isDeposit && c.extraSOL > 0 && (
+            <div className="confirm-row"><span className="confirm-label">{t('staking.accountRent')}</span><span className="confirm-value">{formatNumber(c.extraSOL, 6)} SOL</span></div>
+          )}
+          {isDeposit && stakeFeeReserveH173K > 0 && (
+            <div className="confirm-row"><span className="confirm-label">{t('send.solReserve')}</span><span className="confirm-value">{formatH173K(stakeFeeReserveH173K)} h173k</span></div>
+          )}
+          <div className="confirm-row"><span className="confirm-label">{t('send.networkFee')}</span><span className="confirm-value">~0.000005 SOL</span></div>
+          {c.endsBonus && <div className="impact-warning">{t('staking.endsBonusWarning')}</div>}
+          {isDeposit && <div className="form-hint stake-confirm-hint">{t('staking.infoLine', { min: fmtPct(MIN_APY) })}</div>}
+          <button className="btn btn-primary btn-action" onClick={executeStakeAction} disabled={loading || swapLoading}>
+            {loading ? (swapLoading ? t('send.swappingSol') : t('staking.processing')) : t('staking.confirmBtn')}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (txSignature) {
     return (
       <div className="send-view">
@@ -2137,17 +2403,33 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   
   return (
     <div className="send-view">
-      <div className="view-header"><button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button><h2>{t('send.title')}</h2></div>
-      <div className="form-group">
-        <label className="form-label">{t('send.recipientLabel')}</label>
-        <div className="input-with-action">
-          <input type="text" className="form-input" placeholder={t('send.recipientPlaceholder')} value={recipient} onChange={(e) => setRecipient(e.target.value)} />
-          <button className="input-action-btn" onClick={() => setShowScanner(true)}><ScanIcon size={18} /></button>
+      <div className="view-header"><button className="back-btn" onClick={onBack}><BackIcon size={16} /> {t('common.back')}</button><h2>{stakeMode ? t('staking.title') : t('send.title')}</h2></div>
+      {stakeMode ? (
+        <div className="form-group">
+          <label className="form-label">{t('staking.bonusCodeLabel')}</label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder={t('staking.bonusCodePlaceholder')}
+            value={bonusCodeEnabled ? bonusCode : ''}
+            onChange={(e) => setBonusCode(e.target.value)}
+            disabled={!bonusCodeEnabled}
+            autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          />
+          {stakeMode === 'add' && !bonusCodeEnabled && <div className="form-hint">{t('staking.bonusCodeAddHint')}</div>}
         </div>
-      </div>
+      ) : (
+        <div className="form-group">
+          <label className="form-label">{t('send.recipientLabel')}</label>
+          <div className="input-with-action">
+            <input type="text" className="form-input" placeholder={t('send.recipientPlaceholder')} value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+            <button className="input-action-btn" onClick={() => setShowScanner(true)}><ScanIcon size={18} /></button>
+          </div>
+        </div>
+      )}
       <div className="form-group">
-        <label className="checkbox-row">
-          <input type="checkbox" checked={sendAsUsdt} onChange={(e) => setSendAsUsdt(e.target.checked)} />
+        <label className={`checkbox-row${stakeMode ? ' checkbox-row--disabled' : ''}`}>
+          <input type="checkbox" checked={sendAsUsdt} disabled={!!stakeMode} onChange={(e) => setSendAsUsdt(e.target.checked)} />
           <span>{t('send.sendAsUsdt')}</span>
         </label>
         {sendAsUsdt && (
@@ -2161,24 +2443,101 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       </div>
       {!globalSponsor && !sendAsUsdt && (
         <div className="form-group">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={sponsorOnce} onChange={(e) => setSponsorOnce(e.target.checked)} />
+          <label className={`checkbox-row${stakeMode ? ' checkbox-row--disabled' : ''}`}>
+            <input type="checkbox" checked={sponsorOnce} disabled={!!stakeMode} onChange={(e) => setSponsorOnce(e.target.checked)} />
             <span>{t('send.sponsorOnce')}</span>
           </label>
           {sponsorOnce && <div className="form-hint">{t('send.sponsorOnceHint')}</div>}
         </div>
       )}
+
+      {/* ===== STAKING ===== */}
+      {(stakingAvailable || stakeLoading || stakeLoadFailed) && (
+        <div className="form-group staking-group">
+          {stakingAllowed && !isStaker && (
+            <label className="checkbox-row">
+              <input type="checkbox" checked={stakeMode === 'stake'} onChange={(e) => toggleStakeMode('stake', e.target.checked)} />
+              <span>{t('staking.stake')}</span>
+            </label>
+          )}
+          {stakingAllowed && isStaker && (
+            <>
+              <label className="checkbox-row">
+                <input type="checkbox" checked={stakeMode === 'unstake'} onChange={(e) => toggleStakeMode('unstake', e.target.checked)} />
+                <span>{t('staking.unstake')}</span>
+              </label>
+              <label className="checkbox-row stake-sub-checkbox">
+                <input type="checkbox" checked={stakeMode === 'add'} onChange={(e) => toggleStakeMode('add', e.target.checked)} />
+                <span>{t('staking.addStake')}</span>
+              </label>
+            </>
+          )}
+
+          <div className="staking-card">
+            <div className="staking-card-head">
+              <span className="staking-card-title">{t('staking.title')}</span>
+              {apyInfo && <span className="staking-card-apy">{t('staking.apy', { apy: fmtPct(apyInfo.apy) })}</span>}
+              <button
+                type="button"
+                className="staking-refresh-btn"
+                onClick={() => loadStaking()}
+                disabled={stakeLoading}
+                aria-label={t('staking.refresh')}
+                title={t('staking.refresh')}
+              >{stakeLoading ? '…' : '↻'}</button>
+            </div>
+            {stakeLoadFailed && !stakingAvailable && <div className="form-hint staking-error">{t('staking.loadFailed')}</div>}
+            {stakeLoading && !stakeState && <div className="form-hint">{t('staking.loading')}</div>}
+            {stakingAvailable && (
+              <>
+                <div className="form-hint">{t('staking.infoLine', { min: fmtPct(MIN_APY) })}</div>
+                {stakeState.isAdmin && <div className="form-hint staking-error">{t('staking.adminCannotStake')}</div>}
+                {isStaker && (
+                  <div className="staking-rows">
+                    <div className="deposit-row"><span>{t('staking.staked')}</span><span>{formatH173K(rawNum(stakeSummary.value))} h173k</span></div>
+                    <div className="deposit-row"><span>{t('staking.principal')}</span><span>{formatH173K(rawNum(stakeSummary.principal))} h173k</span></div>
+                    <div className="deposit-row"><span>{t('staking.profitAvailable')}</span><span className="staking-profit">{formatH173K(rawNum(stakeSummary.claimable))} h173k</span></div>
+                    <div className="deposit-row"><span>{t('staking.lifetimeProfit')}</span><span>{formatH173K(rawNum(stakeSummary.lifetimeProfit))} h173k</span></div>
+                    {stakeSummary.bonusActive && (
+                      <div className="deposit-row"><span>{t('staking.bonus')}</span><span>{t('staking.bonusValue', {
+                        pct: formatNumber(stakeSummary.bonusBps / 100, 2),
+                        accrued: formatH173K(rawNum(stakeSummary.bonusAccrued)),
+                        cap: formatH173K(rawNum(stakeSummary.bonusCap)),
+                      })}</span></div>
+                    )}
+                    <div className="deposit-row"><span>{t('staking.poolShare')}</span><span>{formatNumber(stakeSummary.poolShare * 100, 4)}%</span></div>
+                  </div>
+                )}
+                {stakeState.fetchedAt && (
+                  <div className="form-hint staking-updated">{t('staking.updated', { time: new Date(stakeState.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })}</div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="form-group">
         <label className="form-label">{t('send.amountLabel')}</label>
         <div className="amount-input-wrapper">
           <input type="number" className="form-input" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} step="0.01" />
-          <button className="max-btn" onClick={() => setAmount(Math.max(0, balance - (sendAsUsdt ? usdtFeeReserveH173K : sendFeeReserveH173K)).toString())}>MAX</button>
+          <button className="max-btn" onClick={() => {
+            if (stakeMode === 'unstake' && stakeSummary) setAmount(rawToInputString(stakeSummary.value, TOKEN_DECIMALS))
+            else if (stakeMode) setAmount(Math.max(0, balance - stakeFeeReserveH173K).toString())
+            else setAmount(Math.max(0, balance - (sendAsUsdt ? usdtFeeReserveH173K : sendFeeReserveH173K)).toString())
+          }}>MAX</button>
         </div>
         <div className="form-hint-row">
-          <span className="form-hint">{t('send.available', { n: formatH173K(balance) })}</span>
+          <span className="form-hint">{stakeMode === 'unstake' && stakeSummary
+            ? t('staking.stakedAvailable', { n: formatH173K(rawNum(stakeSummary.value)) })
+            : t('send.available', { n: formatH173K(balance) })}</span>
           {usdValue !== null && <span className="amount-usd-preview">{formatUSD(usdValue)}</span>}
         </div>
-        {!sendAsUsdt && sendFeeReserveH173K > 0 && (
+        {stakeMode === 'unstake' && <div className="form-hint">{t('staking.unstakeHint')}</div>}
+        {(stakeMode === 'stake' || stakeMode === 'add') && stakeFeeReserveH173K > 0 && (
+          <div className="form-hint">{t('send.solReserve')}: {formatH173K(stakeFeeReserveH173K)} h173k</div>
+        )}
+        {!stakeMode && !sendAsUsdt && sendFeeReserveH173K > 0 && (
           <div className="form-hint">
             {t('send.solReserve')}: {formatH173K(sendFeeReserveH173K)} h173k
           </div>
@@ -2233,7 +2592,24 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         )
       })()}
 
-      <button className="btn btn-primary btn-action" onClick={validateAndProceed} disabled={!recipient || !amount || impactExceeded || (sendAsUsdt && (parseFloat(amount) || 0) + usdtFeeReserveH173K > balance)}>{t('common.continue')}</button>
+      {!stakeMode && (
+        <button className="btn btn-primary btn-action" onClick={validateAndProceed} disabled={!recipient || !amount || impactExceeded || (sendAsUsdt && (parseFloat(amount) || 0) + usdtFeeReserveH173K > balance)}>{t('common.continue')}</button>
+      )}
+      {(stakeMode === 'stake' || stakeMode === 'add') && (
+        <button className="btn btn-primary btn-action" onClick={prepareStake} disabled={!amount || stakeBusy}>
+          {stakeBusy ? t('staking.processing') : (stakeMode === 'stake' ? t('staking.stakeBtn') : t('staking.addStakeBtn'))}
+        </button>
+      )}
+      {stakeMode === 'unstake' && (
+        <div className="stake-btn-row">
+          <button className="btn btn-primary btn-action" onClick={prepareUnstake} disabled={stakeBusy}>
+            {amount && amount.trim() ? t('staking.unstakeAmountBtn', { n: formatH173K(parseFloat(amount) || 0) }) : t('staking.unstakeAllBtn')}
+          </button>
+          <button className="btn btn-primary btn-action" onClick={prepareClaim} disabled={stakeBusy || !stakeSummary || stakeSummary.claimable === 0n}>
+            {t('staking.claimProfitBtn')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
