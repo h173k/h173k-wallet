@@ -116,19 +116,33 @@ export function positionSummary(poolIn, userIn) {
 }
 
 /**
+ * Amounts within this distance of the whole stake mean "unstake everything"
+ * (0.000001 h173k). Covers rounding dust: the share price only ever rises, by a unit
+ * or two whenever someone else stakes/unstakes, so a value read a moment ago may be a
+ * hair below the current one — withdrawing "all but 2 base units" is never intended.
+ */
+export const UNSTAKE_ALL_TOLERANCE = 1000n
+
+/**
  * Shares to burn so the user receives AT LEAST `amount` (ceil), capped at all
- * shares. Returns U64_MAX when the request covers the whole position.
- * Computed on the synced state, because unstake() syncs first.
+ * shares. Returns U64_MAX when the request covers the whole position (within
+ * UNSTAKE_ALL_TOLERANCE either way). Computed on the synced state, because unstake()
+ * syncs first.
  */
 export function sharesToUnstake(poolIn, userIn, amount) {
   const { pool, user } = simulateSync(poolIn, userIn)
   const value = amountForShares(pool, user.shares)
   if (amount <= 0n) throw new Error('ZERO')
-  if (amount > value) throw new Error('EXCEEDS')
-  if (amount === value) return { shares: U64_MAX, expected: value, all: true }
-  let shares = (amount * pool.totalShares + pool.totalStaked - 1n) / pool.totalStaked
+  if (amount > value + UNSTAKE_ALL_TOLERANCE) throw new Error('EXCEEDS')
+  if (amount + UNSTAKE_ALL_TOLERANCE >= value) return { shares: U64_MAX, expected: value, all: true }
+  const shares = (amount * pool.totalShares + pool.totalStaked - 1n) / pool.totalStaked
   if (shares >= user.shares) return { shares: U64_MAX, expected: value, all: true }
   return { shares, expected: amountForShares(pool, shares), all: false }
+}
+
+/** True when `amount` means "everything" for a position worth `value`. */
+export function coversWholeStake(amount, value) {
+  return amount !== null && amount + UNSTAKE_ALL_TOLERANCE >= value
 }
 
 /**
@@ -170,6 +184,17 @@ export function parseAmountToRaw(str, decimals) {
   const [i, f = ''] = s.split('.')
   const frac = (f + '0'.repeat(decimals)).slice(0, decimals)
   return BigInt(i || '0') * 10n ** BigInt(decimals) + BigInt(frac || '0')
+}
+
+/**
+ * Raw → exact display string with thousands separators and every significant decimal
+ * ("1,234.645517998"). Staking shows amounts like this everywhere, so the panel, the
+ * MAX value, the confirm screen and messages always show the very same number.
+ */
+export function formatRawExact(raw, decimals) {
+  const [i, f] = rawToInputString(raw, decimals).split('.')
+  const int = BigInt(i).toLocaleString('en-US')
+  return f ? `${int}.${f}` : int
 }
 
 /** Raw → plain decimal string (for filling the amount input). */

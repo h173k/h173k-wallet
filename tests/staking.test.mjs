@@ -202,6 +202,26 @@ const val = (p, u) => Number(M.positionSummary(p, u).value) / 1e9
   ok(S.getPoolPda() instanceof PublicKey, 'pool pda')
 }
 
+// ---------- "unstake all" tolerance & exact formatting ----------
+{
+  const p = newPool(), a = newUser(), b = newUser()
+  stake(p, a, 645_518_000n); stake(p, b, 163_000_000_000n)
+  // make a's value a hair below its principal, like after a claim (rounding)
+  p.totalStaked -= 1n
+  const v = M.positionSummary(p, a).value
+  ok(M.sharesToUnstake(p, a, v - 2n).all, 'value - 2 units → all (price ticked up)')
+  ok(M.sharesToUnstake(p, a, v + 2n).all, 'value + 2 units → all (rounded display)')
+  ok(M.sharesToUnstake(p, a, v - M.UNSTAKE_ALL_TOLERANCE).all, 'exactly at tolerance → all')
+  ok(!M.sharesToUnstake(p, a, v - M.UNSTAKE_ALL_TOLERANCE - 1n).all, 'just below tolerance → partial')
+  let threw = false; try { M.sharesToUnstake(p, a, v + M.UNSTAKE_ALL_TOLERANCE + 1n) } catch (e) { threw = e.message === 'EXCEEDS' }
+  ok(threw, 'clearly above → EXCEEDS')
+  ok(M.coversWholeStake(v - 2n, v) && !M.coversWholeStake(v / 2n, v) && !M.coversWholeStake(null, v), 'coversWholeStake')
+}
+ok(M.formatRawExact(645_517_998n, 9) === '0.645517998', 'exact small')
+ok(M.formatRawExact(1_234_500_000_000n, 9) === '1,234.5', 'exact thousands')
+ok(M.formatRawExact(0n, 9) === '0', 'exact zero')
+ok(M.formatRawExact(12_345_678_123_456_789n, 9) === '12,345,678.123456789', 'exact large, no float loss')
+
 // ---------- amount parsing ----------
 ok(M.parseAmountToRaw('1.5', 9) === 1_500_000_000n, 'parse 1.5')
 ok(M.parseAmountToRaw('0.000000001', 9) === 1n, 'parse 1 base unit')

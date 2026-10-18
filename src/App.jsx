@@ -56,6 +56,7 @@ import {
 import {
   positionSummary, computeApy, sharesToUnstake, sharesForAmount, simulateSync,
   parseAmountToRaw, rawToNumber, rawToInputString, U64_MAX, MIN_APY,
+  formatRawExact, coversWholeStake, UNSTAKE_ALL_TOLERANCE,
 } from './staking/stakingMath'
 import './lottery/lottery.css'
 
@@ -1806,6 +1807,9 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   // ended (cap reached or never had one) — the contract allows one active bonus at a time.
   const bonusCodeEnabled = stakeMode === 'stake' || (stakeMode === 'add' && !!stakeSummary && !stakeSummary.bonusActive)
   const rawNum = (raw) => rawToNumber(raw, TOKEN_DECIMALS)
+  // Staking amounts are shown exactly (all 9 decimals that matter), never rounded to the
+  // display setting — otherwise the panel and the MAX value would disagree.
+  const fmtRaw = (raw) => formatRawExact(raw ?? 0n, TOKEN_DECIMALS)
   const fmtPct = (x) => formatNumber(x * 100, 2)
 
   // A mode that no longer fits the position (e.g. after a refresh) is cleared.
@@ -1829,24 +1833,26 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const clampToStaked = (v) => {
     if (stakeMode !== 'unstake' || !stakeSummary || !v) return v
     const r = parseAmountToRaw(v, TOKEN_DECIMALS)
-    return r !== null && r > stakeSummary.value ? rawToInputString(stakeSummary.value, TOKEN_DECIMALS) : v
+    return r !== null && r > stakeSummary.value + UNSTAKE_ALL_TOLERANCE ? rawToInputString(stakeSummary.value, TOKEN_DECIMALS) : v
   }
   const handleAmountChange = (raw) => {
     const v = String(raw ?? '').replace(/[^0-9.,]/g, '')
     setAmount(clampToStaked(v))
   }
-  // Switching to Unstake (or a refreshed position) re-applies the cap to what is already typed.
+  // Switching to Unstake (or a refreshed position) re-applies the cap to what is already
+  // typed, and an amount that means "everything" follows the exact current value — so the
+  // field always shows the same number as the panel.
   useEffect(() => {
     if (stakeMode !== 'unstake' || !stakeSummary || !amount) return
-    const capped = clampToStaked(amount)
-    if (capped !== amount) setAmount(capped)
+    const exact = rawToInputString(stakeSummary.value, TOKEN_DECIMALS)
+    const next = coversWholeStake(parseAmountToRaw(amount, TOKEN_DECIMALS), stakeSummary.value) ? exact : clampToStaked(amount)
+    if (next !== amount) setAmount(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stakeMode, stakeSummary])
   const unstakeIsAll = (() => {
     if (stakeMode !== 'unstake' || !stakeSummary) return false
     if (!amount || !amount.trim()) return true
-    const r = parseAmountToRaw(amount, TOKEN_DECIMALS)
-    return r !== null && r >= stakeSummary.value
+    return coversWholeStake(parseAmountToRaw(amount, TOKEN_DECIMALS), stakeSummary.value)
   })()
 
   // h173k that withAutoSOL may spend buying SOL for a stake (first stake pays the
@@ -1920,18 +1926,12 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       } else {
         const amountRaw = parseAmountToRaw(amount, TOKEN_DECIMALS)
         if (!amountRaw || amountRaw <= 0n) { showToast(t('main.enterValidAmount'), 'error'); return }
-        // Rounding dust: the displayed value is rounded, the real one may be e.g.
-        // 0.999999999. Up to 0.000001 h173k above the stake counts as "everything".
-        const DUST = 1000n
-        if (amountRaw >= sum.value && amountRaw - sum.value <= DUST) {
-          plan = { shares: U64_MAX, expected: sum.value, all: true }
-        } else {
-          try { plan = sharesToUnstake(fresh.pool, fresh.user, amountRaw) } catch (e) {
-            if (e.message === 'EXCEEDS') {
-              showToast(t('staking.errExceeds', { n: formatH173K(rawNum(sum.value)) }), 'error'); return
-            }
-            throw e
+        // Within UNSTAKE_ALL_TOLERANCE of the stake (either way) = unstake everything.
+        try { plan = sharesToUnstake(fresh.pool, fresh.user, amountRaw) } catch (e) {
+          if (e.message === 'EXCEEDS') {
+            showToast(t('staking.errExceeds', { n: fmtRaw(sum.value) }), 'error'); return
           }
+          throw e
         }
       }
       setStakeConfirm({
@@ -1978,7 +1978,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       } else {
         sig = await withAutoSOL(() => sendClaimProfit(connection, sessionWallet, stakeState), onSwap, 0)
       }
-      setStakeDone({ action: c.action, amount: rawNum(c.amountRaw ?? c.expected ?? 0n), sig })
+      setStakeDone({ action: c.action, amountRaw: c.amountRaw ?? c.expected ?? 0n, sig })
       setStakeConfirm(null)
       showToast(t('send.txSent'), 'success')
       loadStaking()
@@ -2325,7 +2325,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         <div className="success-card">
           <div className="success-icon">✓</div>
           <h2>{t(titles[stakeDone.action])}</h2>
-          <p className="success-amount">{stakeDone.action === 'unstake' || stakeDone.action === 'claim' ? '≈ ' : ''}{formatH173K(stakeDone.amount)} h173k</p>
+          <p className="success-amount">{stakeDone.action === 'unstake' || stakeDone.action === 'claim' ? '≈ ' : ''}{fmtRaw(stakeDone.amountRaw)} h173k</p>
           <a href={`https://solscan.io/tx/${stakeDone.sig}`} target="_blank" rel="noopener noreferrer" className="tx-link">{t('send.viewOnSolscan')}</a>
           <button className="btn btn-primary" onClick={onBack}>{t('common.done')}</button>
         </div>
@@ -2342,18 +2342,18 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         <div className="view-header"><button className="back-btn" onClick={() => setStakeConfirm(null)} disabled={loading}><BackIcon size={16} /> {t('common.back')}</button><h2>{t(titles[c.action])}</h2></div>
         <div className="confirm-card">
           {isDeposit ? (
-            <div className="confirm-row"><span className="confirm-label">{t('staking.amountToStake')}</span><span className="confirm-value">{formatH173K(rawNum(c.amountRaw))} h173k</span></div>
+            <div className="confirm-row"><span className="confirm-label">{t('staking.amountToStake')}</span><span className="confirm-value">{fmtRaw(c.amountRaw)} h173k</span></div>
           ) : (
-            <div className="confirm-row"><span className="confirm-label">{t('staking.youReceive')}</span><span className="confirm-value">≈ {formatH173K(rawNum(c.expected))} h173k</span></div>
+            <div className="confirm-row"><span className="confirm-label">{t('staking.youReceive')}</span><span className="confirm-value">≈ {fmtRaw(c.expected)} h173k</span></div>
           )}
           {c.bonus && (
             <div className="confirm-row referral-row">
               <span className="confirm-label">{t('staking.bonusCodeRow')}</span>
-              <span className="confirm-value referral-value">{t('staking.bonusTerms', { pct: formatNumber(c.bonus.bonusBps / 100, 2), cap: formatH173K(rawNum(c.bonus.bonusCap)) })}</span>
+              <span className="confirm-value referral-value">{t('staking.bonusTerms', { pct: formatNumber(c.bonus.bonusBps / 100, 2), cap: fmtRaw(c.bonus.bonusCap) })}</span>
             </div>
           )}
           {!isDeposit && (
-            <div className="confirm-row"><span className="confirm-label">{t('staking.remainingStake')}</span><span className="confirm-value">≈ {formatH173K(rawNum(c.remaining || 0n))} h173k</span></div>
+            <div className="confirm-row"><span className="confirm-label">{t('staking.remainingStake')}</span><span className="confirm-value">≈ {fmtRaw(c.remaining || 0n)} h173k</span></div>
           )}
           {isDeposit && c.extraSOL > 0 && (
             <div className="confirm-row"><span className="confirm-label">{t('staking.accountRent')}</span><span className="confirm-value">{formatNumber(c.extraSOL, 6)} SOL</span></div>
@@ -2533,15 +2533,15 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
                 {stakeState.isAdmin && <div className="form-hint staking-error">{t('staking.adminCannotStake')}</div>}
                 {isStaker && (
                   <div className="staking-rows">
-                    <div className="deposit-row"><span>{t('staking.staked')}</span><span>{formatH173K(rawNum(stakeSummary.value))} h173k</span></div>
-                    <div className="deposit-row"><span>{t('staking.principal')}</span><span>{formatH173K(rawNum(stakeSummary.principal))} h173k</span></div>
-                    <div className="deposit-row"><span>{t('staking.profitAvailable')}</span><span className="staking-profit">{formatH173K(rawNum(stakeSummary.claimable))} h173k</span></div>
-                    <div className="deposit-row"><span>{t('staking.lifetimeProfit')}</span><span>{formatH173K(rawNum(stakeSummary.lifetimeProfit))} h173k</span></div>
+                    <div className="deposit-row"><span>{t('staking.staked')}</span><span>{fmtRaw(stakeSummary.value)} h173k</span></div>
+                    <div className="deposit-row"><span>{t('staking.principal')}</span><span>{fmtRaw(stakeSummary.principal)} h173k</span></div>
+                    <div className="deposit-row"><span>{t('staking.profitAvailable')}</span><span className="staking-profit">{fmtRaw(stakeSummary.claimable)} h173k</span></div>
+                    <div className="deposit-row"><span>{t('staking.lifetimeProfit')}</span><span>{fmtRaw(stakeSummary.lifetimeProfit)} h173k</span></div>
                     {stakeSummary.bonusActive && (
                       <div className="deposit-row"><span>{t('staking.bonus')}</span><span>{t('staking.bonusValue', {
                         pct: formatNumber(stakeSummary.bonusBps / 100, 2),
-                        accrued: formatH173K(rawNum(stakeSummary.bonusAccrued)),
-                        cap: formatH173K(rawNum(stakeSummary.bonusCap)),
+                        accrued: fmtRaw(stakeSummary.bonusAccrued),
+                        cap: fmtRaw(stakeSummary.bonusCap),
                       })}</span></div>
                     )}
                     <div className="deposit-row"><span>{t('staking.poolShare')}</span><span>{formatNumber(stakeSummary.poolShare * 100, 4)}%</span></div>
@@ -2572,7 +2572,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         </div>
         <div className="form-hint-row">
           <span className="form-hint">{stakeMode === 'unstake' && stakeSummary
-            ? t('staking.stakedAvailable', { n: formatH173K(rawNum(stakeSummary.value)) })
+            ? t('staking.stakedAvailable', { n: fmtRaw(stakeSummary.value) })
             : t('send.available', { n: formatH173K(balance) })}</span>
           {usdValue !== null && <span className="amount-usd-preview">{formatUSD(usdValue)}</span>}
         </div>
@@ -2646,7 +2646,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       {stakeMode === 'unstake' && (
         <div className="stake-btn-row">
           <button className="btn btn-primary btn-action" onClick={prepareUnstake} disabled={stakeBusy}>
-            {unstakeIsAll ? t('staking.unstakeAllBtn') : t('staking.unstakeAmountBtn', { n: formatH173K(parseFloat(amount) || 0) })}
+            {unstakeIsAll ? t('staking.unstakeAllBtn') : t('staking.unstakeAmountBtn', { n: fmtRaw(parseAmountToRaw(amount, TOKEN_DECIMALS) ?? 0n) })}
           </button>
           <button className="btn btn-primary btn-action" onClick={prepareClaim} disabled={stakeBusy || !stakeSummary || stakeSummary.claimable === 0n}>
             {t('staking.claimProfitBtn')}
