@@ -127,17 +127,28 @@ export function decodeBonusCode(data) {
 }
 
 /**
- * Single read of the staking state. Returns
- *   { available:false }                     — pool not initialized
+ * Single read of the staking state (ONE getMultipleAccountsInfo: program, pool, user).
+ * Returns
+ *   { available:false, reason, poolPda }   — staking not usable; reason:
+ *        'program_missing' : no executable program at STAKING_PROGRAM_ID on this RPC/cluster
+ *        'pool_missing'    : program exists but the pool for TOKEN_MINT was not initialized
+ *        'pool_invalid'    : an account exists at the pool address but is not a valid Pool
  *   { available:true, pool, user, poolPda, userPda, isAdmin }
  */
 export async function fetchStakingState(connection, owner) {
   const poolPda = getPoolPda()
   const userPda = owner ? getUserStakePda(poolPda, owner) : null
-  const keys = userPda ? [poolPda, userPda] : [poolPda]
-  const [poolInfo, userInfo] = await connection.getMultipleAccountsInfo(keys, 'confirmed')
-  if (!poolInfo || !poolInfo.owner.equals(STAKING_PROGRAM_ID)) return { available: false }
-  const pool = decodePool(poolInfo.data)
+  const keys = [STAKING_PROGRAM_ID, poolPda, ...(userPda ? [userPda] : [])]
+  const [programInfo, poolInfo, userInfo] = await connection.getMultipleAccountsInfo(keys, 'confirmed')
+  const unavailable = (reason) => {
+    console.warn(`[staking] unavailable: ${reason} (program ${STAKING_PROGRAM_ID.toBase58()}, pool ${poolPda.toBase58()}, mint ${TOKEN_MINT.toBase58()})`)
+    return { available: false, reason, poolPda }
+  }
+  if (!programInfo || !programInfo.executable) return unavailable('program_missing')
+  if (!poolInfo) return unavailable('pool_missing')
+  if (!poolInfo.owner.equals(STAKING_PROGRAM_ID)) return unavailable('pool_invalid')
+  let pool
+  try { pool = decodePool(poolInfo.data) } catch { return unavailable('pool_invalid') }
   let user = emptyUser()
   if (userInfo && userInfo.owner.equals(STAKING_PROGRAM_ID)) user = decodeUserStake(userInfo.data)
   return {

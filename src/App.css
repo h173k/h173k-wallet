@@ -4678,3 +4678,9 @@ body {
 .stake-confirm-hint {
   margin: 8px 0 12px;
 }
+.staking-pool-addr {
+  margin-top: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--color-white-50);
+}

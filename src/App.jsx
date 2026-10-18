@@ -1823,6 +1823,32 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     }
   }
 
+  // Amount field: never negative (no '-', '+', exponent — also when pasted). In Unstake
+  // mode it cannot exceed the staked value: anything above is clamped to the exact value,
+  // which then means "unstake everything".
+  const clampToStaked = (v) => {
+    if (stakeMode !== 'unstake' || !stakeSummary || !v) return v
+    const r = parseAmountToRaw(v, TOKEN_DECIMALS)
+    return r !== null && r > stakeSummary.value ? rawToInputString(stakeSummary.value, TOKEN_DECIMALS) : v
+  }
+  const handleAmountChange = (raw) => {
+    const v = String(raw ?? '').replace(/[^0-9.,]/g, '')
+    setAmount(clampToStaked(v))
+  }
+  // Switching to Unstake (or a refreshed position) re-applies the cap to what is already typed.
+  useEffect(() => {
+    if (stakeMode !== 'unstake' || !stakeSummary || !amount) return
+    const capped = clampToStaked(amount)
+    if (capped !== amount) setAmount(capped)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stakeMode, stakeSummary])
+  const unstakeIsAll = (() => {
+    if (stakeMode !== 'unstake' || !stakeSummary) return false
+    if (!amount || !amount.trim()) return true
+    const r = parseAmountToRaw(amount, TOKEN_DECIMALS)
+    return r !== null && r >= stakeSummary.value
+  })()
+
   // h173k that withAutoSOL may spend buying SOL for a stake (first stake pays the
   // UserStake account rent). Same idea as sendFeeReserveH173K for normal sends.
   const stakeExtraSOL = stakingAvailable && !stakeState.user.exists ? USER_STAKE_RENT_SOL : 0
@@ -1894,11 +1920,18 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       } else {
         const amountRaw = parseAmountToRaw(amount, TOKEN_DECIMALS)
         if (!amountRaw || amountRaw <= 0n) { showToast(t('main.enterValidAmount'), 'error'); return }
-        try { plan = sharesToUnstake(fresh.pool, fresh.user, amountRaw) } catch (e) {
-          if (e.message === 'EXCEEDS') {
-            showToast(t('staking.errExceeds', { n: formatH173K(rawNum(sum.value)) }), 'error'); return
+        // Rounding dust: the displayed value is rounded, the real one may be e.g.
+        // 0.999999999. Up to 0.000001 h173k above the stake counts as "everything".
+        const DUST = 1000n
+        if (amountRaw >= sum.value && amountRaw - sum.value <= DUST) {
+          plan = { shares: U64_MAX, expected: sum.value, all: true }
+        } else {
+          try { plan = sharesToUnstake(fresh.pool, fresh.user, amountRaw) } catch (e) {
+            if (e.message === 'EXCEEDS') {
+              showToast(t('staking.errExceeds', { n: formatH173K(rawNum(sum.value)) }), 'error'); return
+            }
+            throw e
           }
-          throw e
         }
       }
       setStakeConfirm({
@@ -2452,7 +2485,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       )}
 
       {/* ===== STAKING ===== */}
-      {(stakingAvailable || stakeLoading || stakeLoadFailed) && (
+      {(stakeState || stakeLoading || stakeLoadFailed) && (
         <div className="form-group staking-group">
           {stakingAllowed && !isStaker && (
             <label className="checkbox-row">
@@ -2487,6 +2520,12 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
               >{stakeLoading ? '…' : '↻'}</button>
             </div>
             {stakeLoadFailed && !stakingAvailable && <div className="form-hint staking-error">{t('staking.loadFailed')}</div>}
+            {!stakeLoadFailed && stakeState && !stakeState.available && (
+              <div className="form-hint staking-error">
+                {stakeState.reason === 'program_missing' ? t('staking.programNotFound') : t('staking.notAvailable')}
+                <div className="staking-pool-addr">{t('staking.poolAddress', { addr: stakeState.poolPda ? shortenAddress(stakeState.poolPda.toBase58()) : '—' })}{stakeState.reason ? ` · ${stakeState.reason}` : ''}</div>
+              </div>
+            )}
             {stakeLoading && !stakeState && <div className="form-hint">{t('staking.loading')}</div>}
             {stakingAvailable && (
               <>
@@ -2520,7 +2559,11 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       <div className="form-group">
         <label className="form-label">{t('send.amountLabel')}</label>
         <div className="amount-input-wrapper">
-          <input type="number" className="form-input" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} step="0.01" />
+          <input
+            type="number" inputMode="decimal" min="0" className="form-input" placeholder="0.00" value={amount} step="0.01"
+            onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault() }}
+            onChange={(e) => handleAmountChange(e.target.value)}
+          />
           <button className="max-btn" onClick={() => {
             if (stakeMode === 'unstake' && stakeSummary) setAmount(rawToInputString(stakeSummary.value, TOKEN_DECIMALS))
             else if (stakeMode) setAmount(Math.max(0, balance - stakeFeeReserveH173K).toString())
@@ -2603,7 +2646,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
       {stakeMode === 'unstake' && (
         <div className="stake-btn-row">
           <button className="btn btn-primary btn-action" onClick={prepareUnstake} disabled={stakeBusy}>
-            {amount && amount.trim() ? t('staking.unstakeAmountBtn', { n: formatH173K(parseFloat(amount) || 0) }) : t('staking.unstakeAllBtn')}
+            {unstakeIsAll ? t('staking.unstakeAllBtn') : t('staking.unstakeAmountBtn', { n: formatH173K(parseFloat(amount) || 0) })}
           </button>
           <button className="btn btn-primary btn-action" onClick={prepareClaim} disabled={stakeBusy || !stakeSummary || stakeSummary.claimable === 0n}>
             {t('staking.claimProfitBtn')}
