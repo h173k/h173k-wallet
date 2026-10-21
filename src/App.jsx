@@ -98,7 +98,9 @@ import {
   canBurnOffer,
   hasAlreadyConfirmed,
   getSellerIndexPDA,
-  getBuyerIndexPDA
+  getBuyerIndexPDA,
+  normalizeDecimalInput,
+  blockNonDecimalKeys,
 } from './utils'
 
 import './App.css'
@@ -1504,14 +1506,12 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
                   onClick={() => handleConvertAmountChange(String(maxConvertableSOL))}
                 >MAX</button>
               </div>
-              <input 
-                type="number" 
+              <input
+                type="text" inputMode="decimal" autoComplete="off" onKeyDown={blockNonDecimalKeys}
                 className={`form-input${convertAmountOverLimit ? ' input-error' : ''}`}
-                placeholder="0.00" 
-                value={convertAmount} 
-                onChange={(e) => handleConvertAmountChange(e.target.value)}
-                step="0.01"
-                max={maxConvertableSOL}
+                placeholder="0.00"
+                value={convertAmount}
+                onChange={(e) => handleConvertAmountChange(normalizeDecimalInput(e.target.value))}
               />
               {convertAmountOverLimit
                 ? <div className="input-hint" style={{color:'var(--error, #e05)'}}>
@@ -1836,8 +1836,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     return r !== null && r > stakeSummary.value + UNSTAKE_ALL_TOLERANCE ? rawToInputString(stakeSummary.value, TOKEN_DECIMALS) : v
   }
   const handleAmountChange = (raw) => {
-    const v = String(raw ?? '').replace(/[^0-9.,]/g, '')
-    setAmount(clampToStaked(v))
+    setAmount(clampToStaked(normalizeDecimalInput(raw)))
   }
   // Switching to Unstake (or a refreshed position) re-applies the cap to what is already
   // typed, and an amount that means "everything" follows the exact current value — so the
@@ -2560,8 +2559,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
         <label className="form-label">{t('send.amountLabel')}</label>
         <div className="amount-input-wrapper">
           <input
-            type="number" inputMode="decimal" min="0" className="form-input" placeholder="0.00" value={amount} step="0.01"
-            onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault() }}
+            type="text" inputMode="decimal" autoComplete="off" onKeyDown={blockNonDecimalKeys} className="form-input" placeholder="0.00" value={amount}
             onChange={(e) => handleAmountChange(e.target.value)}
           />
           <button className="max-btn" onClick={() => {
@@ -3572,9 +3570,9 @@ const handleCreate = async () => {
       <div className="form-group">
         <label className="form-label">{t('newContract.amountLabel')}</label>
         <div className="amount-input-wrapper">
-          <input 
-            type="number" className="form-input" placeholder="0.00"
-            value={amount} onChange={(e) => setAmount(e.target.value)} step="0.01"
+          <input
+            type="text" inputMode="decimal" autoComplete="off" onKeyDown={blockNonDecimalKeys} className="form-input" placeholder="0.00"
+            value={amount} onChange={(e) => setAmount(normalizeDecimalInput(e.target.value))}
           />
           <button className="max-btn" onClick={() => setAmount(maxContractAmount.toFixed(2))}>MAX</button>
         </div>
@@ -4665,24 +4663,22 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
           <div className="form-group">
             <label className="form-label">{t('replenish.replenishToLabel')}</label>
             <input
-              type="number"
+              type="text" inputMode="decimal" autoComplete="off" onKeyDown={blockNonDecimalKeys}
               className="form-input"
               placeholder={DEFAULT_REPLENISH_SETTINGS.replenishTo}
               value={replenishForm.replenishTo}
-              onChange={(e) => setReplenishForm(f => ({ ...f, replenishTo: e.target.value }))}
-              step="0.001" min={MIN_REPLENISH_TO}
+              onChange={(e) => { const v = normalizeDecimalInput(e.target.value); setReplenishForm(f => ({ ...f, replenishTo: v })) }}
             />
             <span className="form-hint">{t('replenish.replenishToHint', { min: MIN_REPLENISH_TO })}</span>
           </div>
           <div className="form-group">
             <label className="form-label">{t('replenish.swapFeeLabel')}</label>
             <input
-              type="number"
+              type="text" inputMode="decimal" autoComplete="off" onKeyDown={blockNonDecimalKeys}
               className="form-input"
               placeholder={DEFAULT_REPLENISH_SETTINGS.swapFeeSol}
               value={replenishForm.swapFeeSol}
-              onChange={(e) => setReplenishForm(f => ({ ...f, swapFeeSol: e.target.value }))}
-              step="0.0001" min={MIN_SWAP_PRIORITY_FEE} max="0.1"
+              onChange={(e) => { const v = normalizeDecimalInput(e.target.value); setReplenishForm(f => ({ ...f, swapFeeSol: v })) }}
             />
             <span className="form-hint">{t('replenish.swapFeeHint', { min: MIN_SWAP_PRIORITY_FEE })}</span>
           </div>

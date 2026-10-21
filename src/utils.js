@@ -8,6 +8,9 @@ import { sha256 } from '@noble/hashes/sha256'
 import { TOKEN_DECIMALS, PROGRAM_ID, OfferStatus, getH173KDecimals } from './constants'
 import { translate } from './i18n'
 
+// Decimal-field helpers live in a dependency-free module (unit-testable in Node).
+export { normalizeDecimalInput, blockNonDecimalKeys } from './decimalInput'
+
 /**
  * Format number with commas
  */

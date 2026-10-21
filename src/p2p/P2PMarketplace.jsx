@@ -14,7 +14,7 @@ import {
   computeTrade, requiredH173KToTake, requiredH173KToPost, viewerPaysInH173K, contactLink,
   MAX_PAYMENT_METHODS, MAX_METHOD_LEN,
 } from './useP2P'
-import { formatH173K, formatNumber, copyToClipboard } from '../utils'
+import { formatH173K, formatNumber, copyToClipboard, normalizeDecimalInput } from '../utils'
 import { generateOfferLink } from './deeplink'
 import { useTranslation, translate } from '../i18n'
 
@@ -632,10 +632,8 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
   const alertMsg = (m) => setErr(m)
 
   // Only accept empty or non-negative numbers (no minus, no negative values).
-  const setNum = (setter) => (e) => {
-    const v = e.target.value
-    if (v === '' || (parseFloat(v) >= 0 && !v.includes('-'))) setter(v)
-  }
+  // Decimal comma (pl/de/fr…) → dot, so parseFloat below always sees "12.5".
+  const setNum = (setter) => (e) => setter(normalizeDecimalInput(e.target.value))
   const blockMinus = (e) => { if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') e.preventDefault() }
 
   const addMethod = () => {
@@ -699,7 +697,7 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
 
         <div className="form-group">
           <label className="form-label">{t('p2p.priceLabel', { code: cur?.code })}</label>
-          <input className="form-input" type="number" inputMode="decimal" min="0" step="any" value={pricePerUsd}
+          <input className="form-input" type="text" inputMode="decimal" autoComplete="off" value={pricePerUsd}
             style={errStyle(priceErr)}
             onKeyDown={blockMinus} onChange={setNum(setPrice)} placeholder={t('p2p.pricePlaceholder', { code: cur?.code })} />
           {type === 'sell' ? (
@@ -718,13 +716,13 @@ function CreateOffer({ cur, defaultType, posting, solBalance, balance, price, ni
         <div className="p2p-row2">
           <div className="form-group">
             <label className="form-label">{t('p2p.minSize')}</label>
-            <input className="form-input" type="number" inputMode="decimal" min="0" step="any" value={minUsd}
+            <input className="form-input" type="text" inputMode="decimal" autoComplete="off" value={minUsd}
               style={errStyle(minErr)}
               onKeyDown={blockMinus} onChange={setNum(setMin)} placeholder={t('p2p.minPlaceholder')} />
           </div>
           <div className="form-group">
             <label className="form-label">{t('p2p.maxSize')}</label>
-            <input className="form-input" type="number" inputMode="decimal" min="0" step="any" value={maxUsd}
+            <input className="form-input" type="text" inputMode="decimal" autoComplete="off" value={maxUsd}
               style={errStyle(maxErr)}
               onKeyDown={blockMinus} onChange={setNum(setMax)} placeholder={t('p2p.maxPlaceholder')} />
           </div>

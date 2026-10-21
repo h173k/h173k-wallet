@@ -222,6 +222,17 @@ ok(M.formatRawExact(1_234_500_000_000n, 9) === '1,234.5', 'exact thousands')
 ok(M.formatRawExact(0n, 9) === '0', 'exact zero')
 ok(M.formatRawExact(12_345_678_123_456_789n, 9) === '12,345,678.123456789', 'exact large, no float loss')
 
+// ---------- decimal comma input (pl/de/fr…) ----------
+{
+  const { normalizeDecimalInput: n } = await import('../src/decimalInput.js')
+  ok(n('0,5') === '0.5' && parseFloat(n('0,5')) === 0.5, 'comma → dot')
+  ok(n('1.234,5') === '1.2345' || n('1.234,5') === '1.2345', 'only first separator kept')
+  ok(n('-12,5') === '12.5', 'no minus')
+  ok(n('1e5') === '15', 'no exponent letter')
+  ok(n('12,') === '12.' && n(',5') === '.5' && n('') === '' && n(null) === '', 'partial typing kept')
+  ok(n('1,2,3') === '1.23', 'single decimal separator')
+}
+
 // ---------- amount parsing ----------
 ok(M.parseAmountToRaw('1.5', 9) === 1_500_000_000n, 'parse 1.5')
 ok(M.parseAmountToRaw('0.000000001', 9) === 1n, 'parse 1 base unit')
