@@ -1810,6 +1810,22 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   // Staking amounts are shown exactly (all 9 decimals that matter), never rounded to the
   // display setting — otherwise the panel and the MAX value would disagree.
   const fmtRaw = (raw) => formatRawExact(raw ?? 0n, TOKEN_DECIMALS)
+  // Dimmed USD line under staking amounts (current price; hidden while it is unknown).
+  const usdOfRaw = (raw) => {
+    if (!toUSD) return null
+    const v = toUSD(rawNum(raw ?? 0n))
+    return typeof v === 'number' && Number.isFinite(v) ? v : null
+  }
+  const fmtUsdSmall = (usd) => (usd > 0 && usd < 0.01 ? '< $0.01' : formatUSD(usd))
+  const stakeAmountCell = (raw, cls) => {
+    const usd = usdOfRaw(raw)
+    return (
+      <div className="staking-val">
+        <div className={cls}>{fmtRaw(raw)} h173k</div>
+        {usd !== null && <div className="staking-usd">≈ {fmtUsdSmall(usd)}</div>}
+      </div>
+    )
+  }
   const fmtPct = (x) => formatNumber(x * 100, 2)
 
   // A mode that no longer fits the position (e.g. after a refresh) is cleared.
@@ -2532,16 +2548,23 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
                 {stakeState.isAdmin && <div className="form-hint staking-error">{t('staking.adminCannotStake')}</div>}
                 {isStaker && (
                   <div className="staking-rows">
-                    <div className="deposit-row"><span>{t('staking.staked')}</span><span>{fmtRaw(stakeSummary.value)} h173k</span></div>
-                    <div className="deposit-row"><span>{t('staking.principal')}</span><span>{fmtRaw(stakeSummary.principal)} h173k</span></div>
-                    <div className="deposit-row"><span>{t('staking.profitAvailable')}</span><span className="staking-profit">{fmtRaw(stakeSummary.claimable)} h173k</span></div>
-                    <div className="deposit-row"><span>{t('staking.lifetimeProfit')}</span><span>{fmtRaw(stakeSummary.lifetimeProfit)} h173k</span></div>
+                    <div className="deposit-row"><span>{t('staking.staked')}</span>{stakeAmountCell(stakeSummary.value)}</div>
+                    <div className="deposit-row"><span>{t('staking.principal')}</span>{stakeAmountCell(stakeSummary.principal)}</div>
+                    <div className="deposit-row"><span>{t('staking.profitAvailable')}</span>{stakeAmountCell(stakeSummary.claimable, 'staking-profit')}</div>
+                    <div className="deposit-row"><span>{t('staking.lifetimeProfit')}</span>{stakeAmountCell(stakeSummary.lifetimeProfit)}</div>
                     {stakeSummary.bonusActive && (
-                      <div className="deposit-row"><span>{t('staking.bonus')}</span><span>{t('staking.bonusValue', {
-                        pct: formatNumber(stakeSummary.bonusBps / 100, 2),
-                        accrued: fmtRaw(stakeSummary.bonusAccrued),
-                        cap: fmtRaw(stakeSummary.bonusCap),
-                      })}</span></div>
+                      <div className="deposit-row"><span>{t('staking.bonus')}</span>
+                        <div className="staking-val">
+                          <div>{t('staking.bonusValue', {
+                            pct: formatNumber(stakeSummary.bonusBps / 100, 2),
+                            accrued: fmtRaw(stakeSummary.bonusAccrued),
+                            cap: fmtRaw(stakeSummary.bonusCap),
+                          })}</div>
+                          {usdOfRaw(stakeSummary.bonusAccrued) !== null && (
+                            <div className="staking-usd">≈ {fmtUsdSmall(usdOfRaw(stakeSummary.bonusAccrued))} / {fmtUsdSmall(usdOfRaw(stakeSummary.bonusCap))}</div>
+                          )}
+                        </div>
+                      </div>
                     )}
                     <div className="deposit-row"><span>{t('staking.poolShare')}</span><span>{formatNumber(stakeSummary.poolShare * 100, 4)}%</span></div>
                   </div>
