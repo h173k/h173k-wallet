@@ -1606,7 +1606,16 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       <div className="balance-card">
         <div className="balance-label">{t('main.balance')}</div>
         <div className="balance-amount">{formatH173K(balance, h173kDecimals)} <span className="balance-symbol">h173k</span></div>
-        {usdValue !== null && <div className="balance-usd">{formatUSD(usdValue)}</div>}
+        {usdValue !== null && (
+          <div className="balance-usd">
+            {formatUSD(usdValue)}
+            {price > 0 && (
+              <span className="balance-price">
+                <span className="balance-price-sep">·</span>1 h173k = {price < 1 ? `$${formatSmartNumber(price, 2, 6)}` : formatUSD(price)}
+              </span>
+            )}
+          </div>
+        )}
         <div className="balance-sol-row">
           <span className="balance-sol">{formatNumber(solBalance, 4)} SOL</span>
           {maxConvertableSOL > 0 && (

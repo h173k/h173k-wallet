@@ -4699,3 +4699,13 @@ body {
   opacity: 0.35;
   cursor: default;
 }
+
+/* Token price next to the USD balance (main screen) */
+.balance-price {
+  font-size: 0.8em;
+  color: var(--color-white-30, rgba(255, 255, 255, 0.35));
+  white-space: nowrap;
+}
+.balance-price-sep {
+  margin: 0 6px;
+}
