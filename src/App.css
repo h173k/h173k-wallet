@@ -4695,3 +4695,7 @@ body {
   color: var(--color-white-50);
   margin-top: 2px;
 }
+.input-action-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

@@ -390,6 +390,8 @@ export default {
     replenishError: "Błąd: {msg}",
   },
   rpc: {
+    copyUrl: "Kopiuj adres RPC",
+    urlCopied: "Adres RPC skopiowany!",
     title: "Ustawienia RPC",
     urlLabel: "Adres URL punktu RPC",
     saveRpc: "Zapisz RPC",

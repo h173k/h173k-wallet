@@ -4752,13 +4752,27 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
         <div className="settings-section">
           <div className="form-group">
             <label className="form-label">{t('rpc.urlLabel')}</label>
-            <input 
-              type="text" 
-              className="form-input" 
-              placeholder={t('onboarding.rpcPlaceholder')} 
-              value={rpcUrl} 
-              onChange={(e) => setRpcUrl(e.target.value)}
-            />
+            <div className="input-with-action">
+              <input
+                type="text"
+                className="form-input"
+                placeholder={t('onboarding.rpcPlaceholder')}
+                value={rpcUrl}
+                onChange={(e) => setRpcUrl(e.target.value)}
+                autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+              />
+              <button
+                type="button"
+                className="input-action-btn"
+                onClick={async () => {
+                  const ok = await copyToClipboard(rpcUrl.trim())
+                  showToast(ok ? t('rpc.urlCopied') : t('receive.copyFailed'), ok ? 'success' : 'error')
+                }}
+                disabled={!rpcUrl.trim()}
+                aria-label={t('rpc.copyUrl')}
+                title={t('rpc.copyUrl')}
+              ><CopyIcon /></button>
+            </div>
             <span className="form-hint">{t('onboarding.rpcHint')}</span>
           </div>
           <button 

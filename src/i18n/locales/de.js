@@ -339,6 +339,8 @@ export default {
     replenishError: "Fehler: {msg}",
   },
   rpc: {
+    copyUrl: "RPC-URL kopieren",
+    urlCopied: "RPC-URL kopiert!",
     title: "RPC-Einstellungen",
     urlLabel: "URL des RPC-Endpunkts",
     saveRpc: "RPC speichern",

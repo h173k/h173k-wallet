@@ -339,6 +339,8 @@ export default {
     replenishError: "ስህተት: {msg}",
   },
   rpc: {
+    copyUrl: "የRPC አድራሻ ቅዳ",
+    urlCopied: "የRPC አድራሻ ተቀድቷል!",
     title: "የ RPC ቅንብሮች",
     urlLabel: "የ RPC መድረሻ ዩአርኤል",
     saveRpc: "RPC አስቀምጥ",
