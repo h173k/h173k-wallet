@@ -10,6 +10,7 @@
  */
 
 import CryptoJS from 'crypto-js'
+import { duringSystemDialog } from './backgroundLock'
 
 const PIN_HASH_KEY = 'h173k_pin_hash'
 const PIN_SALT_KEY = 'h173k_pin_salt'
@@ -234,7 +235,7 @@ export async function setupBiometric(userPassword) {
     crypto.getRandomValues(challenge)
     
     // Create credential
-    const credential = await navigator.credentials.create({
+    const credential = await duringSystemDialog(() => navigator.credentials.create({
       publicKey: {
         challenge,
         rp: {
@@ -257,7 +258,7 @@ export async function setupBiometric(userPassword) {
         },
         timeout: 60000
       }
-    })
+    }))
     
     if (!credential) {
       throw new Error('Failed to create biometric credential')
@@ -314,7 +315,7 @@ export async function authenticateBiometric() {
     const challenge = new Uint8Array(32)
     crypto.getRandomValues(challenge)
     
-    const assertion = await navigator.credentials.get({
+    const assertion = await duringSystemDialog(() => navigator.credentials.get({
       publicKey: {
         challenge,
         allowCredentials: [{
@@ -325,7 +326,7 @@ export async function authenticateBiometric() {
         userVerification: 'required',
         timeout: 60000
       }
-    })
+    }))
     
     if (!assertion) {
       throw new Error('Biometric authentication failed')
