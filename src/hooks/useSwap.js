@@ -91,6 +91,24 @@ function getCPMMAuthority() {
 /**
  * Hook for direct Raydium CPMM pool swapping
  */
+/**
+ * SOL thresholds for restoreSolReserve — the same formulas withAutoSOL and
+ * estimateAutoSOLCostH173K compute inline (keep them in sync if those change):
+ *   swapFloor   — minimum SOL to even run an h173k→SOL swap (fees + temporary WSOL rent)
+ *   reserveFloor — SOL we like to hold for an operation needing `extraSOLNeeded`,
+ *                 so the NEXT swap can still bootstrap afterwards.
+ */
+export function solReserveFloors(extraSOLNeeded = 0) {
+  const settings = getReplenishSettings()
+  const swapTxCost = settings.swapFeeSol + 0.000005
+  const WSOL_ATA_RENT = 0.00204
+  const FEE_BUFFER = 0.00005
+  const BOOTSTRAP_RESERVE_MARGIN = 0.001
+  const swapFloor = WSOL_ATA_RENT + swapTxCost
+  const reserveFloor = extraSOLNeeded + FEE_BUFFER + swapFloor + BOOTSTRAP_RESERVE_MARGIN
+  return { swapFloor, reserveFloor }
+}
+
 export function useSwap(connection, wallet) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -919,6 +937,35 @@ export function useSwap(connection, wallet) {
   }, [wallet, swapForSOL, connection])
 
   /**
+   * Rebuilds the SOL reserve right now (best-effort), e.g. after an operation FAILED.
+   * withAutoSOL restores it only after a successful operation; a failed one (whose
+   * attempts still paid network fees) would otherwise leave the buffer a little lower
+   * until the next operation. Acts only while a swap can still bootstrap (SOL ≥
+   * swapFloor) — exactly like withAutoSOL's post-op restore. Never throws.
+   * @returns {Promise<boolean>} true when a top-up swap was made
+   */
+  const restoreSolReserve = useCallback(async (extraSOLNeeded = 0, onSwap) => {
+    try {
+      if (!wallet?.publicKey || (wallet.isUnlocked && !wallet.isUnlocked())) return false
+      const { swapFloor, reserveFloor } = solReserveFloors(extraSOLNeeded)
+      const sol = (await connection.getBalance(wallet.publicKey)) / LAMPORTS_PER_SOL
+      if (sol >= reserveFloor || sol < swapFloor) return false
+      if (onSwap) onSwap({ status: 'swapping', attempt: 0 })
+      const r = await swapForSOL(reserveFloor - sol)
+      if (r && !r.skipped) {
+        if (onSwap) onSwap({ status: 'swapped', h173kUsed: r.h173kUsed, solReceived: r.solReceived })
+        return true
+      }
+      return false
+    } catch (e) {
+      console.log('restoreSolReserve skipped:', e?.message)
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [wallet, connection, swapForSOL])
+
+  /**
    * Read-only estimate of how much h173k the *proactive* auto-SOL replenishment
    * inside withAutoSOL would consume for an operation needing `extraSOLNeeded` SOL.
    * Performs NO swap and NO state change — it only mirrors withAutoSOL's TARGET /
@@ -999,6 +1046,7 @@ export function useSwap(connection, wallet) {
     calculateSwapForSOL,
     swapForSOL,
     withAutoSOL,
+    restoreSolReserve,
     estimateAutoSOLCostH173K,
     convertSOLtoH173K,
     fetchPoolData,

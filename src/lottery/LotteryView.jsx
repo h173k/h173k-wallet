@@ -337,6 +337,9 @@ export default function LotteryView({ connection, publicKey, balance, solBalance
         cancelAnimationFrame(rafRef.current)
         spinningRef.current = false
         if (msg.includes('Wallet is locked')) showToast(t('common.sessionExpired'), 'error')
+        // checked BEFORE sending anything — no fee was spent
+        else if (msg.includes('SPIN_NO_H173K')) showToast(t('lottery.noH173kHint'), 'error')
+        else if (msg.includes('SPIN_NO_SOL')) showToast(t('lottery.noSolHint'), 'error')
         else if (msg.includes('LOTTERY_NOT_CONFIGURED')) showToast(t('lottery.notDeployed'), 'error')
         else showToast(t('lottery.spinFailed', { msg }), 'error')
       }

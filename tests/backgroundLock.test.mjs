@@ -3,7 +3,7 @@
  * The wallet must lock as soon as the app is hidden / unloaded — except while the app's
  * own system dialog (WebAuthn fingerprint / Face ID sheet) is open.
  */
-const { installBackgroundLock, duringSystemDialog, isSystemDialogActive } = await import('../src/crypto/backgroundLock.js')
+const { installBackgroundLock, duringSystemDialog, isSystemDialogActive, duringCriticalOperation, isLockPending, MAX_DEFER_MS } = await import('../src/crypto/backgroundLock.js')
 
 let failures = 0, passes = 0
 const ok = (c, m) => { if (c) passes++; else { failures++; console.error('FAIL:', m) } }
@@ -49,6 +49,53 @@ ok(wallet.locks.length === 4, 'cancelled dialog does not disable the lock')
 cleanup()
 wallet.unlocked = true; show(); hide()
 ok(wallet.locks.length === 4, 'cleanup removes the listeners')
+
+// ---------- critical operations (spin, send, staking) defer the lock ----------
+{
+  const d2 = new FakeDoc(), w2 = new EventTarget()
+  let clock = 1_000_000
+  const wal = { unlocked: true, locks: [], isUnlocked() { return this.unlocked }, lock(r) { this.locks.push(r); this.unlocked = false } }
+  const hide2 = () => { d2.visibilityState = 'hidden'; d2.dispatchEvent(new Event('visibilitychange')) }
+  const show2 = () => { d2.visibilityState = 'visible'; d2.dispatchEvent(new Event('visibilitychange')) }
+  const off = installBackgroundLock(wal, d2, w2, () => clock)
+
+  // leave mid-operation → no lock until it finishes, then locked at once
+  let release
+  const op = duringCriticalOperation(() => new Promise((r) => { release = r }))
+  hide2()
+  ok(wal.locks.length === 0 && isLockPending(), 'hidden during a spin → lock deferred')
+  show2()
+  ok(wal.locks.length === 0, 'coming back while the spin still runs → still not locked (no interruption)')
+  release('done'); ok((await op) === 'done', 'operation result is returned')
+  ok(wal.locks.length === 1 && wal.locks[0] === 'background' && !isLockPending(), 'operation finished → locked')
+
+  // a failing operation still releases the pending lock
+  wal.unlocked = true; show2()
+  try { await duringCriticalOperation(async () => { hide2(); throw new Error('spin failed') }) } catch { /* expected */ }
+  ok(wal.locks.length === 2, 'failed operation → pending lock applied')
+
+  // nested operations: lock only after the outermost one ends
+  wal.unlocked = true; show2()
+  await duringCriticalOperation(async () => {
+    await duringCriticalOperation(async () => { hide2() })
+    ok(wal.locks.length === 2, 'inner op ended, outer still running → not yet locked')
+  })
+  ok(wal.locks.length === 3, 'outer op ended → locked')
+
+  // no operation running → immediate, as before
+  wal.unlocked = true; show2(); hide2()
+  ok(wal.locks.length === 4, 'no operation → immediate lock')
+
+  // a hung operation cannot keep the wallet open: on return after MAX_DEFER_MS → locked
+  wal.unlocked = true; show2()
+  let release2
+  const hung = duringCriticalOperation(() => new Promise((r) => { release2 = r }))
+  hide2(); clock += MAX_DEFER_MS + 1; show2()
+  ok(wal.locks.length === 5, 'returned after the max deferral → locked even though the op still runs')
+  release2(); await hung
+  ok(wal.locks.length === 5, 'op ending later does not lock twice')
+  off()
+}
 
 console.log(`\nbackground lock tests: ${passes} passed, ${failures} failed`)
 process.exit(failures ? 1 : 0)

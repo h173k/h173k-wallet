@@ -31,6 +31,7 @@ import {
 } from '../constants'
 import { useSwap } from './useSwap'
 import { payReferralBonusSafe } from './useEscrow'
+import { duringCriticalOperation } from '../crypto/backgroundLock'
 
 const RAW = Math.pow(10, TOKEN_DECIMALS)
 const MAX_PRIZE_RAW = Math.round(LOTTERY_MAX_PRIZE_H173K * RAW)
@@ -144,6 +145,8 @@ function isFatalError(e) {
     m.includes('Wallet is locked') ||
     m.includes('NO_H173K') ||
     m.includes('NO_SOL') ||
+    m.includes('SPIN_NO_H173K') ||
+    m.includes('SPIN_NO_SOL') ||
     m.includes('LOTTERY_NOT_CONFIGURED')
   )
 }
@@ -171,15 +174,18 @@ async function sendAndConfirmTx(connection, wallet, methodsBuilder) {
     'confirmed'
   )
   if (conf?.value?.err) {
-    // tx weszła, ale instrukcja zwróciła błąd → transakcja jest atomowa,
-    // więc żadne środki nie zostały pobrane. Rzucamy, by warstwa wyżej ponowiła.
+    // tx weszła, ale instrukcja zwróciła błąd → transakcja jest atomowa, więc ani
+    // h173k, ani czynsz biletu nie zostały pobrane — ALE opłata sieciowa (~0,000005 SOL)
+    // tak (skipPreflight). Dlatego przed każdą próbą sprawdzamy salda (assertCanCommit /
+    // canReveal), a po nieudanym spinie odbudowujemy rezerwę SOL. Rzucamy, by warstwa
+    // wyżej ponowiła.
     throw new Error('TX_FAILED:' + JSON.stringify(conf.value.err))
   }
   return sig
 }
 
 export function useLottery(connection, wallet) {
-  const { withAutoSOL } = useSwap(connection, wallet)
+  const { withAutoSOL, restoreSolReserve } = useSwap(connection, wallet)
 
   const configured = isLotteryConfigured()
   const programId = useMemo(() => getLotteryProgramId(), [])
@@ -303,7 +309,7 @@ export function useLottery(connection, wallet) {
    * @param {object} cb       — { onStage(stage), onSwap(info) }
    * @returns {Promise<{won, prize, guess, winningNumber}>}
    */
-  const play = useCallback(
+  const playInner = useCallback(
     async (modeObj, cb = {}) => {
       if (!configured) throw new Error('LOTTERY_NOT_CONFIGURED')
       const program = getProgram()
@@ -334,6 +340,44 @@ export function useLottery(connection, wallet) {
       // w pętlę swap+retry. Dzięki temu nieudana transakcja nie wywoła kilku swapów.
       const spinSolCost = await estimateSpinSolCost()
       const ensureSol = () => withAutoSOL(async () => true, onSwap, spinSolCost)
+
+      // ── Balance pre-checks (rare edge cases) ──
+      // Lottery txs are sent with skipPreflight, so a doomed attempt still lands on-chain
+      // and costs its network fee. Before EVERY attempt we therefore verify that it can
+      // succeed: enough h173k for the spin fee (a top-up swap may just have used some)
+      // and enough SOL for the ticket rent + fees. If not, nothing is sent at all — no
+      // fee is burned and SOL can't be pushed below the level a top-up swap needs.
+      const feeRaw = BigInt(Math.round(modeObj.feeH173k * RAW))
+      const commitLamports = Math.ceil(spinSolCost * LAMPORTS_PER_SOL)
+      const REVEAL_LAMPORTS = 10000 // fee + margin; reveal creates no account
+      const readH173kRaw = async () => {
+        try { return BigInt((await connection.getTokenAccountBalance(ata, 'confirmed')).value.amount) }
+        catch { return null } // unknown → don't block on a transient read error
+      }
+      const readLamports = async () => {
+        try { return await connection.getBalance(player, 'confirmed') }
+        catch { return null }
+      }
+      const assertCanCommit = async () => {
+        const tok = await readH173kRaw()
+        if (tok !== null && tok < feeRaw) throw new Error('SPIN_NO_H173K')
+        let lam = await readLamports()
+        if (lam !== null && lam < commitLamports) {
+          await ensureSol()
+          lam = await readLamports()
+          if (lam !== null && lam < commitLamports) throw new Error('SPIN_NO_SOL')
+          // the top-up swap spent h173k — make sure the fee is still covered
+          const tok2 = await readH173kRaw()
+          if (tok2 !== null && tok2 < feeRaw) throw new Error('SPIN_NO_H173K')
+        }
+      }
+      const canReveal = async () => {
+        let lam = await readLamports()
+        if (lam === null || lam >= REVEAL_LAMPORTS) return true
+        try { await withAutoSOL(async () => true, onSwap, REVEAL_LAMPORTS / LAMPORTS_PER_SOL) } catch { /* below */ }
+        lam = await readLamports()
+        return lam === null || lam >= REVEAL_LAMPORTS
+      }
 
       // 2. COMMIT — opłata trafia do vaultu
       onStage?.('commit')
@@ -373,6 +417,8 @@ export function useLottery(connection, wallet) {
       let committed = false
       for (let attempt = 1; attempt <= 3 && !committed; attempt++) {
         try {
+          // never send an attempt that cannot succeed (it would only burn a fee)
+          await assertCanCommit()
           await doCommit()
           committed = true
         } catch (e) {
@@ -436,6 +482,7 @@ export function useLottery(connection, wallet) {
       const revealDeadlineSlot = commitSlot + 150
       for (let attempt = 1; attempt <= 3 && !revealed; attempt++) {
         if ((await connection.getSlot('processed')) > revealDeadlineSlot) break
+        if (!(await canReveal())) break // no SOL even for the fee → don't send a doomed tx
         try {
           revealSig = await doReveal()
           revealed = true
@@ -496,6 +543,31 @@ export function useLottery(connection, wallet) {
       estimatePrizeH173k,
       estimateSpinSolCost,
     ]
+  )
+
+  /**
+   * Public entry point. A spin is a critical operation: leaving the app mid-spin defers
+   * the background lock until the spin ends (otherwise the reveal — and a possible win —
+   * would be lost). If the spin fails, the SOL reserve is rebuilt right away: failed
+   * attempts may have spent network fees, and withAutoSOL only restores the buffer
+   * after SUCCESSFUL operations.
+   */
+  const play = useCallback(
+    (modeObj, cb = {}) =>
+      duringCriticalOperation(async () => {
+        try {
+          return await playInner(modeObj, cb)
+        } catch (e) {
+          const m = String(e?.message || e || '')
+          if (!m.includes('Wallet is locked') && !m.includes('LOTTERY_NOT_CONFIGURED')) {
+            estimateSpinSolCost()
+              .then((cost) => restoreSolReserve(cost, cb.onSwap))
+              .catch(() => {})
+          }
+          throw e
+        }
+      }),
+    [playInner, estimateSpinSolCost, restoreSolReserve]
   )
 
   return useMemo(

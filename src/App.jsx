@@ -41,7 +41,7 @@ import {
 
 // Components
 import { QRCodeGenerator, QRCodeScanner } from './components/QRCode'
-import { installBackgroundLock } from './crypto/backgroundLock'
+import { installBackgroundLock, duringCriticalOperation } from './crypto/backgroundLock'
 import { installScrollResetOnReturn, scrollAppToTop } from './scrollReset'
 
 // Hooks
@@ -2017,7 +2017,8 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     } finally { setStakeBusy(false) }
   }
 
-  const executeStakeAction = async () => {
+  const executeStakeAction = () => duringCriticalOperation(executeStakeActionInner)
+  const executeStakeActionInner = async () => {
     const c = stakeConfirm
     if (!c || !stakeState?.available) return
     setLoading(true)
@@ -2217,7 +2218,10 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
     setConfirmStep(true)
   }
   
-  const handleSend = async () => {
+  // A send (possibly preceded by an h173k→SOL top-up swap) must not be cut in half by
+  // the background lock — the lock waits until it finishes (see backgroundLock.js).
+  const handleSend = () => duringCriticalOperation(handleSendInner)
+  const handleSendInner = async () => {
     setLoading(true)
     try {
       const recipientPubkey = new PublicKey(recipient)
