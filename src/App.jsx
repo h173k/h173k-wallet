@@ -1188,6 +1188,22 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const [convertQuote, setConvertQuote] = useState(null)
 
   const usdValue = toUSD ? toUSD(balance) : null
+
+  // Staked amount line under the balance. The contract is read ONLY when this screen
+  // opens and on a manual refresh (pull-down / refresh button) — never on the 30s
+  // balance timer, never in the background, and never via a transaction.
+  const [stakedRaw, setStakedRaw] = useState(null)
+  const loadStakedLine = useCallback(async () => {
+    if (!connection || !publicKey) return
+    try {
+      const s = await fetchStakingState(connection, publicKey)
+      const v = s.available ? positionSummary(s.pool, s.user).value : 0n
+      setStakedRaw(v > 0n ? v : null)
+    } catch { /* keep the last known value; the line is informational */ }
+  }, [connection, publicKey])
+  useEffect(() => { loadStakedLine() }, [loadStakedLine])
+  const stakedNum = stakedRaw !== null ? rawToNumber(stakedRaw, TOKEN_DECIMALS) : null
+  const stakedUsd = stakedNum !== null && toUSD ? toUSD(stakedNum) : null
   
   const { 
     convertSOLtoH173K, 
@@ -1223,13 +1239,13 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
   
   const handleRefresh = async () => {
     setRefreshing(true)
-    await onRefresh()
+    await Promise.all([onRefresh(), loadStakedLine()])
     setTimeout(() => setRefreshing(false), 500)
   }
   
   const handleCheckDeposit = async () => {
     setRefreshing(true)
-    await onRefresh()
+    await Promise.all([onRefresh(), loadStakedLine()])
     setTimeout(() => setRefreshing(false), 500)
   }
   
@@ -1613,6 +1629,14 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
               <span className="balance-price">
                 <span className="balance-price-sep">·</span>1 h173k = {price < 1 ? `$${formatSmartNumber(price, 2, 6)}` : formatUSD(price)}
               </span>
+            )}
+          </div>
+        )}
+        {stakedRaw !== null && (
+          <div className="balance-staked">
+            {t('main.staked')}: {formatRawExact(stakedRaw, TOKEN_DECIMALS)} h173k
+            {stakedUsd !== null && (
+              <span className="balance-price"><span className="balance-price-sep">·</span>≈ {formatUSD(stakedUsd)}</span>
             )}
           </div>
         )}

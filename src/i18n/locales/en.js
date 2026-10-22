@@ -94,6 +94,7 @@ export default {
     tooManyAttempts: "Too many attempts. Try again in {s}s",
   },
   main: {
+    staked: "Staked",
     balance: "Balance",
     convert: "Convert",
     lowSol: "Low SOL - Deposit required for transactions",

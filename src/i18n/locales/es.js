@@ -90,6 +90,7 @@ export default {
     tooManyAttempts: "Demasiados intentos. Inténtalo de nuevo en {s} s",
   },
   main: {
+    staked: "En staking",
     balance: "Saldo",
     convert: "Convertir",
     lowSol: "SOL bajo: se requiere un depósito para las transacciones",

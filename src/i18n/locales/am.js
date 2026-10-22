@@ -90,6 +90,7 @@ export default {
     tooManyAttempts: "ብዙ ሙከራዎች ተደርገዋል። በ {s} ሰከንድ ውስጥ እንደገና ይሞክሩ",
   },
   main: {
+    staked: "የተስቴከ",
     balance: "ሒሳብ",
     convert: "ቀይር",
     lowSol: "ዝቅተኛ SOL - ለግብይቶች ተቀማጭ ያስፈልጋል",

@@ -90,6 +90,7 @@ export default {
     tooManyAttempts: "Zu viele Versuche. Versuche es in {s} s erneut",
   },
   main: {
+    staked: "Gestakt",
     balance: "Guthaben",
     convert: "Umwandeln",
     lowSol: "Wenig SOL – für Transaktionen ist eine Einzahlung erforderlich",

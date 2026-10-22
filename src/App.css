@@ -96,20 +96,31 @@ body {
     transparent 70%,
     transparent 100%
   );
-  animation: slideStreak 6s ease-in-out infinite;
+  /* One pass takes 6s, then the streak waits off-screen for 12s: it crosses the screen
+     three times less often than before, at the same speed (keyframes below). */
+  animation: slideStreak 18s ease-in-out infinite;
 }
 
-/* Faster animation on mobile */
+/* Faster animation on mobile (4s pass + 8s pause) */
 @media (max-width: 768px) {
   .light-streak {
-    animation: slideStreak 4s ease-in-out infinite;
+    animation: slideStreak 12s ease-in-out infinite;
   }
 }
 
 @keyframes slideStreak {
-  0% { transform: translateX(-50%) rotate(-15deg); }
-  100% { transform: translateX(50%) rotate(-15deg); }
+  /* pass during the first third of the cycle… */
+  0% { transform: translateX(-50%) rotate(-15deg); opacity: 1; }
+  33.333% { transform: translateX(50%) rotate(-15deg); opacity: 1; }
+  /* …then wait, faded out. On tall narrow (phone) screens the rotated band's faint edge
+     would otherwise stay visible in a corner during the pause. While invisible it moves
+     back to the start position and fades in there, ready for the next pass. */
+  36% { transform: translateX(50%) rotate(-15deg); opacity: 0; }
+  96% { transform: translateX(50%) rotate(-15deg); opacity: 0; }
+  96.1% { transform: translateX(-50%) rotate(-15deg); opacity: 0; }
+  100% { transform: translateX(-50%) rotate(-15deg); opacity: 1; }
 }
+
 
 /* === App Container === */
 .app-container {
@@ -4708,4 +4719,11 @@ body {
 }
 .balance-price-sep {
   margin: 0 6px;
+}
+
+/* Staked amount line under the balance (main screen, stakers only) */
+.balance-staked {
+  font-size: 13px;
+  color: var(--color-white-50);
+  margin-bottom: 4px;
 }
