@@ -42,6 +42,7 @@ import {
 // Components
 import { QRCodeGenerator, QRCodeScanner } from './components/QRCode'
 import { installBackgroundLock } from './crypto/backgroundLock'
+import { installScrollResetOnReturn, scrollAppToTop } from './scrollReset'
 
 // Hooks
 import { useSwap } from './hooks/useSwap'
@@ -538,6 +539,11 @@ function WalletApp({ connection, onRpcChange }) {
   // Lock immediately when the app leaves the screen (other app, home screen, screen
   // off, link opened in the browser). Coming back asks for the PIN / biometrics.
   useEffect(() => installBackgroundLock(sessionWallet), [])
+
+  // …and whenever the app comes back to the screen, start at the very top.
+  useEffect(() => installScrollResetOnReturn(), [])
+  // The lock screen and the wallet after unlocking also always open at the top.
+  useEffect(() => { scrollAppToTop() }, [isUnlocked])
 
   // Listen for session lock events (auto-lock after inactivity)
   useEffect(() => {
