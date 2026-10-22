@@ -4727,3 +4727,27 @@ body {
   color: var(--color-white-50);
   margin-bottom: 4px;
 }
+
+/* Collapsible staking panel (Send view) */
+.staking-collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.staking-chevron {
+  display: inline-flex;
+  color: var(--color-white-50);
+  transition: transform var(--transition-fast, 0.15s) ease;
+}
+.staking-chevron.open {
+  transform: rotate(90deg);
+}

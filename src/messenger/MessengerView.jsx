@@ -580,6 +580,10 @@ function ThreadView({ connection, publicKey, address, onBack, showToast, onTip }
   const [refreshing, setRefreshing] = useState(false)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  // Synchronous guard against double sends: a second Enter (or click) arriving before
+  // React re-renders with sending=true — or while the transaction is still confirming
+  // and the text is not cleared yet — must not send the same message again.
+  const sendingRef = useRef(false)
   const [replyTo, setReplyTo] = useState(null)
   const [showUnpaid, setShowUnpaid] = useState(false)
   const { withAutoSOL } = useSwap(connection, sessionWallet)
@@ -628,9 +632,11 @@ function ThreadView({ connection, publicKey, address, onBack, showToast, onTip }
   const handleTouchEnd = useCallback(() => { isPulling.current = false; setPullProgress(0) }, [])
 
   const send = async () => {
+    if (sendingRef.current) return
     const trimmed = text.trim()
     if (!trimmed) return
     if (trimmed.length > limit) { showToast(t('messenger.maxChars', { n: limit }), 'error'); return }
+    sendingRef.current = true
     setSending(true)
     try {
       await sendMessage({
@@ -647,6 +653,7 @@ function ThreadView({ connection, publicKey, address, onBack, showToast, onTip }
       else if (msg.includes('Wallet is locked') || !sessionWallet.isUnlocked()) showToast(t('common.sessionExpired'), 'error')
       else showToast(t('messenger.failedSend', { msg }), 'error')
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }
@@ -771,7 +778,7 @@ function ThreadView({ connection, publicKey, address, onBack, showToast, onTip }
           placeholder={t('messenger.typeMessage')}
           rows={1}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (!e.repeat) send() } }}
         />
         <span className={`thread-charcount ${overflowing ? 'over' : ''}`} title={t('messenger.bytesLeft')}>
           {remaining}

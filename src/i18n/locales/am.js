@@ -752,6 +752,8 @@ export default {
     pointCamera: "ካሜራውን በ QR ኮድ ላይ ያድርጉ",
   },
   staking: {
+    expand: "የስቴኪንግ ዝርዝሮችን አሳይ",
+    collapse: "የስቴኪንግ ዝርዝሮችን ደብቅ",
     title: "ስቴኪንግ",
     apy: "APY {apy}%",
     infoLine: "በዓመት ቢያንስ {min}% የተረጋገጠ፣ ከፍተኛ ገደብ የለም። ሽልማቶች በየቀኑ ይከፈላሉ።",

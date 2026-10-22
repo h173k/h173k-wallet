@@ -294,6 +294,10 @@ export function GroupChatView({ connection, publicKey, groupId, onBack, showToas
   const [refreshing, setRefreshing] = useState(false)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  // Synchronous guard against double sends: a second Enter (or click) arriving before
+  // React re-renders with sending=true — or while the transaction is still confirming
+  // and the text is not cleared yet — must not send the same message again.
+  const sendingRef = useRef(false)
   const [replyTo, setReplyTo] = useState(null)
   const [showInfo, setShowInfo] = useState(false)
 
@@ -361,8 +365,10 @@ export function GroupChatView({ connection, publicKey, groupId, onBack, showToas
   }
 
   const send = async () => {
+    if (sendingRef.current) return
     const trimmed = text.trim()
     if (!trimmed) return
+    sendingRef.current = true
     setSending(true)
     try {
       await sendGroupMessage({
@@ -380,6 +386,7 @@ export function GroupChatView({ connection, publicKey, groupId, onBack, showToas
       else if (msg.includes('Wallet is locked') || !sessionWallet.isUnlocked()) showToast(t('common.sessionExpired'), 'error')
       else showToast(t('messenger.failedSend', { msg }), 'error')
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }
@@ -477,7 +484,7 @@ export function GroupChatView({ connection, publicKey, groupId, onBack, showToas
           placeholder={t('messenger.typeMessage')}
           rows={1}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (!e.repeat) send() } }}
         />
         <span className={`thread-charcount ${overflowing ? 'over' : ''}`} title={t('messenger.bytesLeft')}>
           {remaining}

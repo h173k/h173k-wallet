@@ -918,6 +918,8 @@ export default {
     pointCamera: "Point camera at a QR code",
   },
   staking: {
+    expand: "Show staking details",
+    collapse: "Hide staking details",
     title: "Staking",
     apy: "APY {apy}%",
     infoLine: "Guaranteed minimum {min}% per year, no upper limit. Rewards are paid out daily.",

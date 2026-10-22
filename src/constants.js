@@ -333,3 +333,18 @@ export const OfferStatus = {
   Burned: 5,
   Cancelled: 6,
 }
+
+// ========== STAKING PANEL (Send view) — remembered expanded / collapsed ==========
+const STAKING_PANEL_OPEN_KEY = 'h173k_staking_panel_open'
+
+/** true = expanded (default), false = collapsed — exactly as the user left it. */
+export function getStakingPanelOpen() {
+  try {
+    const v = localStorage.getItem(STAKING_PANEL_OPEN_KEY)
+    return v === null ? true : v === '1'
+  } catch { return true }
+}
+
+export function saveStakingPanelOpen(open) {
+  try { localStorage.setItem(STAKING_PANEL_OPEN_KEY, open ? '1' : '0') } catch { /* ignore */ }
+}

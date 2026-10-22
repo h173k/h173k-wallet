@@ -81,7 +81,7 @@ import {
 import { getGroupInviteFromURL, clearGroupInviteFromURL } from './messenger/groups'
 
 // Constants & Utils
-import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT, getUsdtPriceImpactGuard, saveUsdtPriceImpactGuard, clampUsdtPriceImpactPct, DEFAULT_MAX_USDT_PRICE_IMPACT_PCT, MIN_USDT_PRICE_IMPACT_PCT, MAX_USDT_PRICE_IMPACT_PCT, USDT_PRICE_IMPACT_STEP } from './constants'
+import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT, getUsdtPriceImpactGuard, saveUsdtPriceImpactGuard, getStakingPanelOpen, saveStakingPanelOpen, clampUsdtPriceImpactPct, DEFAULT_MAX_USDT_PRICE_IMPACT_PCT, MIN_USDT_PRICE_IMPACT_PCT, MAX_USDT_PRICE_IMPACT_PCT, USDT_PRICE_IMPACT_STEP } from './constants'
 import { useTokenPrice } from './usePrice'
 import { withConfirmFallback, installRpcNoticeFilter } from './confirmFallback'
 import { 
@@ -1818,6 +1818,9 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
   const [stakeConfirm, setStakeConfirm] = useState(null)   // pending action shown on the confirm screen
   const [stakeDone, setStakeDone] = useState(null)         // { action, amount, sig }
   const [stakeBusy, setStakeBusy] = useState(false)        // preparing an action (fresh read)
+  // Staking panel expanded/collapsed — remembered, so it opens the way it was left.
+  const [stakePanelOpen, setStakePanelOpen] = useState(() => getStakingPanelOpen())
+  const toggleStakePanel = () => setStakePanelOpen((o) => { saveStakingPanelOpen(!o); return !o })
 
   const loadStaking = useCallback(async () => {
     if (!connection || !publicKey) return null
@@ -2571,8 +2574,18 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
 
           <div className="staking-card">
             <div className="staking-card-head">
-              <span className="staking-card-title">{t('staking.title')}</span>
-              {apyInfo && <span className="staking-card-apy">{t('staking.apy', { apy: fmtPct(apyInfo.apy) })}</span>}
+              <button
+                type="button"
+                className="staking-collapse-btn"
+                onClick={toggleStakePanel}
+                aria-expanded={stakePanelOpen}
+                aria-label={stakePanelOpen ? t('staking.collapse') : t('staking.expand')}
+                title={stakePanelOpen ? t('staking.collapse') : t('staking.expand')}
+              >
+                <span className={`staking-chevron${stakePanelOpen ? ' open' : ''}`}><ChevronRightIcon size={16} /></span>
+                <span className="staking-card-title">{t('staking.title')}</span>
+                {apyInfo && <span className="staking-card-apy">{t('staking.apy', { apy: fmtPct(apyInfo.apy) })}</span>}
+              </button>
               <button
                 type="button"
                 className="staking-refresh-btn"
@@ -2590,7 +2603,7 @@ function SendView({ connection, publicKey, balance, solBalance, price, toUSD, on
               </div>
             )}
             {stakeLoading && !stakeState && <div className="form-hint">{t('staking.loading')}</div>}
-            {stakingAvailable && (
+            {stakingAvailable && stakePanelOpen && (
               <>
                 <div className="form-hint">{t('staking.infoLine', { min: fmtPct(MIN_APY) })}</div>
                 {stakeState.isAdmin && <div className="form-hint staking-error">{t('staking.adminCannotStake')}</div>}

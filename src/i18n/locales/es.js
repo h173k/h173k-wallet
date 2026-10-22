@@ -752,6 +752,8 @@ export default {
     pointCamera: "Apunta la cámara a un código QR",
   },
   staking: {
+    expand: "Mostrar detalles de staking",
+    collapse: "Ocultar detalles de staking",
     title: "Staking",
     apy: "APY {apy}%",
     infoLine: "Mínimo garantizado del {min}% anual, sin límite superior. Las recompensas se pagan a diario.",
