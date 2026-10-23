@@ -380,6 +380,7 @@ export class SessionWallet {
     this.keypair = null
     this.publicKey = null
     this.unlocked = false
+    this.lockDeadline = null
     if (this.lockTimeout) {
       clearTimeout(this.lockTimeout)
       this.lockTimeout = null
@@ -392,6 +393,9 @@ export class SessionWallet {
     if (this.lockTimeout) {
       clearTimeout(this.lockTimeout)
     }
+    // Wall-clock deadline: phones pause timers while the app is in the background, so
+    // the timer alone can fire late. backgroundLock.js checks this on return.
+    this.lockDeadline = Date.now() + this.autoLockMinutes * 60 * 1000
     this.lockTimeout = setTimeout(() => {
       this.lock('auto') // Pass 'auto' as reason for automatic lock
     }, this.autoLockMinutes * 60 * 1000)

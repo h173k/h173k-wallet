@@ -81,7 +81,7 @@ import {
 import { getGroupInviteFromURL, clearGroupInviteFromURL } from './messenger/groups'
 
 // Constants & Utils
-import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT, getUsdtPriceImpactGuard, saveUsdtPriceImpactGuard, getStakingPanelOpen, saveStakingPanelOpen, clampUsdtPriceImpactPct, DEFAULT_MAX_USDT_PRICE_IMPACT_PCT, MIN_USDT_PRICE_IMPACT_PCT, MAX_USDT_PRICE_IMPACT_PCT, USDT_PRICE_IMPACT_STEP } from './constants'
+import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT, getUsdtPriceImpactGuard, saveUsdtPriceImpactGuard, getStakingPanelOpen, saveStakingPanelOpen, getLockOnLeave, saveLockOnLeave, clampUsdtPriceImpactPct, DEFAULT_MAX_USDT_PRICE_IMPACT_PCT, MIN_USDT_PRICE_IMPACT_PCT, MAX_USDT_PRICE_IMPACT_PCT, USDT_PRICE_IMPACT_STEP } from './constants'
 import { useTokenPrice } from './usePrice'
 import { withConfirmFallback, installRpcNoticeFilter } from './confirmFallback'
 import { 
@@ -538,7 +538,8 @@ function WalletApp({ connection, onRpcChange }) {
   
   // Lock immediately when the app leaves the screen (other app, home screen, screen
   // off, link opened in the browser). Coming back asks for the PIN / biometrics.
-  useEffect(() => installBackgroundLock(sessionWallet), [])
+  // (can be switched off in Settings → Security; read at the moment the app is left)
+  useEffect(() => installBackgroundLock(sessionWallet, document, window, () => Date.now(), getLockOnLeave), [])
 
   // …and whenever the app comes back to the screen, start at the very top.
   useEffect(() => installScrollResetOnReturn(), [])
@@ -4336,6 +4337,33 @@ function SponsorAccountsToggle({ showToast }) {
   )
 }
 
+// ========== LOCK ON LEAVING THE APP ==========
+// On (default): leaving the app locks the wallet at once and the PIN / biometrics is
+// asked for on return. Off: only the "Auto-lock after" time locks it.
+function LockOnLeaveToggle({ showToast }) {
+  const { t } = useTranslation()
+  const [enabled, setEnabled] = useState(() => getLockOnLeave())
+
+  const handleToggle = () => {
+    const next = !enabled
+    saveLockOnLeave(next)
+    setEnabled(next)
+    showToast(next ? t('settings.lockOnLeaveOnToast') : t('settings.lockOnLeaveOffToast'), 'info')
+  }
+
+  return (
+    <div className="settings-item" onClick={handleToggle} style={{ cursor: 'pointer' }}>
+      <div>
+        <div>{t('settings.lockOnLeave')}</div>
+        <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '2px' }}>
+          {enabled ? t('settings.lockOnLeaveDescOn') : t('settings.lockOnLeaveDescOff')}
+        </div>
+      </div>
+      <span className={`badge ${enabled ? 'enabled' : ''}`}>{enabled ? t('common.on') : t('common.off')}</span>
+    </div>
+  )
+}
+
 // ========== NOTIFICATION SETTINGS ==========
 // Only wallet-level notifications live here. Everything that belongs to the
 // messenger — message fees, group rules, sorting, scanning — now has its own
@@ -5072,6 +5100,7 @@ function SettingsView({ connection, publicKey, solBalance, onBack, showToast, on
             <span className="autolock-unit">{t('settings.seconds')}</span>
           </span>
         </div>
+        <LockOnLeaveToggle showToast={showToast} />
       </div>
 
       <NotificationSettings showToast={showToast} />

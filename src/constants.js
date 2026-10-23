@@ -348,3 +348,16 @@ export function getStakingPanelOpen() {
 export function saveStakingPanelOpen(open) {
   try { localStorage.setItem(STAKING_PANEL_OPEN_KEY, open ? '1' : '0') } catch { /* ignore */ }
 }
+
+// ========== LOCK ON LEAVING THE APP ==========
+// On (default): the wallet locks the moment the app leaves the screen and asks for the
+// PIN / biometrics on return. Off: only the "Auto-lock after" timer locks it.
+const LOCK_ON_LEAVE_KEY = 'h173k_lock_on_leave'
+
+export function getLockOnLeave() {
+  try { return localStorage.getItem(LOCK_ON_LEAVE_KEY) !== '0' } catch { return true }
+}
+
+export function saveLockOnLeave(enabled) {
+  try { localStorage.setItem(LOCK_ON_LEAVE_KEY, enabled ? '1' : '0') } catch { /* ignore */ }
+}

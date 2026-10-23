@@ -72,11 +72,15 @@ export function isLockPending() {
 
 /**
  * Installs the listeners; returns a cleanup function.
- * `wallet` needs isUnlocked() and lock(reason). doc/win/now are injectable for tests.
+ * `wallet` needs isUnlocked() and lock(reason); optional `lockDeadline` (ms timestamp of
+ * the auto-lock). doc/win/now are injectable for tests. `isEnabled()` is read at the
+ * moment the app is left (Settings → "Lock when leaving the app"), so toggling it works
+ * immediately.
  */
-export function installBackgroundLock(wallet, doc = document, win = window, now = () => Date.now()) {
+export function installBackgroundLock(wallet, doc = document, win = window, now = () => Date.now(), isEnabled = () => true) {
   lockTarget = wallet
   const requestLock = () => {
+    if (!isEnabled()) return
     if (!wallet.isUnlocked() || isSystemDialogActive()) return
     if (criticalDepth === 0) { doLock(); return }
     if (!pending) {
@@ -87,8 +91,13 @@ export function installBackgroundLock(wallet, doc = document, win = window, now 
     }
   }
   const onVisibility = () => {
-    if (doc.visibilityState === 'hidden') requestLock()
-    else if (pending && now() - pending.since >= MAX_DEFER_MS) doLock()
+    if (doc.visibilityState === 'hidden') { requestLock(); return }
+    if (pending && now() - pending.since >= MAX_DEFER_MS) { doLock(); return }
+    // Back in the app: if the auto-lock time has passed while the phone kept the app
+    // asleep (timers paused), lock now instead of waiting for the late timer.
+    if (wallet.isUnlocked() && wallet.lockDeadline && now() >= wallet.lockDeadline) {
+      if (criticalDepth === 0) wallet.lock('auto')
+    }
   }
   doc.addEventListener('visibilitychange', onVisibility)
   win.addEventListener('pagehide', requestLock)

@@ -97,5 +97,39 @@ ok(wallet.locks.length === 4, 'cleanup removes the listeners')
   off()
 }
 
+// ---------- Settings: "Lock when leaving the app" off + auto-lock deadline on return ----------
+{
+  const d3 = new FakeDoc(), w3 = new EventTarget()
+  let clock = 5_000_000
+  let enabled = false
+  const wal = { unlocked: true, locks: [], lockDeadline: clock + 300_000,
+    isUnlocked() { return this.unlocked }, lock(r) { this.locks.push(r); this.unlocked = false } }
+  const hide3 = () => { d3.visibilityState = 'hidden'; d3.dispatchEvent(new Event('visibilitychange')) }
+  const show3 = () => { d3.visibilityState = 'visible'; d3.dispatchEvent(new Event('visibilitychange')) }
+  const off = installBackgroundLock(wal, d3, w3, () => clock, () => enabled)
+
+  hide3(); w3.dispatchEvent(new Event('pagehide'))
+  ok(wal.locks.length === 0, 'setting off → leaving the app does not lock')
+  clock += 60_000; show3()
+  ok(wal.locks.length === 0, 'back before the auto-lock time → still unlocked')
+
+  hide3(); clock += 600_000; show3()   // phone slept the app past the auto-lock time
+  ok(wal.locks.length === 1 && wal.locks[0] === 'auto', 'back after the auto-lock time → locked (timer slept)')
+
+  // a running operation is not cut by the deadline check either
+  wal.unlocked = true; wal.lockDeadline = clock - 1
+  let rel
+  const op = duringCriticalOperation(() => new Promise((r) => { rel = r }))
+  show3()
+  ok(wal.locks.length === 1, 'deadline passed during a running op → not cut in half')
+  rel(); await op
+
+  // switching the setting on takes effect immediately (read at the moment of leaving)
+  wal.unlocked = true; wal.lockDeadline = clock + 300_000; enabled = true
+  hide3()
+  ok(wal.locks.length === 2 && wal.locks[1] === 'background', 'setting switched on → next leave locks at once')
+  off()
+}
+
 console.log(`\nbackground lock tests: ${passes} passed, ${failures} failed`)
 process.exit(failures ? 1 : 0)
