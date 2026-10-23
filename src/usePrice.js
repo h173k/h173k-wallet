@@ -8,7 +8,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PublicKey } from '@solana/web3.js'
-import { PRICE_UPDATE_INTERVAL, TOKEN_MINT } from './constants'
+import { PRICE_UPDATE_INTERVAL, TOKEN_MINT, TOKEN_DECIMALS, USDT_DECIMALS } from './constants'
+import { tokenAmountOf } from './rpcBatch'
 
 // h173k-USDT Raydium CPMM pool
 const POOL_ID = new PublicKey('J9ED7D3pR7Uw5W6Y52p1Mq3Gfkmumg8fHRvLEiHLL2S7')
@@ -18,7 +19,13 @@ const USDT_MINT = new PublicKey('Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB')
 // Raydium CPMM PoolState layout offsets (same layout used by the swap pool).
 const OFF = { token0Vault: 72, token1Vault: 104, token0Mint: 168, token1Mint: 200 }
 
-export function useTokenPrice(connection) {
+/**
+ * h173k price from the h173k/USDT pool reserves.
+ * `active` — read only when true (wallet unlocked and on screen). While inactive no
+ * request is made at all and the last known price is kept; becoming active refreshes
+ * immediately.
+ */
+export function useTokenPrice(connection, active = true) {
   const [price, setPrice] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -60,13 +67,11 @@ export function useTokenPrice(connection) {
     try {
       const { h173kVault, quoteVault } = await resolvePool()
 
-      const [h173kBal, usdtBal] = await Promise.all([
-        connection.getTokenAccountBalance(h173kVault),
-        connection.getTokenAccountBalance(quoteVault),
-      ])
-
-      const h173kReserve = Number(h173kBal?.value?.uiAmount)
-      const usdtReserve = Number(usdtBal?.value?.uiAmount)
+      // Both vaults in ONE request (1 RPC credit instead of 2).
+      const [h173kAcc, usdtAcc] = await connection.getMultipleAccountsInfo([h173kVault, quoteVault], 'confirmed')
+      if (!h173kAcc || !usdtAcc) throw new Error('Pool vault not found')
+      const h173kReserve = Number(tokenAmountOf(h173kAcc)) / Math.pow(10, TOKEN_DECIMALS)
+      const usdtReserve = Number(tokenAmountOf(usdtAcc)) / Math.pow(10, USDT_DECIMALS)
 
       if (h173kReserve > 0 && usdtReserve > 0 && isFinite(usdtReserve / h173kReserve)) {
         setPrice(usdtReserve / h173kReserve)
@@ -86,13 +91,13 @@ export function useTokenPrice(connection) {
   }, [connection, resolvePool])
 
   useEffect(() => {
-    if (!connection) return
+    if (!connection || !active) return
     fetchPrice()
     intervalRef.current = setInterval(fetchPrice, PRICE_UPDATE_INTERVAL)
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [connection, fetchPrice])
+  }, [connection, fetchPrice, active])
 
   const toUSD = useCallback((tokenAmount) => {
     if (price === null || tokenAmount === null || tokenAmount === undefined) return null

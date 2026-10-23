@@ -1,6 +1,6 @@
 {
   "name": "h173k-wallet",
-  "version": "1.7.4.3",
+  "version": "1.7.4.4",
   "description": "PWA Wallet dedicated to h173k tokens on Solana",
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src public/sw-notifications.js --ext .js,.jsx",
-    "test": "node --experimental-loader ./tests/resolve-hook.mjs tests/messenger.test.mjs && node --experimental-loader ./tests/resolve-hook.mjs tests/staking.test.mjs && node tests/backgroundLock.test.mjs && node tests/scrollReset.test.mjs",
+    "test": "node --experimental-loader ./tests/resolve-hook.mjs tests/messenger.test.mjs && node --experimental-loader ./tests/resolve-hook.mjs tests/staking.test.mjs && node tests/backgroundLock.test.mjs && node tests/scrollReset.test.mjs && node --experimental-loader ./tests/resolve-hook.mjs tests/rpcBatch.test.mjs",
     "check": "npm run build && node tests/check-build.mjs && npm run test && npm run lint",
     "verify-build": "node tests/check-build.mjs"
   },

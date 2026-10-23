@@ -43,6 +43,8 @@ import {
 import { QRCodeGenerator, QRCodeScanner } from './components/QRCode'
 import { installBackgroundLock, duringCriticalOperation } from './crypto/backgroundLock'
 import { installScrollResetOnReturn, scrollAppToTop } from './scrollReset'
+import { fetchWalletBalances } from './rpcBatch'
+import { usePageVisible } from './usePageVisible'
 
 // Hooks
 import { useSwap } from './hooks/useSwap'
@@ -514,7 +516,10 @@ function WalletApp({ connection, onRpcChange }) {
     }
   }, [pendingOfferLink, hasWallet, isUnlocked, connection])
   
-  const { price, toUSD } = useTokenPrice(connection)
+  // Price is read only while the wallet is unlocked AND on screen (nothing shows it
+  // otherwise) — no quota spent on the lock screen or in the background.
+  const pageVisible = usePageVisible()
+  const { price, toUSD } = useTokenPrice(connection, isUnlocked && pageVisible)
   
   // Store last known price for referral calculations
   useEffect(() => {
@@ -559,67 +564,65 @@ function WalletApp({ connection, onRpcChange }) {
   // RPC error state
   const [rpcError, setRpcError] = useState(null)
   
-  const fetchBalances = useCallback(async () => {
+  // Balance refresh. ONE batched request reads h173k, SOL and USDT (was three calls).
+  // `background` = the app is not on screen: balances are paused to save RPC quota, but
+  // MESSAGES keep being scanned (notifications), and if "transaction notifications" are
+  // on, the same single batched read still runs so incoming h173k is noticed.
+  const fetchBalances = useCallback(async ({ background = false } = {}) => {
     if (!connection || !publicKey) return
-    try {
-      // Fetch token balance
+    const wantBalances = !background || getTxNotificationsEnabled()
+    let usdtRaw = null
+    if (wantBalances) {
       try {
-        const tokenAccount = await getAssociatedTokenAddress(TOKEN_MINT, publicKey)
-        try {
-          const account = await getAccount(connection, tokenAccount)
-          const newBalance = Number(account.amount) / Math.pow(10, TOKEN_DECIMALS)
-          // Notify on incoming h173k (balance increased since the last refresh).
-          const prev = prevH173kRef.current
-          if (prev !== null && newBalance > prev + 1e-9 && getTxNotificationsEnabled()) {
-            const delta = newBalance - prev
-            showAppNotification('Received h173k', '+' + formatH173K(delta, h173kDecimals) + ' h173k', { tag: 'h173k-tx' })
-          }
-          prevH173kRef.current = newBalance
-          setBalance(newBalance)
-          localStorage.setItem('h173k_cached_balance', newBalance.toString())
-          setRpcError(null)
-        } catch (tokenErr) {
-          if (tokenErr.message && (tokenErr.message.includes('401') || tokenErr.message.includes('Unauthorized'))) {
-            setRpcError('rpc_limit')
-            // Don't return — still attempt SOL balance fetch below
-          } else if (tokenErr.name === 'TokenAccountNotFoundError' || tokenErr.name === 'TokenInvalidAccountOwnerError') {
-            setBalance(0)
-            localStorage.setItem('h173k_cached_balance', '0')
-            setRpcError(null)
-          }
-          // On network errors - keep previous balance
+        const b = await fetchWalletBalances(connection, publicKey)
+        const newBalance = Number(b.h173kRaw) / Math.pow(10, TOKEN_DECIMALS)
+        // Notify on incoming h173k (balance increased since the last refresh).
+        const prev = prevH173kRef.current
+        if (prev !== null && newBalance > prev + 1e-9 && getTxNotificationsEnabled()) {
+          const delta = newBalance - prev
+          showAppNotification('Received h173k', '+' + formatH173K(delta, h173kDecimals) + ' h173k', { tag: 'h173k-tx' })
         }
-      } catch {
-        // getAssociatedTokenAddress failure - keep previous token balance
+        prevH173kRef.current = newBalance
+        setBalance(newBalance)
+        localStorage.setItem('h173k_cached_balance', newBalance.toString())
+        const newSolBalance = b.lamports / LAMPORTS_PER_SOL
+        setSolBalance(newSolBalance)
+        localStorage.setItem('h173k_cached_sol_balance', newSolBalance.toString())
+        usdtRaw = b.usdtRaw
+        setRpcError(null)
+      } catch (err) {
+        // On network errors keep the previous balances; flag an exhausted / rejected key.
+        if (err?.message && (err.message.includes('401') || err.message.includes('Unauthorized'))) {
+          setRpcError('rpc_limit')
+        }
+        console.error('Balance fetch error:', err)
       }
-
-      // Always fetch SOL balance independently
-      const lamports = await connection.getBalance(publicKey)
-      const newSolBalance = lamports / LAMPORTS_PER_SOL
-      setSolBalance(newSolBalance)
-      localStorage.setItem('h173k_cached_sol_balance', newSolBalance.toString())
-      if (!rpcError) setRpcError(null)
-
-      // Scan for new encrypted messages alongside the balance refresh.
-      try { await scanIncomingMessages(connection, publicKey) } catch (e) { /* non-fatal */ }
-
-      // Convert any incoming USDT as part of the balance refresh itself — whether this
-      // refresh was triggered automatically (interval) or manually (button / pull-to-
-      // refresh). Fire-and-forget so it never blocks showing the updated balances.
-      checkAndConvertUsdtRef.current?.()
-    } catch (err) {
-      if (err.message && (err.message.includes('401') || err.message.includes('Unauthorized'))) {
-        setRpcError('rpc_limit')
-      }
-      console.error('Balance fetch error:', err)
     }
-  }, [connection, publicKey, rpcError])
+
+    // Scan for new encrypted messages — also while the app is in the background.
+    try { await scanIncomingMessages(connection, publicKey) } catch (e) { /* non-fatal */ }
+
+    // Convert any incoming USDT as part of an on-screen refresh (automatic or manual).
+    // The USDT balance comes from the batched read above — no extra request.
+    // Fire-and-forget so it never blocks showing the updated balances.
+    if (!background && usdtRaw !== null) checkAndConvertUsdtRef.current?.(usdtRaw)
+  }, [connection, publicKey, h173kDecimals])
   
   useEffect(() => {
     if (isUnlocked && publicKey) {
       fetchBalances()
-      const interval = setInterval(fetchBalances, 30000)
-      return () => clearInterval(interval)
+      // Every 30s; while the app is hidden only messages (+ the h173k balance when
+      // transaction notifications are on) are refreshed — see fetchBalances.
+      const interval = setInterval(() => {
+        fetchBalances({ background: document.visibilityState === 'hidden' })
+      }, 30000)
+      // Back on screen → full refresh right away (balances were paused in the background).
+      const onVisible = () => { if (document.visibilityState === 'visible') fetchBalances() }
+      document.addEventListener('visibilitychange', onVisible)
+      return () => {
+        clearInterval(interval)
+        document.removeEventListener('visibilitychange', onVisible)
+      }
     }
   }, [isUnlocked, publicKey, fetchBalances])
 
@@ -665,14 +668,15 @@ function WalletApp({ connection, onRpcChange }) {
   // when there's no longer any USDT to convert, so a genuinely new situation warns again.
   const usdtConvertWarnedRef = useRef(false)
 
-  const checkAndConvertUsdt = useCallback(async () => {
+  const checkAndConvertUsdt = useCallback(async (prefetchedUsdtRaw) => {
     if (!connection || !publicKey || !sessionWallet.isUnlocked()) return
     if (convertingUsdtRef.current) return
     // Don't grab USDT that a "send as USDT" flow is holding mid-transfer.
     if (isSendAsUsdtInFlight()) return
     let usdtAmount = 0
     try {
-      const usdtRaw = await getUsdtBalanceRawFn()
+      // Balance refresh passes the USDT read from its batched request (no extra call).
+      const usdtRaw = typeof prefetchedUsdtRaw === 'bigint' ? prefetchedUsdtRaw : await getUsdtBalanceRawFn()
       usdtAmount = Number(usdtRaw) / Math.pow(10, USDT_DECIMALS)
     } catch { return }
     // Ignore dust that couldn't cover its own conversion fees. Nothing pending → clear the
