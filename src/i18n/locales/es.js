@@ -821,4 +821,7 @@ export default {
       InsufficientTokens: "No hay suficientes h173k en la billetera.",
     },
   },
+  autoSol: {
+    topUpFailed: "No se pudo recargar SOL (problema de conexión o RPC). La operación se detuvo antes de enviar nada, para que tu SOL no baje del mínimo necesario para futuras recargas. Revisa tu conexión / RPC e inténtalo de nuevo.",
+  },
 }

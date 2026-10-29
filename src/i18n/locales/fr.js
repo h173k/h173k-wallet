@@ -821,4 +821,7 @@ export default {
       InsufficientTokens: "Pas assez de h173k dans le portefeuille.",
     },
   },
+  autoSol: {
+    topUpFailed: "Impossible de recharger le SOL (problème de connexion ou de RPC). L'opération a été arrêtée avant tout envoi, afin que votre SOL reste au-dessus du minimum nécessaire aux prochaines recharges. Vérifiez votre connexion / RPC et réessayez.",
+  },
 }

@@ -22,6 +22,7 @@ import {
   getAccount
 } from '@solana/spl-token'
 import { TOKEN_MINT, TOKEN_DECIMALS, getReplenishSettings } from '../constants'
+import { markTopUpPending, clearTopUpPending, isTopUpPending, topUpFailedError, isTopUpFailedError } from '../solTopUp'
 
 // h173k-SOL Pool ID (CPMM type)
 const POOL_ID = new PublicKey('8A7r3ZT7nXjtghKKnmVhrwnApJHG4tpvBF9BDCBmHWqr')
@@ -716,6 +717,7 @@ export function useSwap(connection, wallet) {
     const result = await executeSwap(quote, 'H173KtoSOL')
     console.log(`✅ Swap complete! Got ${result.outputAmount.toFixed(6)} SOL`)
     
+    clearTopUpPending() // SOL topped up — nothing outstanding any more
     return {
       success: true,
       h173kUsed: result.inputAmount,
@@ -767,7 +769,16 @@ export function useSwap(connection, wallet) {
     // force-buy up to the comfort target, because that would drain h173k the
     // operation itself needs (e.g. the 2× escrow deposit).
     try {
-      const currentLamports = await connection.getBalance(wallet.publicKey)
+      let currentLamports
+      try {
+        currentLamports = await connection.getBalance(wallet.publicKey)
+      } catch (balErr) {
+        // Balance unknown. Normally the operation may still try (a transient read error);
+        // but with a FAILED top-up outstanding we cannot tell whether it would strand the
+        // wallet below the swap floor — so stop before sending anything.
+        if (isTopUpPending(wallet.publicKey.toBase58())) throw topUpFailedError(balErr)
+        throw balErr
+      }
       const currentSOL = currentLamports / LAMPORTS_PER_SOL
 
       // Hard-fail ONLY when the operation is genuinely UNAFFORDABLE *and* we cannot even
@@ -784,7 +795,13 @@ export function useSwap(connection, wallet) {
       // strand itself (so it can never run out of SOL while h173k is available to convert).
       // When it fires we top up to reserveFloor so a small reserve remains afterwards.
       const minSafeSOL = operationCost + swapFloor
-      const needsSwap = currentSOL < minSafeSOL && currentSOL >= swapFloor
+      // A previously FAILED top-up is retried before this operation pays any fee.
+      const walletAddr = wallet.publicKey.toBase58()
+      const pending = isTopUpPending(walletAddr)
+      if (pending && currentSOL >= reserveFloor) clearTopUpPending() // fixed meanwhile (e.g. deposit)
+      // Would this operation leave SOL below the level needed to run a swap at all?
+      const wouldStrand = currentSOL - operationCost < swapFloor
+      const needsSwap = (currentSOL < minSafeSOL || (pending && currentSOL < reserveFloor)) && currentSOL >= swapFloor
       if (needsSwap) {
         const neededSOL = reserveFloor - currentSOL
         if (neededSOL > 0) {
@@ -796,6 +813,7 @@ export function useSwap(connection, wallet) {
             setLoading(false)
             if (swapResult?.skipped) {
               console.log('⚡ Proactive swap skipped (not economical) — proceeding without it')
+              clearTopUpPending() // the remaining deficit is too small to be worth a swap
             } else {
               if (onSwap) onSwap({ status: 'swapped', h173kUsed: swapResult.h173kUsed, solReceived: swapResult.solReceived })
               await new Promise(r => setTimeout(r, 1500))
@@ -819,19 +837,28 @@ export function useSwap(connection, wallet) {
               } catch (topUpErr) {
                 setLoading(false)
                 if (topUpErr?.message?.startsWith('NO_H173K:') || topUpErr?.message?.startsWith('NO_SOL:')) throw topUpErr
-                console.log('Warning: Slippage top-up failed, continuing:', topUpErr?.message)
+                markTopUpPending(walletAddr, topUpErr?.message)
+                console.log('Warning: Slippage top-up failed, continuing (retried before the next operation):', topUpErr?.message)
               }
             }
           } catch (swapErr) {
             setLoading(false)
             if (swapErr?.message?.startsWith('NO_H173K:') || swapErr?.message?.startsWith('NO_SOL:')) throw swapErr
-            console.log('Warning: Proactive swap failed, continuing:', swapErr?.message)
+            markTopUpPending(walletAddr, swapErr?.message)
+            // Never pay into the swap floor without a working top-up: afterwards the
+            // wallet could not even run the rescue swap. Stop BEFORE sending anything.
+            if (wouldStrand) {
+              console.log('⛔ Top-up failed and the operation would push SOL below the swap floor — stopping:', swapErr?.message)
+              throw topUpFailedError(swapErr)
+            }
+            console.log('Warning: Proactive swap failed, continuing (SOL stays above the swap floor; retried before the next operation):', swapErr?.message)
           }
         }
       }
     } catch (err) {
       // Surface fatal fund shortfalls as clean, user-facing messages; swallow only
       // transient issues (e.g. a failed getBalance) so the operation can still try.
+      if (isTopUpFailedError(err)) throw err
       const m = err?.message || ''
       if (m.startsWith('NO_H173K:')) throw new Error(m.replace('NO_H173K:', ''))
       if (m.startsWith('NO_SOL:')) throw new Error(m.replace('NO_SOL:', ''))
@@ -861,8 +888,11 @@ export function useSwap(connection, wallet) {
             if (r && !r.skipped && onSwap) onSwap({ status: 'swapped', h173kUsed: r.h173kUsed, solReceived: r.solReceived })
           }
         } catch (e) {
-          // Never surface: rebuilding the reserve is opportunistic.
-          console.log('Post-op reserve restore skipped:', e?.message)
+          // Never surface: rebuilding the reserve is opportunistic. But REMEMBER it, so the
+          // next fee-paying operation retries the top-up first (and stops rather than
+          // strand the wallet below the swap floor if it still cannot top up).
+          markTopUpPending(wallet.publicKey.toBase58(), e?.message)
+          console.log('Post-op reserve restore skipped (retried before the next operation):', e?.message)
         }
       })()
     }
@@ -958,7 +988,8 @@ export function useSwap(connection, wallet) {
       }
       return false
     } catch (e) {
-      console.log('restoreSolReserve skipped:', e?.message)
+      if (wallet?.publicKey) markTopUpPending(wallet.publicKey.toBase58(), e?.message)
+      console.log('restoreSolReserve skipped (retried before the next operation):', e?.message)
       return false
     } finally {
       setLoading(false)

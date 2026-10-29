@@ -142,6 +142,7 @@ async function revealLanded(program, ticket, tries = 4) {
 function isFatalError(e) {
   const m = String(e?.message || e || '')
   return (
+    e?.code === 'SOL_TOPUP_FAILED' ||
     m.includes('Wallet is locked') ||
     m.includes('NO_H173K') ||
     m.includes('NO_SOL') ||

@@ -987,4 +987,7 @@ export default {
       InsufficientTokens: "Not enough h173k in the wallet.",
     },
   },
+  autoSol: {
+    topUpFailed: "Couldn't top up SOL (connection or RPC problem). The operation was stopped before anything was sent, so your SOL stays above the minimum needed for future top-ups. Check your connection / RPC and try again.",
+  },
 }

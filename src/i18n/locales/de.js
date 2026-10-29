@@ -821,4 +821,7 @@ export default {
       InsufficientTokens: "Nicht genug h173k in der Wallet.",
     },
   },
+  autoSol: {
+    topUpFailed: "SOL konnte nicht aufgefüllt werden (Verbindungs- oder RPC-Problem). Der Vorgang wurde gestoppt, bevor etwas gesendet wurde, damit dein SOL über dem Minimum für künftige Auffüllungen bleibt. Prüfe Verbindung / RPC und versuche es erneut.",
+  },
 }

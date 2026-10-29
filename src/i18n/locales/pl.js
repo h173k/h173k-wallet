@@ -984,4 +984,7 @@ export default {
       InsufficientTokens: "Za mało h173k w portfelu.",
     },
   },
+  autoSol: {
+    topUpFailed: "Nie udało się dokupić SOL (problem z połączeniem lub RPC). Operację zatrzymano przed wysłaniem czegokolwiek, żeby SOL nie spadł poniżej minimum potrzebnego do kolejnych doładowań. Sprawdź połączenie / RPC i spróbuj ponownie.",
+  },
 }
