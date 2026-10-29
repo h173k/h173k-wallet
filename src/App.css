@@ -49,6 +49,11 @@ html, body {
   width: 100%;
   height: 100%;
   overflow-x: hidden;
+  /* Disable the BROWSER's own pull-to-refresh (Chrome on Android) — pulling down at the
+     top would reload the whole PWA. "contain" keeps the normal overscroll glow; the
+     app's own pull-to-refresh (touch handlers) is unaffected. Both html and body,
+     because <body> is the scrolling element here. */
+  overscroll-behavior-y: contain;
 }
 
 body {
