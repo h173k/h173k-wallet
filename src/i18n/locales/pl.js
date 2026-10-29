@@ -91,6 +91,8 @@ export default {
     tooManyAttempts: "Zbyt wiele prób. Spróbuj ponownie za {s} s",
   },
   main: {
+    hideBalances: "Ukryj salda",
+    showBalances: "Pokaż salda",
     staked: "Zastakowane",
     balance: "Saldo",
     convert: "Konwertuj",

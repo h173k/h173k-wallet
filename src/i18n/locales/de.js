@@ -90,6 +90,8 @@ export default {
     tooManyAttempts: "Zu viele Versuche. Versuche es in {s} s erneut",
   },
   main: {
+    hideBalances: "Guthaben ausblenden",
+    showBalances: "Guthaben anzeigen",
     staked: "Gestakt",
     balance: "Guthaben",
     convert: "Umwandeln",

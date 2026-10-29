@@ -94,6 +94,8 @@ export default {
     tooManyAttempts: "Too many attempts. Try again in {s}s",
   },
   main: {
+    hideBalances: "Hide balances",
+    showBalances: "Show balances",
     staked: "Staked",
     balance: "Balance",
     convert: "Convert",

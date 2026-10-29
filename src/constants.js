@@ -361,3 +361,15 @@ export function getLockOnLeave() {
 export function saveLockOnLeave(enabled) {
   try { localStorage.setItem(LOCK_ON_LEAVE_KEY, enabled ? '1' : '0') } catch { /* ignore */ }
 }
+
+// ========== PRIVACY MODE (main screen balances hidden) ==========
+// Remembered across app restarts and locks, exactly as the user left it.
+const PRIVACY_MODE_KEY = 'h173k_privacy_mode'
+
+export function getPrivacyMode() {
+  try { return localStorage.getItem(PRIVACY_MODE_KEY) === '1' } catch { return false }
+}
+
+export function savePrivacyMode(on) {
+  try { localStorage.setItem(PRIVACY_MODE_KEY, on ? '1' : '0') } catch { /* ignore */ }
+}

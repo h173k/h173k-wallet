@@ -90,6 +90,8 @@ export default {
     tooManyAttempts: "ብዙ ሙከራዎች ተደርገዋል። በ {s} ሰከንድ ውስጥ እንደገና ይሞክሩ",
   },
   main: {
+    hideBalances: "ሂሳቦችን ደብቅ",
+    showBalances: "ሂሳቦችን አሳይ",
     staked: "የተስቴከ",
     balance: "ሒሳብ",
     convert: "ቀይር",

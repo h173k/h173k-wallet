@@ -90,6 +90,8 @@ export default {
     tooManyAttempts: "Trop de tentatives. Réessayez dans {s} s",
   },
   main: {
+    hideBalances: "Masquer les soldes",
+    showBalances: "Afficher les soldes",
     staked: "Staké",
     balance: "Solde",
     convert: "Convertir",

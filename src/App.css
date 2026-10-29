@@ -4756,3 +4756,23 @@ body {
 .staking-chevron.open {
   transform: rotate(90deg);
 }
+
+/* Privacy mode (eye next to the main balance) */
+.privacy-toggle {
+  background: none;
+  border: none;
+  color: var(--color-white-50);
+  cursor: pointer;
+  padding: 6px;
+  margin-left: 4px;
+  vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+}
+.privacy-toggle:hover {
+  color: var(--color-white);
+}
+.balance-hidden {
+  letter-spacing: 2px;
+}

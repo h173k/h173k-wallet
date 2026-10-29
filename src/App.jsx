@@ -83,7 +83,7 @@ import {
 import { getGroupInviteFromURL, clearGroupInviteFromURL } from './messenger/groups'
 
 // Constants & Utils
-import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT, getUsdtPriceImpactGuard, saveUsdtPriceImpactGuard, getStakingPanelOpen, saveStakingPanelOpen, getLockOnLeave, saveLockOnLeave, clampUsdtPriceImpactPct, DEFAULT_MAX_USDT_PRICE_IMPACT_PCT, MIN_USDT_PRICE_IMPACT_PCT, MAX_USDT_PRICE_IMPACT_PCT, USDT_PRICE_IMPACT_STEP } from './constants'
+import { TOKEN_MINT, TOKEN_DECIMALS, getRpcEndpoint, saveRpcEndpoint, isRpcConfigured, validateRpcEndpoint, DEFAULT_RPC_ENDPOINT, OfferStatus, getReplenishSettings, saveReplenishSettings, DEFAULT_REPLENISH_SETTINGS, getSponsorAccounts, saveSponsorAccounts, WSOL_ATA_RENT as WSOL_ATA_RENT_CONST, MIN_SWAP_PRIORITY_FEE, MIN_TRIGGER_THRESHOLD, MIN_REPLENISH_TO, getH173KDecimals, saveH173KDecimals, getAutoLockSeconds, saveAutoLockSeconds, DEFAULT_AUTO_LOCK_SECONDS, getReceiveWarnAck, saveReceiveWarnAck, USDT_MINT, USDT_DECIMALS, MIN_USDT_AUTO_CONVERT, getUsdtPriceImpactGuard, saveUsdtPriceImpactGuard, getStakingPanelOpen, saveStakingPanelOpen, getLockOnLeave, saveLockOnLeave, getPrivacyMode, savePrivacyMode, clampUsdtPriceImpactPct, DEFAULT_MAX_USDT_PRICE_IMPACT_PCT, MIN_USDT_PRICE_IMPACT_PCT, MAX_USDT_PRICE_IMPACT_PCT, USDT_PRICE_IMPACT_STEP } from './constants'
 import { useTokenPrice } from './usePrice'
 import { withConfirmFallback, installRpcNoticeFilter } from './confirmFallback'
 import { 
@@ -1205,6 +1205,12 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
 
   const usdValue = toUSD ? toUSD(balance) : null
 
+  // Privacy mode: the eye next to the balance hides every amount on this screen
+  // (balance, its USD value, staked amount, SOL). Remembered across restarts.
+  const [privacy, setPrivacy] = useState(() => getPrivacyMode())
+  const togglePrivacy = () => setPrivacy((p) => { savePrivacyMode(!p); return !p })
+  const HIDDEN = '••••••'
+
   // Staked amount line under the balance. The contract is read ONLY when this screen
   // opens and on a manual refresh (pull-down / refresh button) — never on the 30s
   // balance timer, never in the background, and never via a transaction.
@@ -1637,10 +1643,20 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
       
       <div className="balance-card">
         <div className="balance-label">{t('main.balance')}</div>
-        <div className="balance-amount">{formatH173K(balance, h173kDecimals)} <span className="balance-symbol">h173k</span></div>
+        <div className="balance-amount">
+          {privacy ? <span className="balance-hidden">{HIDDEN}</span> : formatH173K(balance, h173kDecimals)} <span className="balance-symbol">h173k</span>
+          <button
+            type="button"
+            className="privacy-toggle"
+            onClick={togglePrivacy}
+            aria-pressed={privacy}
+            aria-label={privacy ? t('main.showBalances') : t('main.hideBalances')}
+            title={privacy ? t('main.showBalances') : t('main.hideBalances')}
+          >{privacy ? <EyeOffIcon size={20} /> : <EyeIcon size={20} />}</button>
+        </div>
         {usdValue !== null && (
           <div className="balance-usd">
-            {formatUSD(usdValue)}
+            {privacy ? `$${HIDDEN}` : formatUSD(usdValue)}
             {price > 0 && (
               <span className="balance-price">
                 <span className="balance-price-sep">·</span>1 h173k = {price < 1 ? `$${formatSmartNumber(price, 2, 6)}` : formatUSD(price)}
@@ -1650,14 +1666,14 @@ function MainView({ connection, publicKey, balance, solBalance, price, toUSD, on
         )}
         {stakedRaw !== null && (
           <div className="balance-staked">
-            {t('main.staked')}: {formatRawExact(stakedRaw, TOKEN_DECIMALS)} h173k
+            {t('main.staked')}: {privacy ? HIDDEN : formatRawExact(stakedRaw, TOKEN_DECIMALS)} h173k
             {stakedUsd !== null && (
-              <span className="balance-price"><span className="balance-price-sep">·</span>≈ {formatUSD(stakedUsd)}</span>
+              <span className="balance-price"><span className="balance-price-sep">·</span>≈ {privacy ? `$${HIDDEN}` : formatUSD(stakedUsd)}</span>
             )}
           </div>
         )}
         <div className="balance-sol-row">
-          <span className="balance-sol">{formatNumber(solBalance, 4)} SOL</span>
+          <span className="balance-sol">{privacy ? HIDDEN : formatNumber(solBalance, 4)} SOL</span>
           {maxConvertableSOL > 0 && (
             <button className="convert-sol-btn" onClick={() => setShowConvertModal(true)}>
               {t('main.convert')}
@@ -5178,6 +5194,14 @@ function ScanIcon({ size = 20 }) {
 
 function BackIcon({ size = 20 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
+}
+
+function EyeIcon({ size = 20 }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+}
+
+function EyeOffIcon({ size = 20 }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5" /><path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /><line x1="2" y1="2" x2="22" y2="22" /></svg>
 }
 
 function ChevronRightIcon({ size = 16 }) {
